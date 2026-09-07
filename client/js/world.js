@@ -39,9 +39,10 @@ const FALLBACK = { color: 0xff00ff };
 export function buildScene(map) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xaeb7c2);
-  // Leichter Dunst ueber die volle Diagonale des Bueros: gibt Tiefe, ohne dass
-  // etwas im Nichts verschwindet.
-  scene.fog = new THREE.Fog(0xaeb7c2, 30, 78);
+  // Der Dunst setzt erst jenseits der Raumdiagonale spuerbar ein. Naeher
+  // gesetzt wuerde er die gegenueberliegende Bueroseite ausbleichen, und
+  // gerade dort steht, worauf man schiesst.
+  scene.fog = new THREE.Fog(0xaeb7c2, 48, 115);
 
   // Buerobeleuchtung ist flach, hell und gnadenlos. Entscheidend ist das
   // Umgebungslicht: ohne es faellt jede nach unten zeigende Flaeche - allen
