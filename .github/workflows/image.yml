@@ -16,11 +16,12 @@ on:
   workflow_dispatch:
 
 # Ein laufender Build fuer denselben Branch wird abgebrochen, sobald ein
-# neuerer Commit kommt. Bevy zu uebersetzen dauert; veraltete Laeufe muessen
-# das nicht zu Ende tun.
+# neuerer Commit kommt - veraltete Laeufe muessen nicht zu Ende laufen.
+# Ausgenommen ist der Standardbranch: dort wird veroeffentlicht, und ein
+# mittendrin abgebrochener Push in die Registry hinterlaesst halbe Zustaende.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
@@ -29,6 +30,10 @@ jobs:
   image:
     name: Bauen, pruefen, veroeffentlichen
     runs-on: ubuntu-latest
+
+    # Reissleine: der Build braucht regulaer wenige Minuten. Bleibt er haengen,
+    # soll er nicht stundenlang einen Runner belegen.
+    timeout-minutes: 45
 
     permissions:
       contents: read
@@ -58,6 +63,14 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+          # Ohne diese Angaben leitet die Action Titel, Beschreibung und Lizenz
+          # aus den Repository-Einstellungen ab - und ueberschreibt damit die
+          # LABEL-Zeilen des Dockerfiles. Sind dort Beschreibung und Lizenz
+          # nicht gesetzt, landen leere Beschriftungen im Image.
+          labels: |
+            org.opencontainers.image.title=Corporate Shooter
+            org.opencontainers.image.description=LAN-Shooter im Grossraumbuero: autoritativer Rust-Server samt Browser-Client
+            org.opencontainers.image.licenses=MIT
 
       # Erst lokal bauen und starten. Ein Image, das sich nicht starten laesst,
       # hat in der Registry nichts verloren.
