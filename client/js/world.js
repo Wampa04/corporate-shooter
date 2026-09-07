@@ -31,6 +31,9 @@ const MATERIALS = {
 
   // Arbeitsplatz
   Desk:          { color: 0xbb9061, roughness: 0.6 },   // Buche, wie ueberall
+  Worktop:       { color: 0xe4e7ea, roughness: 0.3 },   // helle Platte mit Kante
+  Paper:         { color: 0xf7f5ef, roughness: 0.95 },
+  Mug:           { color: BRAND,    roughness: 0.25 },  // Tasse in Hausfarbe
   Cubicle:       { color: 0x8e9aa7, roughness: 1.0 },   // Stoffbespannung
   Monitor:       { color: 0x1b1f25, roughness: 0.25 },
   Chair:         { color: BRAND,    roughness: 0.9 },   // Polster in Hausfarbe
@@ -46,6 +49,8 @@ const MATERIALS = {
 
   // Dekoration
   LightPanel:    { color: 0xffffff, roughness: 1.0, emissive: 0xfff4d6 },
+  Vent:          { color: 0x9aa3ad, roughness: 0.6, metalness: 0.4 },
+  Trim:          { color: 0xb6bec8, roughness: 0.6 },
   AccentPanel:   { color: BRAND,    roughness: 0.75 },
   FloorStripe:   { color: BRAND,    roughness: 0.85 },
 };
@@ -79,6 +84,8 @@ const NO_SHADOW_CAST = new Set([
   "LightPanel",
   "FloorStripe",
   "AccentPanel",
+  "Vent",
+  "Trim",
 ]);
 
 /**

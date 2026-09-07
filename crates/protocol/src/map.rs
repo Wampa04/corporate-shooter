@@ -144,6 +144,13 @@ pub enum BrushKind {
     /// Aktenschrank.
     Cabinet,
 
+    /// Arbeitsplatte auf Schreibtischen und Küchenzeilen.
+    Worktop,
+    /// Papierstapel, Ablagen, Ausdrucke.
+    Paper,
+    /// Tasse in der Hausfarbe. Steht auf jedem zweiten Schreibtisch.
+    Mug,
+
     // --- Reine Dekoration --------------------------------------------------
     // Diese drei blockieren weder Wege noch Schüsse: sie liegen bündig in
     // Decke, Wand oder Boden. Als Hindernis wären sie nur lästig.
@@ -153,6 +160,10 @@ pub enum BrushKind {
     AccentPanel,
     /// Leitstreifen auf dem Boden, ebenfalls in der Hausfarbe.
     FloorStripe,
+    /// Sockelleiste und Türrahmen: bündig an der Wand.
+    Trim,
+    /// Lüftungsgitter in der Rasterdecke.
+    Vent,
 }
 
 impl BrushKind {
@@ -163,7 +174,11 @@ impl BrushKind {
     pub fn blocks_movement(self) -> bool {
         !matches!(
             self,
-            BrushKind::LightPanel | BrushKind::AccentPanel | BrushKind::FloorStripe
+            BrushKind::LightPanel
+                | BrushKind::AccentPanel
+                | BrushKind::FloorStripe
+                | BrushKind::Trim
+                | BrushKind::Vent
         )
     }
 
