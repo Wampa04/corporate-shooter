@@ -123,6 +123,9 @@ pub enum BrushKind {
     Wall,
     /// Glastrennwand: sichtbar durchlässig, aber schuss- und laufsicher.
     Glass,
+    /// Milchglasband auf Brusthöhe. Verdeckt den Rumpf, nicht Kopf und Beine -
+    /// und hält Schüsse genauso auf wie klares Glas.
+    FrostedGlass,
     Desk,
     Cubicle,
     /// Whiteboard, im Büro die einzige ehrliche Deckung.
@@ -131,14 +134,29 @@ pub enum BrushKind {
     Printer,
     CoffeeMachine,
     ServerRack,
-    /// Yuccapalme. Steht im Weg, hält aber keine Kugel auf.
+    /// Übertopf der Yuccapalme. Steht im Weg, hält aber keine Kugel auf -
+    /// und ist die einzige Box der Pflanze, mit der man überhaupt kollidiert.
     Plant,
+    /// Rand des Übertopfs.
+    PlantRim,
+    /// Erde im Topf.
+    Soil,
+    /// Stamm der Yuccapalme.
+    Stem,
+    /// Wedel.
+    Foliage,
+    /// Wedel im Schatten der Krone.
+    FoliageDark,
 
     // --- Einrichtung -------------------------------------------------------
     /// Bildschirm auf dem Schreibtisch.
     Monitor,
-    /// Bürostuhl. Steht unter dem Tisch und ragt nur wenig in den Gang.
+    /// Sitzpolster des Bürostuhls - die einzige Box, mit der man kollidiert.
     Chair,
+    /// Sitzschale und Rückenlehne.
+    ChairShell,
+    /// Fußkreuz, Rollen, Gasfeder und Armlehnen.
+    ChairFrame,
     /// Tragende Stütze. Die verlässlichste Deckung im ganzen Stockwerk.
     Pillar,
     /// Aktenschrank.
@@ -150,6 +168,8 @@ pub enum BrushKind {
     Paper,
     /// Tasse in der Hausfarbe. Steht auf jedem zweiten Schreibtisch.
     Mug,
+    /// Tastatur auf der Platte.
+    Keyboard,
 
     // --- Reine Dekoration --------------------------------------------------
     // Diese drei blockieren weder Wege noch Schüsse: sie liegen bündig in
@@ -166,29 +186,98 @@ pub enum BrushKind {
     Vent,
 }
 
+/// Wie eine Box auf Spieler und Schüsse wirkt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Solidity {
+    /// Blockiert Weg und Schuss.
+    Solid,
+    /// Steht im Weg, hält aber keine Kugel auf: das Grünzeug.
+    SoftCover,
+    /// Blockiert nichts. Bündig eingelassene Dekoration und filigrane
+    /// Zierteile - an einem aufgeklebten Leitstreifen oder einem Stuhlfuß
+    /// hängenzubleiben wäre nur lästig.
+    Decor,
+}
+
 impl BrushKind {
-    /// Ob Spieler an dieser Box hängenbleiben.
+    /// Alle Varianten. Wird von den Tests benutzt, um die Materialtabelle des
+    /// Clients gegen das Protokoll zu prüfen.
+    pub const ALL: &'static [BrushKind] = &[
+        BrushKind::Floor,
+        BrushKind::Ceiling,
+        BrushKind::Wall,
+        BrushKind::Glass,
+        BrushKind::FrostedGlass,
+        BrushKind::Desk,
+        BrushKind::Cubicle,
+        BrushKind::Whiteboard,
+        BrushKind::Shelf,
+        BrushKind::Printer,
+        BrushKind::CoffeeMachine,
+        BrushKind::ServerRack,
+        BrushKind::Plant,
+        BrushKind::PlantRim,
+        BrushKind::Soil,
+        BrushKind::Stem,
+        BrushKind::Foliage,
+        BrushKind::FoliageDark,
+        BrushKind::Monitor,
+        BrushKind::Chair,
+        BrushKind::ChairShell,
+        BrushKind::ChairFrame,
+        BrushKind::Pillar,
+        BrushKind::Cabinet,
+        BrushKind::Worktop,
+        BrushKind::Paper,
+        BrushKind::Mug,
+        BrushKind::Keyboard,
+        BrushKind::LightPanel,
+        BrushKind::AccentPanel,
+        BrushKind::FloorStripe,
+        BrushKind::Trim,
+        BrushKind::Vent,
+    ];
+
+    /// Wirkung auf Spieler und Schüsse.
     ///
-    /// Bündig eingelassene Dekoration tut das nicht - sonst bliebe man an
-    /// einem aufgeklebten Leitstreifen hängen.
+    /// Bewusst ein erschöpfendes `match` und keine Ausnahmeliste: eine neue
+    /// Art lässt sich nicht hinzufügen, ohne hier zu entscheiden, was sie
+    /// blockiert. Vorher war das eine Verneinung, in der jede neue Art
+    /// stillschweigend massiv wurde.
+    pub const fn solidity(self) -> Solidity {
+        use BrushKind::*;
+        match self {
+            // Hülle und Einbauten: alles, was ein Büro trägt oder trennt.
+            Floor | Ceiling | Wall | Glass | FrostedGlass | Pillar => Solidity::Solid,
+            Desk | Cubicle | Whiteboard | Shelf | Printer | CoffeeMachine | ServerRack
+            | Cabinet | Worktop | Monitor | Chair => Solidity::Solid,
+
+            // Grünzeug: steht im Weg, taugt aber nicht als Deckung.
+            Plant => Solidity::SoftCover,
+
+            // Zierteile am Möbel. Ein Stuhl ist über sein Sitzpolster im Weg;
+            // Fußkreuz, Lehne und Armlehnen sind zu filigran, um daraus
+            // Kollisionsboxen zu machen - man bliebe zwischen ihnen hängen.
+            ChairShell | ChairFrame => Solidity::Decor,
+            PlantRim | Soil | Stem | Foliage | FoliageDark => Solidity::Decor,
+
+            // Kleinkram auf der Platte. Eine Kaffeetasse, die eine Kugel
+            // aufhält, ist ein Fehler und kein Feature.
+            Paper | Mug | Keyboard => Solidity::Decor,
+
+            // Bündig in Decke, Wand oder Boden eingelassen.
+            LightPanel | AccentPanel | FloorStripe | Trim | Vent => Solidity::Decor,
+        }
+    }
+
+    /// Ob Spieler an dieser Box hängenbleiben.
     pub fn blocks_movement(self) -> bool {
-        !matches!(
-            self,
-            BrushKind::LightPanel
-                | BrushKind::AccentPanel
-                | BrushKind::FloorStripe
-                | BrushKind::Trim
-                | BrushKind::Vent
-        )
+        !matches!(self.solidity(), Solidity::Decor)
     }
 
     /// Ob Hitscan-Schüsse an dieser Box stoppen.
-    ///
-    /// Was den Weg nicht blockiert, hält auch keine Kugel auf. Die
-    /// Yuccapalme ist die Ausnahme in die andere Richtung: sie steht im Weg,
-    /// taugt aber nicht als Deckung.
     pub fn blocks_bullets(self) -> bool {
-        self.blocks_movement() && !matches!(self, BrushKind::Plant)
+        matches!(self.solidity(), Solidity::Solid)
     }
 }
 

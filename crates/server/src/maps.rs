@@ -864,3 +864,46 @@ pub fn grossraumbuero() -> MapDesc {
         spawns,
     }
 }
+
+#[cfg(test)]
+mod snapshot_tests {
+    /// Kanonische Textfassung des Grundrisses.
+    ///
+    /// Sortiert, damit die Reihenfolge der Emission egal ist: ein Umbau darf
+    /// Abschnitte umsortieren, ohne dass der Vergleich anschlägt. Genau das
+    /// macht diese Fassung zum Beweismittel beim Zerlegen von
+    /// [`super::grossraumbuero`] in Bauteile.
+    pub fn canonical_dump() -> String {
+        let map = super::grossraumbuero();
+        let mut lines: Vec<String> = map
+            .brushes
+            .iter()
+            .map(|b| {
+                format!(
+                    "{:?} {:.4} {:.4} {:.4} {:.4} {:.4} {:.4}",
+                    b.kind,
+                    b.aabb.min.x,
+                    b.aabb.min.y,
+                    b.aabb.min.z,
+                    b.aabb.max.x,
+                    b.aabb.max.y,
+                    b.aabb.max.z
+                )
+            })
+            .collect();
+        lines.sort();
+        lines.join("\n")
+    }
+
+    /// Schreibt den Grundriss nach `$MAP_DUMP`, wenn gesetzt.
+    ///
+    /// Kein Test im eigentlichen Sinn, sondern das Werkzeug für den
+    /// Vorher-Nachher-Vergleich beim Umbau.
+    #[test]
+    fn grundriss_ausgeben() {
+        if let Ok(path) = std::env::var("MAP_DUMP") {
+            std::fs::write(&path, canonical_dump()).expect("Dump schreiben");
+            eprintln!("Grundriss nach {path} geschrieben");
+        }
+    }
+}

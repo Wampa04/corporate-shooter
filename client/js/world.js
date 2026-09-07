@@ -27,6 +27,8 @@ const MATERIALS = {
   Ceiling:       { color: 0xeef1f5, roughness: 0.9,  texture: "ceiling" },
   Wall:          { color: 0xccd3dc, roughness: 0.85 },
   Glass:         { color: 0xa8dcea, roughness: 0.05, opacity: 0.15, transparent: true },
+  // Milchglasband auf Brusthoehe: verdeckt den Rumpf, laesst Kopf und Beine frei.
+  FrostedGlass:  { color: 0xdfe7ec, roughness: 0.45, opacity: 0.82, transparent: true },
   Pillar:        { color: 0xd8dee6, roughness: 0.8 },
 
   // Arbeitsplatz
@@ -36,7 +38,13 @@ const MATERIALS = {
   Mug:           { color: BRAND,    roughness: 0.25 },  // Tasse in Hausfarbe
   Cubicle:       { color: 0x8e9aa7, roughness: 1.0 },   // Stoffbespannung
   Monitor:       { color: 0x1b1f25, roughness: 0.25 },
-  Chair:         { color: BRAND,    roughness: 0.9 },   // Polster in Hausfarbe
+  Keyboard:      { color: 0x2b3038, roughness: 0.6 },
+
+  // Buerostuhl: Polster, Schale, Gestell. Anthrazit und Aluminium - die
+  // Hausfarbe bleibt den Waenden, Tassen und Leitstreifen vorbehalten.
+  Chair:         { color: 0x3a3f47, roughness: 0.85 },
+  ChairShell:    { color: 0x1e2228, roughness: 0.5 },
+  ChairFrame:    { color: 0x8b929b, roughness: 0.35, metalness: 0.55 },
   Whiteboard:    { color: 0xffffff, roughness: 0.15 },  // beschreibbar, also glatt
   Cabinet:       { color: 0xb9c1cb, roughness: 0.45, metalness: 0.35 },
   Shelf:         { color: 0x9c7852, roughness: 0.7 },
@@ -45,7 +53,15 @@ const MATERIALS = {
   // Sonderraeume
   CoffeeMachine: { color: 0x3b4149, roughness: 0.35, metalness: 0.5 },
   ServerRack:    { color: 0x2a2f36, roughness: 0.5,  metalness: 0.3 },
-  Plant:         { color: 0x4e9e57, roughness: 1.0 },
+  // Yuccapalme: Uebertopf, Rand, Erde, Stamm und zwei Gruentoene fuer die
+  // Wedel - erst der Unterschied zwischen Krone und Blatt macht sie zur
+  // Pflanze statt zum gruenen Kasten.
+  Plant:         { color: 0xb0aa9e, roughness: 0.85 },  // Sichtbeton-Uebertopf
+  PlantRim:      { color: 0xc9c3b7, roughness: 0.7 },
+  Soil:          { color: 0x3b3027, roughness: 1.0 },
+  Stem:          { color: 0x6b5a3e, roughness: 0.9 },
+  Foliage:       { color: 0x4e9e57, roughness: 1.0 },
+  FoliageDark:   { color: 0x35754a, roughness: 1.0 },
 
   // Dekoration
   LightPanel:    { color: 0xffffff, roughness: 1.0, emissive: 0xfff4d6 },

@@ -14,7 +14,7 @@ pub mod map;
 pub mod message;
 
 pub use config::{GameConfig, WeaponDesc, WeaponId};
-pub use map::{Aabb, Brush, BrushKind, MapDesc, SpawnPoint};
+pub use map::{Aabb, Brush, BrushKind, MapDesc, Solidity, SpawnPoint};
 pub use message::{
     ClientMessage, GameEvent, InputFrame, LocalState, PlayerId, PlayerState, ServerMessage, Team,
     Tracer, buttons,
