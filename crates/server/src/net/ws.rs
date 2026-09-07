@@ -12,13 +12,16 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, State};
+use axum::http::{HeaderValue, header};
 use axum::response::IntoResponse;
 use axum::routing::any;
 use crossbeam_channel::Sender;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMessage, PlayerId, ServerMessage};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tower::ServiceBuilder;
 use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{debug, info, warn};
 
 use super::NetEvent;
@@ -86,7 +89,26 @@ pub fn spawn(
                 let app = Router::new()
                     .route("/ws", any(upgrade))
                     .fallback_service(
-                        ServeDir::new(&client_dir).append_index_html_on_directories(true),
+                        ServiceBuilder::new()
+                            // Ohne diesen Kopfzeileneintrag greift heuristisches
+                            // Caching: der Browser haelt Dateien fuer etwa ein
+                            // Zehntel ihres Alters fuer frisch und fragt in der
+                            // Zeit gar nicht erst nach. Bei einer zwei Tage
+                            // alten Datei sind das Stunden - ein Fehler im
+                            // Client waere dann laengst behoben und die
+                            // Kolleg:innen spielten weiter die alte Fassung.
+                            //
+                            // "no-cache" heisst nicht "nicht speichern", sondern
+                            // "vor dem Benutzen nachfragen". Zusammen mit dem
+                            // ETag, den ServeDir ohnehin setzt, kostet das im
+                            // LAN nur ein 304 ohne Inhalt.
+                            .layer(SetResponseHeaderLayer::overriding(
+                                header::CACHE_CONTROL,
+                                HeaderValue::from_static("no-cache"),
+                            ))
+                            .service(
+                                ServeDir::new(&client_dir).append_index_html_on_directories(true),
+                            ),
                     )
                     .with_state(state);
 

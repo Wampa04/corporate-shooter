@@ -123,8 +123,9 @@ function start(connection, welcome) {
 
   const resumeGame = () => {
     if (!running) return;
-    clearTimeout(retryTimer);
-    retryTimer = null;
+    // Ein laufender Wiederholversuch bleibt bewusst stehen. Ihn hier zu
+    // loeschen hiesse: wer ungeduldig weiterklickt, setzt die Wartezeit
+    // staendig zurueck - und der Versuch kaeme nie zum Zug.
     input.requestLock();
   };
 

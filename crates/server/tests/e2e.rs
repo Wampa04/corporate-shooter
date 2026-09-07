@@ -450,6 +450,30 @@ async fn client_wird_unter_derselben_adresse_ausgeliefert() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn client_dateien_werden_vor_dem_benutzen_revalidiert() {
+    // Regression: ohne `Cache-Control` greift heuristisches Caching. Browser
+    // halten eine Datei dann fuer etwa ein Zehntel ihres Alters fuer frisch
+    // und fragen in der Zeit gar nicht nach - bei einer zwei Tage alten Datei
+    // sind das Stunden. Ein behobener Fehler im Client erreicht die
+    // Kolleg:innen dann schlicht nicht, und das faellt niemandem auf, weil
+    // der Server voellig gesund aussieht.
+    let server = TestServer::start().await;
+
+    for pfad in [
+        "/",
+        "/js/main.js",
+        "/style.css",
+        "/vendor/three.module.min.js",
+    ] {
+        let antwort = reqwest_get(server.port, pfad).await.to_lowercase();
+        assert!(
+            antwort.contains("cache-control: no-cache"),
+            "{pfad} wird ohne Cache-Control ausgeliefert"
+        );
+    }
+}
+
 /// Minimaler HTTP-GET, um keine weitere Abhaengigkeit aufzunehmen.
 async fn reqwest_get(port: u16, path: &str) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
