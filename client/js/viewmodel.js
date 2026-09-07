@@ -5,61 +5,130 @@
 // allein der Server - hier wird nur gezeigt, was er gemeldet hat.
 
 import * as THREE from "../vendor/three.module.min.js";
+import { MAT, grip, part, ribs, sights, triggerGroup } from "./parts.js";
 
 /** Ruhelage vor der Kamera: rechts unten, knapp ausserhalb der Zielachse. */
-const REST = new THREE.Vector3(0.29, -0.29, -0.55);
+const REST = new THREE.Vector3(0.255, -0.235, -0.5);
 
 /** Leichte Drehung nach innen, damit die Waffe zum Fadenkreuz zeigt. */
-const REST_YAW = -0.07;
+const REST_YAW = 0.07;
 
-/** Rueckstoss je Schuss und wie schnell er abklingt (1/s). */
-const RECOIL_PER_SHOT = { Textmarker: 0.035, Locher: 0.12 };
+/** Wie schnell der Rueckstoss abklingt (1/s). */
 const RECOIL_DECAY = 12;
 
 /** Wie weit das Modell beim Nachladen absinkt. */
 const RELOAD_DROP = 0.34;
 
-function box(w, h, d, color) {
-  return new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshLambertMaterial({ color }),
-  );
-}
-
-/** Textmarker-Pistole: ein Marker mit Griff, mehr Prototyp als Waffe. */
+/**
+ * Textmarker-Pistole.
+ *
+ * Ein Textmarker, dem jemand einen Rahmen, einen Griff und ein Visier
+ * verpasst hat. Die Keilspitze sitzt schraeg wie bei einem echten Marker -
+ * das eine gedrehte Teil, das die ganze Silhouette traegt.
+ */
 function buildTextmarker() {
-  const group = new THREE.Group();
-  const barrel = box(0.05, 0.05, 0.3, 0xf2d024);
-  barrel.position.set(0, 0.02, -0.1);
-  group.add(barrel);
-  const tip = box(0.035, 0.035, 0.05, 0xffffff);
-  tip.position.set(0, 0.02, -0.27);
-  group.add(tip);
-  const grip = box(0.05, 0.13, 0.06, 0x2f343b);
-  grip.position.set(0, -0.06, 0.02);
-  group.add(grip);
-  return group;
+  const g = new THREE.Group();
+
+  // --- Markerkoerper ---
+  part(g, { w: 0.058, h: 0.058, d: 0.25, color: MAT.marker, y: 0.026, z: -0.095 });
+  part(g, { w: 0.044, h: 0.044, d: 0.05, color: MAT.marker, y: 0.022, z: -0.232 });
+  // Kappenring, an dem der Marker frueher aufging.
+  part(g, { w: 0.064, h: 0.064, d: 0.016, color: MAT.markerCap, y: 0.026, z: -0.206 });
+  // Werbebanderole in der Hausfarbe. Kein Buerogegenstand ohne.
+  part(g, { w: 0.061, h: 0.061, d: 0.03, color: MAT.brand, y: 0.026, z: -0.135 });
+  // Tintenfenster an der Seite.
+  part(g, { w: 0.011, h: 0.026, d: 0.085, color: MAT.ink, x: 0.028, y: 0.022, z: -0.06 });
+  part(g, { w: 0.011, h: 0.026, d: 0.085, color: MAT.ink, x: -0.028, y: 0.022, z: -0.06 });
+  // Drei Griffrippen am Schaft.
+  ribs(g, { n: 3, from: -0.03, pitch: 0.02, w: 0.056, h: 0.056, d: 0.006,
+            color: MAT.markerCap, y: 0.026 });
+
+  // --- Spitze ---
+  part(g, { w: 0.04, h: 0.04, d: 0.014, color: MAT.steel, y: 0.022, z: -0.258 });
+  part(g, { w: 0.032, h: 0.026, d: 0.055, color: MAT.felt, y: 0.019, z: -0.29, rx: 0.32 });
+
+  // --- Rahmen, Griff, Abzug ---
+  // Der Rahmen bleibt bewusst schmal: die Waffe ist ein Textmarker, dem
+  // jemand einen Griff angeschraubt hat, und nicht umgekehrt.
+  part(g, { w: 0.042, h: 0.036, d: 0.1, color: MAT.polymer, y: -0.012, z: -0.01 });
+  part(g, { w: 0.048, h: 0.01, d: 0.115, color: MAT.gunmetal, y: 0.004, z: -0.02 });
+  // Auswurffenster.
+  part(g, { w: 0.005, h: 0.016, d: 0.04, color: MAT.black, x: 0.023, y: -0.006, z: -0.04 });
+  grip(g, { y: -0.072, z: 0.026, w: 0.044, h: 0.115, d: 0.052 });
+  triggerGroup(g, { y: -0.03, z: -0.012 });
+  // Magazinboden schaut unten aus dem Griff.
+  part(g, { w: 0.048, h: 0.008, d: 0.058, color: MAT.gunmetal, y: -0.134, z: 0.037 });
+
+  sights(g, { y: 0.055, front: -0.185, rear: 0.036 });
+  return g;
 }
 
-/** Locher-Schrotflinte: Buerolocher, auf Lauflaenge gebracht. */
+/**
+ * Locher-Schrotflinte.
+ *
+ * Ein Buerolocher auf Lauflaenge gebracht: die beiden Stanzstempel sind die
+ * Muendungen, der Hebel ist der Spannhebel, und der ausklappbare
+ * Papieranschlag dient als Visierschiene.
+ */
 function buildLocher() {
-  const group = new THREE.Group();
-  const body = box(0.1, 0.09, 0.34, 0x8d939c);
-  body.position.set(0, 0.0, -0.12);
-  group.add(body);
-  const lever = box(0.08, 0.035, 0.26, 0xc4302b);
-  lever.position.set(0, 0.07, -0.14);
-  lever.rotation.x = -0.12;
-  group.add(lever);
-  const grip = box(0.06, 0.14, 0.07, 0x2f343b);
-  grip.position.set(0, -0.09, 0.03);
-  group.add(grip);
-  return group;
+  const g = new THREE.Group();
+
+  // --- Grundplatte und Korpus ---
+  part(g, { w: 0.13, h: 0.02, d: 0.17, color: MAT.steel, y: -0.052, z: -0.07 });
+  part(g, { w: 0.104, h: 0.088, d: 0.3, color: MAT.steel, y: 0.004, z: -0.13 });
+  // Seitliche Blechkanten.
+  part(g, { w: 0.112, h: 0.014, d: 0.28, color: MAT.chrome, y: 0.045, z: -0.13 });
+
+  // --- Doppellauf aus zwei Stanzstempeln ---
+  part(g, { w: 0.08, h: 0.05, d: 0.028, color: MAT.gunmetal, y: 0.0, z: -0.276 });
+  for (const x of [-0.026, 0.026]) {
+    part(g, { w: 0.021, h: 0.021, d: 0.1, color: MAT.gunmetal, x, y: 0.0, z: -0.32 });
+    part(g, { w: 0.025, h: 0.025, d: 0.012, color: MAT.chrome, x, y: 0.0, z: -0.366 });
+    part(g, { w: 0.013, h: 0.013, d: 0.006, color: MAT.black, x, y: 0.0, z: -0.371 });
+  }
+
+  // --- Hebel mit Scharnier und geriffeltem Ende ---
+  part(g, { w: 0.086, h: 0.03, d: 0.25, color: MAT.punchRed, y: 0.076, z: -0.14, rx: -0.1 });
+  part(g, { w: 0.1, h: 0.02, d: 0.02, color: MAT.gunmetal, y: 0.062, z: -0.008 });
+  ribs(g, { n: 3, from: -0.245, pitch: 0.016, w: 0.09, h: 0.012, d: 0.006,
+            color: MAT.punchRed, y: 0.094 });
+  // Feder unter dem Hebel, drei Windungen angedeutet.
+  ribs(g, { n: 3, from: -0.06, pitch: 0.018, w: 0.03, h: 0.012, d: 0.008,
+            color: MAT.chrome, y: 0.056 });
+
+  // --- Konfettifenster und Papieranschlag ---
+  part(g, { w: 0.008, h: 0.036, d: 0.1, color: MAT.black, x: 0.055, y: 0.0, z: -0.1 });
+  part(g, { w: 0.02, h: 0.008, d: 0.15, color: MAT.brand, x: -0.062, y: -0.03, z: -0.12 });
+  ribs(g, { n: 4, from: -0.18, pitch: 0.03, w: 0.024, h: 0.01, d: 0.004,
+            color: MAT.chrome, x: -0.062, y: -0.024 });
+
+  // --- Vorderschaft, Griff, Abzug ---
+  part(g, { w: 0.07, h: 0.05, d: 0.11, color: MAT.polymer, y: -0.058, z: -0.2 });
+  ribs(g, { n: 4, from: -0.24, pitch: 0.026, w: 0.076, h: 0.05, d: 0.008,
+            color: MAT.rubber, y: -0.058 });
+  grip(g, { y: -0.105, z: 0.038, w: 0.058, h: 0.155, d: 0.07 });
+  triggerGroup(g, { y: -0.05, z: -0.01 });
+
+  // --- Zwei Papierpatronen im Halter ---
+  for (const z of [0.0, 0.03]) {
+    part(g, { w: 0.018, h: 0.018, d: 0.026, color: MAT.paper, x: -0.062, y: 0.03, z });
+    part(g, { w: 0.02, h: 0.02, d: 0.01, color: MAT.brass, x: -0.062, y: 0.03, z: z + 0.017 });
+  }
+
+  sights(g, { y: 0.064, front: -0.27, rear: -0.01 });
+  return g;
 }
 
-const BUILDERS = {
-  Textmarker: buildTextmarker,
-  Locher: buildLocher,
+/**
+ * Was der Server als Waffe meldet, und wie sie sich anfuehlt.
+ *
+ * Vorher standen Modell und Rueckstoss in zwei getrennten Tabellen - eine
+ * neue Waffe musste an zwei Stellen eingetragen werden, und wer die zweite
+ * vergass, bekam kommentarlos den Vorgabewert.
+ */
+const WEAPONS = {
+  Textmarker: { build: buildTextmarker, recoil: 0.035 },
+  Locher: { build: buildLocher, recoil: 0.12 },
 };
 
 export class ViewModel {
@@ -67,7 +136,10 @@ export class ViewModel {
   constructor(camera) {
     this.root = new THREE.Group();
     this.root.rotation.y = REST_YAW;
-    this.root.scale.setScalar(0.9);
+    // Etwas kleiner als frueher: die Modelle bestehen jetzt aus zwanzig statt
+    // drei Teilen und sind entsprechend laenger, sonst schoebe sich der Griff
+    // aus dem Bild.
+    this.root.scale.setScalar(0.82);
     camera.add(this.root);
 
     this.current = null;
@@ -88,14 +160,14 @@ export class ViewModel {
         o.material?.dispose();
       });
     }
-    const build = BUILDERS[weaponId];
-    this.current = build ? build() : null;
+    const weapon = WEAPONS[weaponId];
+    this.current = weapon ? weapon.build() : null;
     if (this.current) this.root.add(this.current);
   }
 
   /** Ein eigener Schuss ist bestaetigt worden. */
   kick(weaponId) {
-    this.recoil = Math.min(0.3, this.recoil + (RECOIL_PER_SHOT[weaponId] ?? 0.05));
+    this.recoil = Math.min(0.3, this.recoil + (WEAPONS[weaponId]?.recoil ?? 0.05));
   }
 
   update(dt, reloading) {

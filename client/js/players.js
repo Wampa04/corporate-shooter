@@ -7,6 +7,7 @@
 // statt in die Zukunft raten zu muessen.
 
 import * as THREE from "../vendor/three.module.min.js";
+import { MAT, part } from "./parts.js";
 
 export const TEAM_COLOR = {
   Marketing:   0xe8559b,
@@ -85,35 +86,12 @@ function makeAvatar(state) {
   const color = TEAM_COLOR[state.team] ?? 0xffffff;
   const group = new THREE.Group();
 
-  const torso = new THREE.Mesh(
-    new THREE.BoxGeometry(0.68, 1.2, 0.44),
-    new THREE.MeshLambertMaterial({ color }),
-  );
-  torso.position.y = 1.0;
-  group.add(torso);
-
-  const legs = new THREE.Mesh(
-    new THREE.BoxGeometry(0.56, 0.82, 0.4),
-    new THREE.MeshLambertMaterial({ color: 0x2b3038 }),
-  );
-  legs.position.y = 0.41;
-  group.add(legs);
-
-  const head = new THREE.Mesh(
-    new THREE.BoxGeometry(0.34, 0.34, 0.34),
-    new THREE.MeshLambertMaterial({ color: 0xd9b48f }),
-  );
-  head.position.y = 1.79;
-  group.add(head);
-
+  part(group, { w: 0.68, h: 1.2, d: 0.44, color, y: 1.0 });
+  part(group, { w: 0.56, h: 0.82, d: 0.4, color: 0x2b3038, y: 0.41 });
+  part(group, { w: 0.34, h: 0.34, d: 0.34, color: MAT.skin, y: 1.79 });
   // Kleiner Vorsprung nach vorn: sonst ist auf Distanz nicht zu erkennen,
   // wohin jemand schaut.
-  const visor = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, 0.1, 0.06),
-    new THREE.MeshLambertMaterial({ color: 0x14171c }),
-  );
-  visor.position.set(0, 1.82, -0.19);
-  group.add(visor);
+  part(group, { w: 0.3, h: 0.1, d: 0.06, color: MAT.black, y: 1.82, z: -0.19 });
 
   group.add(makeNameTag(state.name, color));
   return group;
