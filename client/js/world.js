@@ -184,7 +184,7 @@ export function buildScene(map, { shadows = true } = {}) {
   // Der Dunst setzt erst jenseits der Raumdiagonale spuerbar ein. Naeher
   // gesetzt wuerde er die gegenueberliegende Bueroseite ausbleichen, und
   // gerade dort steht, worauf man schiesst.
-  scene.fog = new THREE.Fog(0xaeb7c2, 48, 115);
+  scene.fog = new THREE.Fog(0xaeb7c2, 58, 130);
 
   // Buerobeleuchtung ist flach, hell und gnadenlos. Das Umgebungslicht ist
   // dabei unverzichtbar: ohne es faellt jede nach unten zeigende Flaeche -
@@ -198,14 +198,25 @@ export function buildScene(map, { shadows = true } = {}) {
   scene.add(new THREE.HemisphereLight(0xf4f8ff, 0x8d959f, shadows ? 1.0 : 1.2));
 
   const key = new THREE.DirectionalLight(0xffffff, shadows ? 1.5 : 0.85);
-  key.position.set(7, 26, 5);
+  // Licht und Ziel wandern mit der Mitte des Grundrisses. Der Anbau im Osten
+  // reicht bis x = 29; bliebe das Ziel im Ursprung, fiele er aus der
+  // Schattenkamera und waere als einziger Raum schattenlos.
+  const mitteX = middle(map.bounds, 0);
+  const mitteZ = middle(map.bounds, 2);
+  key.position.set(mitteX + 7, 26, mitteZ + 5);
+  key.target.position.set(mitteX, 0, mitteZ);
+  scene.add(key.target);
   key.castShadow = shadows;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.bias = -0.0015;
   // Die Schattenkamera muss das ganze Stockwerk fassen, aber nicht mehr:
   // je enger sie sitzt, desto schaerfer wird der Schatten bei gleicher
   // Texturgroesse.
-  const reach = 26;
+  // Halbe Ausdehnung des Grundrisses plus etwas Luft - so wächst die
+  // Schattenkamera mit der Karte, statt bei der nächsten Erweiterung wieder
+  // zu klein zu sein.
+  const reach =
+    Math.max(size(map.bounds, 0), size(map.bounds, 2)) * 0.5 + 6;
   Object.assign(key.shadow.camera, {
     left: -reach,
     right: reach,

@@ -957,3 +957,96 @@ fn spawnpunkte_stecken_nicht_in_der_geometrie() {
         }
     }
 }
+
+#[test]
+fn ostfluegel_ist_begehbar() {
+    // Der Anbau hängt an einer einzigen, sieben Meter breiten Öffnung in der
+    // alten Aussenwand. Ist die zu, ist ein Viertel der Karte tot.
+    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(17.0, 0.0, -2.5),
+        0.0,
+    );
+    set_input(
+        &mut app,
+        p,
+        InputFrame {
+            move_x: 1.0,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 60);
+    let pos = body(&app, p).pos;
+    assert!(
+        pos.x > 21.5,
+        "Durchgang zum Ostflügel ist versperrt: x = {:.1}",
+        pos.x
+    );
+}
+
+#[test]
+fn milchglasband_haelt_den_schuss_auf() {
+    // Das Band auf Brusthöhe ist Glas, keine Deko. Wäre es dekorativ, hätte
+    // jede verglaste Wand einen kugeldurchlässigen Schlitz auf genau der Höhe,
+    // auf die man zielt.
+    let map = crate::maps::grossraumbuero();
+    let level = Level::new(map);
+
+    // Waagerechter Strahl auf Brusthöhe quer durch die Trennwand des
+    // nördlichen Einzelbüros.
+    let von = Vec3::new(21.5, 1.2, 4.0);
+    let treffer = level
+        .opaque
+        .iter()
+        .filter_map(|a| a.ray_intersection(von, Vec3::X, 8.0))
+        .fold(f32::INFINITY, f32::min);
+
+    assert!(
+        treffer.is_finite() && treffer < 2.0,
+        "Schuss auf Brusthöhe geht durch die Glaswand hindurch: {treffer}"
+    );
+}
+
+#[test]
+fn fluegeltreppe_fuehrt_auf_die_chef_etage() {
+    // Die Treppe im Anbau ist der zweite Ausgang. Endete sie vor einer Wand,
+    // wäre der ganze Flügel eine Sackgasse - und genau das war sie, bis der
+    // Durchgang auf Podesthöhe dazukam.
+    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(21.3, 0.0, 4.6),
+        0.0,
+    );
+    // Erst nach Süden die Treppe hinauf, dann nach Westen auf das Podest.
+    set_input(
+        &mut app,
+        p,
+        InputFrame {
+            move_z: -1.0,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 45);
+    set_input(
+        &mut app,
+        p,
+        InputFrame {
+            move_x: -1.0,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 60);
+
+    let b = body(&app, p);
+    assert!(
+        b.pos.x < 19.0 && b.pos.y > 1.0,
+        "Flügeltreppe führt nicht auf die Chef-Etage: {:?}",
+        b.pos
+    );
+}

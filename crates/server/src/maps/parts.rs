@@ -434,3 +434,97 @@ pub fn desk_island(b: &mut Build) {
     // Schmaler Streifen in der Hausfarbe auf der Oberkante des Sichtschutzes.
     accent_panel(b, 0.0, 0.0, 4.4, true, 1.45, 1.53);
 }
+
+// ---------------------------------------------------------------------------
+// Verglaste Trennwand
+// ---------------------------------------------------------------------------
+
+/// Unterkante des Milchglasbands über dem lokalen Fussboden.
+pub const BAND_LOW: f32 = 0.90;
+/// Oberkante des Milchglasbands.
+pub const BAND_HIGH: f32 = 1.50;
+
+/// Lichte Höhe einer Tür in der Glaswand.
+const DOOR_HEIGHT: f32 = 2.10;
+/// Lichte Breite einer Tür.
+pub const DOOR_WIDTH: f32 = 1.10;
+
+/// Ein Stück Glaswand von `x0` bis `x1`, in voller Höhe.
+fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
+    let (t, band) = (0.05f32, 0.075f32);
+    // Bodenschiene.
+    if y0 <= 0.0 {
+        b.cuboid(BrushKind::Trim, x0, -t, x1, t, 0.0, 0.10);
+    }
+    let unten = y0.max(0.10);
+
+    if unten < BAND_LOW {
+        b.cuboid(BrushKind::Glass, x0, -t, x1, t, unten, BAND_LOW);
+    }
+    if y1 > BAND_LOW {
+        // Das Milchglasband: verdeckt den Rumpf, lässt Kopf und Beine frei.
+        // Die Höhen kommen aus der Spielerfigur, nicht aus dem Gefühl - Beine
+        // bis 0.82, Rumpf bis 1.60, Augen auf 1.62.
+        b.cuboid(
+            BrushKind::FrostedGlass,
+            x0,
+            -t,
+            x1,
+            t,
+            BAND_LOW,
+            BAND_HIGH.min(y1),
+        );
+        // Zwei schmale Streifen in der Hausfarbe fassen das Band ein.
+        for y in [BAND_LOW, BAND_HIGH.min(y1)] {
+            b.cuboid(BrushKind::AccentPanel, x0, -band, x1, band, y - 0.01, y + 0.01);
+        }
+    }
+    if y1 > BAND_HIGH {
+        b.cuboid(BrushKind::Glass, x0, -t, x1, t, BAND_HIGH, y1 - 0.10);
+        // Kopfschiene.
+        b.cuboid(BrushKind::Trim, x0, -t, x1, t, y1 - 0.10, y1);
+    }
+
+    // Pfosten alle 1.6 m, damit die Scheibe Struktur bekommt.
+    let mut x = x0 + 1.6;
+    while x < x1 - 0.3 {
+        b.cuboid(BrushKind::Trim, x - 0.03, -band, x + 0.03, band, y0, y1);
+        x += 1.6;
+    }
+}
+
+/// Verglaste Trennwand mit Milchglasband, in lokaler +X-Richtung von 0 bis
+/// `length`.
+///
+/// `door` gibt an, wo die Türöffnung beginnt. Verglast statt gemauert, weil
+/// man sehen soll, dass jemand im Raum ist - das Band verdeckt nur, was er
+/// gerade tut.
+pub fn glass_wall(b: &mut Build, length: f32, door: Option<f32>) {
+    match door {
+        None => glass_bay(b, 0.0, length, 0.0, CEILING),
+        Some(d) => {
+            let d = d.clamp(0.0, length - DOOR_WIDTH);
+            if d > 0.05 {
+                glass_bay(b, 0.0, d, 0.0, CEILING);
+            }
+            if d + DOOR_WIDTH < length - 0.05 {
+                glass_bay(b, d + DOOR_WIDTH, length, 0.0, CEILING);
+            }
+            // Oberlicht über der Tür.
+            glass_bay(b, d, d + DOOR_WIDTH, DOOR_HEIGHT, CEILING);
+            // Zarge.
+            for x in [d, d + DOOR_WIDTH] {
+                b.cuboid(BrushKind::Trim, x - 0.05, -0.08, x + 0.05, 0.08, 0.0, DOOR_HEIGHT);
+            }
+            b.cuboid(
+                BrushKind::Trim,
+                d - 0.05,
+                -0.08,
+                d + DOOR_WIDTH + 0.05,
+                0.08,
+                DOOR_HEIGHT - 0.08,
+                DOOR_HEIGHT,
+            );
+        }
+    }
+}

@@ -26,6 +26,39 @@ const WALL_THICKNESS: f32 = 0.4;
 /// Höhe der Chef-Etage über dem Bürogeschoss.
 const EXECUTIVE_FLOOR: f32 = 1.2;
 
+// --- Ostflügel -------------------------------------------------------------
+// Der Anbau wächst nach Osten, nicht nach Westen: an der Westwand hängt der
+// Regressionstest zum Loslösen von der Aussenwand, und der prüft das
+// Zusammenspiel von Wand und Spielfeldgrenze. Läge die Grenze plötzlich neun
+// Meter weiter westlich, liefe er zwar weiter durch, prüfte aber nicht mehr,
+// wofür er geschrieben wurde.
+
+/// Aussenwand des Anbaus.
+const WING_EAST: f32 = 29.0;
+const WING_SOUTH: f32 = -8.4;
+const WING_NORTH: f32 = 8.6;
+
+/// Ostkante des Flurs; dahinter liegen die drei Räume.
+const CORRIDOR_EAST: f32 = 22.6;
+
+/// Raumgrenzen im Anbau, von Süden nach Norden:
+/// Besprechungsraum, Einzelbüro A, Einzelbüro B.
+const OFFICE_A_Z0: f32 = -2.2;
+const OFFICE_B_Z0: f32 = 2.0;
+const OFFICE_B_Z1: f32 = 6.2;
+
+/// Die Öffnung in der alten Ostwand. Bewusst sieben Meter breit statt eine
+/// Tür: ein enger Durchgang machte aus dem Anbau eine Sackgasse, in der man
+/// nur stirbt.
+const OPENING_Z0: f32 = -6.0;
+const OPENING_Z1: f32 = 1.0;
+
+/// Die zweite, kleinere Öffnung: oben an der Treppe im Flügel, auf Höhe der
+/// Chef-Etage. Ohne sie wäre der Anbau eine Sackgasse mit einem einzigen
+/// Ausgang - und die Treppe endete vor einer Wand.
+const STAIR_DOOR_Z0: f32 = 5.8;
+const STAIR_DOOR_Z1: f32 = 8.6;
+
 /// Baut das Großraumbüro samt Kaffeeküche, Serverraum und Chef-Etage.
 pub fn grossraumbuero() -> MapDesc {
     let mut b = Build::new();
@@ -35,6 +68,7 @@ pub fn grossraumbuero() -> MapDesc {
     rooms::kitchen(&mut b);
     rooms::server_room(&mut b);
     rooms::executive_floor(&mut b);
+    rooms::east_wing(&mut b);
     rooms::shell_skirting(&mut b);
     rooms::services(&mut b);
 
@@ -93,13 +127,25 @@ pub fn grossraumbuero() -> MapDesc {
             pos: Vec3::new(15.0, EXECUTIVE_FLOOR, 13.0),
             yaw: 3.6,
         },
+        // Im Anbau nur im Flur, und dort auf Höhe des Durchgangs. In den drei
+        // verglasten Räumen steht bewusst keiner: wer in einem Raum mit einer
+        // einzigen Tür erscheint, hat schon verloren - und der Rest der Karte
+        // sieht durch die Scheibe zu.
+        SpawnPoint {
+            pos: Vec3::new(21.3, 0.0, -4.2),
+            yaw: 1.6,
+        },
+        SpawnPoint {
+            pos: Vec3::new(21.3, 0.0, 4.6),
+            yaw: -1.6,
+        },
     ];
 
     MapDesc {
         name: "Großraumbüro, 3. OG".to_string(),
         bounds: Aabb::new(
             Vec3::new(-HALF_X, 0.0, -HALF_Z),
-            Vec3::new(HALF_X, CEILING, HALF_Z),
+            Vec3::new(WING_EAST, CEILING, HALF_Z),
         ),
         brushes: b.finish(),
         spawns,
