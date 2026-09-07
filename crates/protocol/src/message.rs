@@ -78,10 +78,14 @@ impl InputFrame {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "t", content = "d")]
 pub enum ClientMessage {
-    Join { name: String },
+    Join {
+        name: String,
+    },
     Input(InputFrame),
     /// Zeitstempel des Clients, wird unverändert zurückgeschickt (RTT-Messung).
-    Ping { client_time_ms: f64 },
+    Ping {
+        client_time_ms: f64,
+    },
 }
 
 /// Für alle sichtbarer Zustand eines Spielers.

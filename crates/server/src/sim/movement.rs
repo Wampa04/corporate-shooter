@@ -14,9 +14,13 @@ use super::{Body, Config, Inputs, Level, Skills, Vitals};
 /// exakt senkrecht wird und die Yaw-Komponente verschwindet.
 const MAX_PITCH: f32 = 1.55;
 
-/// Höchste Strecke pro Kollisionsteilschritt. Kleiner als die dünnste
-/// Levelbox (Whiteboard, 0.14 m), damit nichts durchtunnelt.
-const MAX_SUBSTEP: f32 = 0.12;
+/// Höchste Strecke pro Kollisionsteilschritt.
+///
+/// Muss kleiner sein als die *halbe* Dicke der dünnsten Levelbox (Trennwand,
+/// 0.12 m). Nur dann liegt ein eindringender Spieler garantiert näher an der
+/// Seite, durch die er eingedrungen ist - worauf sich die Auflösung unten
+/// verlässt.
+const MAX_SUBSTEP: f32 = 0.05;
 
 /// Stufenhöhe, die im Gehen genommen wird, ohne springen zu müssen.
 /// Muss über der Stufenhöhe der Treppe zur Chef-Etage liegen.
@@ -121,27 +125,48 @@ fn slide(center: Vec3, half: Vec3, delta: Vec3, solid: &[Aabb], bounds: &Aabb) -
                     min: out.center - half,
                     max: out.center + half,
                 };
-                if !me.intersects(brush) {
+                // Bewusst der strenge Test: ein Spieler, der eine Box nur
+                // berührt, steckt nicht in ihr fest und darf nicht
+                // herausgeschoben werden.
+                if !me.overlaps_strictly(brush) {
                     continue;
                 }
-                if d > 0.0 {
-                    out.center[axis] = brush.min[axis] - half[axis] - SKIN;
+
+                // Zur nächstgelegenen Seite herausschieben - nicht zu der, die
+                // die Bewegungsrichtung nahelegt.
+                //
+                // Wer an einer Wand steht, berührt sie, und die Berührung gilt
+                // als Überlappung. Ginge die Auflösung nach der Richtung, würde
+                // ein Schritt *von* der Wand weg so behandelt, als sei man von
+                // der anderen Seite hineingelaufen - und man landete hinter der
+                // Wand. An den Außenwänden zieht die Spielfeldgrenze sofort
+                // zurück, und man klebt fest.
+                //
+                // Weil pro Teilschritt höchstens MAX_SUBSTEP eingedrungen wird,
+                // ist die nächstgelegene Seite immer die Eintrittsseite.
+                let to_positive = brush.max[axis] + half[axis] + SKIN - out.center[axis];
+                let to_negative = brush.min[axis] - half[axis] - SKIN - out.center[axis];
+
+                if to_positive.abs() <= to_negative.abs() {
+                    out.center[axis] += to_positive;
                     if axis == 1 {
-                        out.hit_ceiling = true;
+                        // Auf der Oberseite abgesetzt: das ist Bodenkontakt.
+                        out.on_ground = true;
                     }
                 } else {
-                    out.center[axis] = brush.max[axis] + half[axis] + SKIN;
+                    out.center[axis] += to_negative;
                     if axis == 1 {
-                        out.on_ground = true;
+                        out.hit_ceiling = true;
                     }
                 }
             }
         }
 
         // Spielfeldgrenzen als harter Rahmen, unabhängig von der Geometrie.
-        out.center = out
-            .center
-            .clamp(bounds.min + half, (bounds.max - half).max(bounds.min + half));
+        out.center = out.center.clamp(
+            bounds.min + half,
+            (bounds.max - half).max(bounds.min + half),
+        );
         if out.center.y <= bounds.min.y + half.y + SKIN {
             out.on_ground = true;
         }

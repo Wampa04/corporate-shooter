@@ -1,0 +1,332 @@
+/* Corporate Shooter - Oberfläche.
+   Bewusst im Look einer Unternehmenspräsentation: viel Grau, ein
+   Akzentblau, und Beschriftungen, die so tun, als sei das hier Arbeit. */
+
+:root {
+  --bg: #14171c;
+  --panel: #1e232b;
+  --line: #2f3742;
+  --text: #e6e9ee;
+  --muted: #97a0ad;
+  --accent: #3d8bfd;
+  --marketing: #e8559b;
+  --engineering: #29c1b8;
+  --danger: #e8503a;
+  --ok: #5fce6a;
+  --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  user-select: none;
+}
+
+#viewport { display: block; width: 100vw; height: 100vh; }
+
+.hidden { display: none !important; }
+
+/* --- Überlagerungen ----------------------------------------------------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 12, 16, 0.82);
+  backdrop-filter: blur(3px);
+  z-index: 20;
+}
+
+.panel {
+  width: min(520px, 92vw);
+  padding: 28px 32px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.panel.compact { width: min(380px, 90vw); text-align: center; }
+
+.panel h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.4px; }
+.panel h2 { margin: 0 0 8px; font-size: 20px; }
+.subtitle { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+input {
+  width: 100%;
+  padding: 11px 13px;
+  font: inherit;
+  color: var(--text);
+  background: #161a21;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 16px;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover { filter: brightness(1.1); }
+button:disabled { background: var(--line); color: var(--muted); cursor: progress; }
+
+.status { min-height: 18px; margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+.status.error { color: var(--danger); }
+
+.controls {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  margin: 24px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.controls dt { color: var(--accent); font-weight: 600; }
+.controls dd { margin: 0; color: var(--muted); }
+
+/* --- HUD ---------------------------------------------------------------- */
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  /* Das Buero ist hell: weisse Schrift auf einem Whiteboard waere unlesbar.
+     Der Schatten haelt jede HUD-Beschriftung auf jedem Untergrund lesbar. */
+  text-shadow: 0 1px 2px rgba(8, 10, 14, 0.95), 0 0 8px rgba(8, 10, 14, 0.65);
+}
+
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+}
+
+#crosshair span {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+}
+
+#crosshair span:nth-child(1) { left: 10px; top: 0;    width: 2px; height: 7px; }
+#crosshair span:nth-child(2) { left: 10px; bottom: 0; width: 2px; height: 7px; }
+#crosshair span:nth-child(3) { top: 10px; left: 0;    height: 2px; width: 7px; }
+#crosshair span:nth-child(4) { top: 10px; right: 0;   height: 2px; width: 7px; }
+
+/* Trefferbestätigung: kurzes Aufblitzen um das Fadenkreuz. */
+#hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 2px solid var(--danger);
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+#hitmarker.on {
+  animation: hitmark 220ms ease-out;
+}
+
+@keyframes hitmark {
+  0%   { opacity: 1; transform: scale(0.5); }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+
+/* Eigener Schaden: roter Rand, kein Vollbild-Rot. */
+#damage-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  box-shadow: inset 0 0 140px 30px rgba(232, 80, 58, 0.85);
+  transition: opacity 380ms ease-out;
+}
+
+#damage-flash.on { opacity: 1; transition: opacity 40ms; }
+
+/* Halbtransparente Unterlage, damit die Anzeigen auch vor einem Whiteboard
+   oder der hellen Rasterdecke stehen bleiben. */
+#hud-bottom-left,
+#hud-bottom-right,
+#netstat {
+  padding: 10px 14px;
+  background: rgba(14, 17, 22, 0.55);
+  border-radius: 8px;
+}
+
+#hud-bottom-left  { position: absolute; left: 22px;  bottom: 22px; }
+#hud-bottom-right { position: absolute; right: 22px; bottom: 22px; text-align: right; }
+
+.health { display: flex; align-items: center; gap: 12px; }
+
+.health-bar {
+  width: 220px;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#health-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--ok);
+  transition: width 120ms linear, background-color 200ms;
+}
+
+#health-value {
+  min-width: 44px;
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#skills { display: flex; gap: 10px; margin-top: 12px; }
+
+.skill {
+  position: relative;
+  min-width: 128px;
+  padding: 7px 10px;
+  background: rgba(20, 23, 28, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.skill b { display: block; font-size: 11px; color: var(--accent); }
+.skill span { font-size: 13px; color: var(--text); }
+
+/* Cooldown läuft als Abdeckung von links nach rechts ab. */
+.skill i {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 12, 16, 0.78);
+  transform-origin: left;
+  transform: scaleX(0);
+}
+
+.skill.ready { border-color: var(--accent); }
+
+#weapon-name { font-size: 14px; color: #c3ccd8; }
+
+#ammo { font-size: 30px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+#ammo b { font-weight: 700; }
+#ammo.empty b { color: var(--danger); }
+#ammo span { font-size: 18px; color: #aab4c1; }
+
+#reloading { font-size: 13px; color: var(--accent); }
+
+#killfeed {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.kill-entry {
+  padding: 4px 9px;
+  background: rgba(20, 23, 28, 0.78);
+  border-left: 3px solid var(--line);
+  border-radius: 3px;
+  white-space: nowrap;
+  animation: slidein 160ms ease-out;
+}
+
+@keyframes slidein { from { opacity: 0; transform: translateX(14px); } }
+
+.kill-entry .marketing   { color: var(--marketing); font-weight: 600; }
+.kill-entry .engineering { color: var(--engineering); font-weight: 600; }
+.kill-entry .verb        { color: var(--muted); }
+
+#respawn {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  padding: 18px 32px;
+  background: rgba(20, 23, 28, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+#respawn h2 { color: var(--danger); }
+#respawn p { margin: 0; color: var(--muted); }
+#respawn b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+#scoreboard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 520px;
+  padding: 22px 26px;
+  background: rgba(20, 23, 28, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+#scoreboard table { width: 100%; border-collapse: collapse; font-size: 14px; }
+#scoreboard th {
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+#scoreboard td { padding: 6px 10px; border-bottom: 1px solid rgba(47, 55, 66, 0.5); }
+#scoreboard tr.self td { background: rgba(61, 139, 253, 0.12); }
+#scoreboard td.num { text-align: right; font-variant-numeric: tabular-nums; }
+#scoreboard td.marketing   { color: var(--marketing); }
+#scoreboard td.engineering { color: var(--engineering); }
+
+#netstat {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

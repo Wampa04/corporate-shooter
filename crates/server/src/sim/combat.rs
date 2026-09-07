@@ -10,7 +10,8 @@ use protocol::{Aabb, GameEvent, PlayerId, Team, Tracer, Vec3, WeaponDesc, Weapon
 
 use super::movement::{look_direction, player_aabb, player_half_extents};
 use super::{
-    Body, Config, DamageEvent, EventLog, Inputs, Level, Loadout, PendingDamage, Player, Rand, Vitals,
+    Body, Config, DamageEvent, EventLog, Inputs, Level, Loadout, PendingDamage, Player, Rand,
+    Vitals,
 };
 use crate::rng::Rng;
 
@@ -132,14 +133,13 @@ pub fn fire_weapons(
     for (shooter_entity, player, body, vitals, inputs, mut loadout) in &mut shooters {
         // Waffenwechsel: nur zwischen Schüssen, und er bricht das Nachladen ab.
         let slot = inputs.current.weapon_slot;
-        if slot != 0 {
-            if let Some(index) = config.weapons.iter().position(|w| w.slot == slot) {
-                if index != loadout.index {
-                    loadout.index = index;
-                    loadout.reload_timer = 0.0;
-                    loadout.fire_timer = loadout.fire_timer.max(WEAPON_SWITCH_DELAY);
-                }
-            }
+        if slot != 0
+            && let Some(index) = config.weapons.iter().position(|w| w.slot == slot)
+            && index != loadout.index
+        {
+            loadout.index = index;
+            loadout.reload_timer = 0.0;
+            loadout.fire_timer = loadout.fire_timer.max(WEAPON_SWITCH_DELAY);
         }
 
         loadout.fire_timer = (loadout.fire_timer - dt).max(0.0);

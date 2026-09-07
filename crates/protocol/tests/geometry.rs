@@ -27,7 +27,10 @@ fn zu_kurze_reichweite_trifft_nicht() {
 
 #[test]
 fn schuss_nach_hinten_trifft_nicht() {
-    assert_eq!(wuerfel().ray_intersection(Vec3::ZERO, -Vec3::Z, 100.0), None);
+    assert_eq!(
+        wuerfel().ray_intersection(Vec3::ZERO, -Vec3::Z, 100.0),
+        None
+    );
 }
 
 #[test]
@@ -44,6 +47,25 @@ fn strahl_aus_dem_inneren_trifft_sofort() {
         wuerfel().ray_intersection(Vec3::new(0.0, 0.0, 10.0), Vec3::Z, 100.0),
         Some(0.0)
     );
+}
+
+#[test]
+fn beruehrende_boxen_ueberlappen_nicht_im_strengen_sinn() {
+    // Der Unterschied traegt die gesamte Kollisionsaufloesung: wer an einer
+    // Wand steht, beruehrt sie, steckt aber nicht in ihr.
+    let a = Aabb::new(Vec3::ZERO, Vec3::ONE);
+    let beruehrend = Aabb::new(Vec3::new(1.0, 0.0, 0.0), Vec3::new(2.0, 1.0, 1.0));
+    assert!(a.intersects(&beruehrend));
+    assert!(!a.overlaps_strictly(&beruehrend));
+
+    let ueberlappend = Aabb::new(Vec3::new(0.9, 0.0, 0.0), Vec3::new(2.0, 1.0, 1.0));
+    assert!(a.overlaps_strictly(&ueberlappend));
+
+    // Auch eine Beruehrung auf nur einer Achse genuegt, um die strenge
+    // Ueberlappung auszuschliessen.
+    let nur_y_beruehrend = Aabb::new(Vec3::new(0.5, 1.0, 0.5), Vec3::new(1.5, 2.0, 1.5));
+    assert!(nur_y_beruehrend.intersects(&a));
+    assert!(!nur_y_beruehrend.overlaps_strictly(&a));
 }
 
 #[test]

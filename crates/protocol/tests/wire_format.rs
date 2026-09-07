@@ -38,11 +38,8 @@ fn input_frame_rundreise() {
 
 #[test]
 fn aabb_hat_min_und_max_als_arrays() {
-    let json = serde_json::to_value(Aabb::from_center_size(
-        Vec3::ZERO,
-        Vec3::new(2.0, 4.0, 6.0),
-    ))
-    .unwrap();
+    let json =
+        serde_json::to_value(Aabb::from_center_size(Vec3::ZERO, Vec3::new(2.0, 4.0, 6.0))).unwrap();
     assert_eq!(json["min"], serde_json::json!([-1.0, -2.0, -3.0]));
     assert_eq!(json["max"], serde_json::json!([1.0, 2.0, 3.0]));
 }

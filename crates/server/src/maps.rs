@@ -95,15 +95,7 @@ fn stairs(out: &mut Vec<Brush>, x0: f32, x1: f32, z_start: f32, depth: f32, y1: 
     for i in 0..steps {
         let top = y1 * (i + 1) as f32 / steps as f32;
         let z = z_start + step_depth * i as f32;
-        out.push(slab(
-            BrushKind::Floor,
-            x0,
-            z,
-            x1,
-            z + step_depth,
-            0.0,
-            top,
-        ));
+        out.push(slab(BrushKind::Floor, x0, z, x1, z + step_depth, 0.0, top));
     }
 }
 
@@ -131,10 +123,42 @@ pub fn grossraumbuero() -> MapDesc {
         CEILING + 0.3,
     ));
     let t = WALL_THICKNESS;
-    b.push(slab(BrushKind::Wall, -HALF_X - t, -HALF_Z - t, -HALF_X, HALF_Z + t, 0.0, CEILING));
-    b.push(slab(BrushKind::Wall, HALF_X, -HALF_Z - t, HALF_X + t, HALF_Z + t, 0.0, CEILING));
-    b.push(slab(BrushKind::Wall, -HALF_X - t, -HALF_Z - t, HALF_X + t, -HALF_Z, 0.0, CEILING));
-    b.push(slab(BrushKind::Wall, -HALF_X - t, HALF_Z, HALF_X + t, HALF_Z + t, 0.0, CEILING));
+    b.push(slab(
+        BrushKind::Wall,
+        -HALF_X - t,
+        -HALF_Z - t,
+        -HALF_X,
+        HALF_Z + t,
+        0.0,
+        CEILING,
+    ));
+    b.push(slab(
+        BrushKind::Wall,
+        HALF_X,
+        -HALF_Z - t,
+        HALF_X + t,
+        HALF_Z + t,
+        0.0,
+        CEILING,
+    ));
+    b.push(slab(
+        BrushKind::Wall,
+        -HALF_X - t,
+        -HALF_Z - t,
+        HALF_X + t,
+        -HALF_Z,
+        0.0,
+        CEILING,
+    ));
+    b.push(slab(
+        BrushKind::Wall,
+        -HALF_X - t,
+        HALF_Z,
+        HALF_X + t,
+        HALF_Z + t,
+        0.0,
+        CEILING,
+    ));
 
     // --- Großraumbüro: sechs Tischinseln -----------------------------------
     for (ix, cx) in [-10.0f32, -4.0, 2.0].iter().enumerate() {
@@ -152,19 +176,43 @@ pub fn grossraumbuero() -> MapDesc {
 
     // Drucker als niedrige Deckung an den Gangkreuzungen.
     for (x, z) in [(-7.0, 4.0), (5.0, -4.5), (-16.0, 2.0)] {
-        b.push(slab(BrushKind::Printer, x - 0.5, z - 0.4, x + 0.5, z + 0.4, 0.0, 1.1));
+        b.push(slab(
+            BrushKind::Printer,
+            x - 0.5,
+            z - 0.4,
+            x + 0.5,
+            z + 0.4,
+            0.0,
+            1.1,
+        ));
     }
 
     // Yuccapalmen. Stehen im Weg, halten aber keine Kugel auf.
     for (x, z) in [(-17.5, -12.0), (11.0, 3.0), (-3.0, -13.5), (17.0, 11.0)] {
-        b.push(slab(BrushKind::Plant, x - 0.45, z - 0.45, x + 0.45, z + 0.45, 0.0, 1.9));
+        b.push(slab(
+            BrushKind::Plant,
+            x - 0.45,
+            z - 0.45,
+            x + 0.45,
+            z + 0.45,
+            0.0,
+            1.9,
+        ));
     }
 
     // --- Kaffeeküche (Westecke) -------------------------------------------
     // Halbhohe Theke als L, dahinter der Vollautomat.
     b.push(slab(BrushKind::Shelf, -19.6, 7.4, -12.0, 8.0, 0.0, 1.05));
     b.push(slab(BrushKind::Shelf, -12.6, 8.0, -12.0, 14.6, 0.0, 1.05));
-    b.push(slab(BrushKind::CoffeeMachine, -19.0, 12.6, -17.4, 14.2, 0.0, 1.8));
+    b.push(slab(
+        BrushKind::CoffeeMachine,
+        -19.0,
+        12.6,
+        -17.4,
+        14.2,
+        0.0,
+        1.8,
+    ));
     b.push(slab(BrushKind::Shelf, -16.6, 13.4, -13.6, 14.6, 0.0, 0.9));
     // Durchgang in der Theke, damit die Küche nicht zur Sackgasse wird.
     whiteboard(&mut b, -15.0, 10.5, 2.2, true);
@@ -172,16 +220,40 @@ pub fn grossraumbuero() -> MapDesc {
     // --- Serverraum (Südostecke, verglast) ---------------------------------
     // Glas blockiert Schüsse und Wege, aber nicht die Sicht: man sieht genau,
     // wer einen gleich erledigt.
-    b.push(slab(BrushKind::Glass, 12.0, -14.6, 12.3, -8.0, 0.0, CEILING));
+    b.push(slab(
+        BrushKind::Glass,
+        12.0,
+        -14.6,
+        12.3,
+        -8.0,
+        0.0,
+        CEILING,
+    ));
     b.push(slab(BrushKind::Glass, 12.3, -8.3, 16.5, -8.0, 0.0, CEILING));
     b.push(slab(BrushKind::Glass, 18.5, -8.3, 19.6, -8.0, 0.0, CEILING));
     for x in [13.4f32, 15.4, 17.4] {
-        b.push(slab(BrushKind::ServerRack, x - 0.5, -13.6, x + 0.5, -10.0, 0.0, 2.1));
+        b.push(slab(
+            BrushKind::ServerRack,
+            x - 0.5,
+            -13.6,
+            x + 0.5,
+            -10.0,
+            0.0,
+            2.1,
+        ));
     }
 
     // --- Chef-Etage (Nordostecke, erhöht) ----------------------------------
     // Endgame-Zone: Podest mit Panoramablick und genau zwei Aufgängen.
-    b.push(slab(BrushKind::Floor, 8.0, 5.0, HALF_X, HALF_Z, 0.0, EXECUTIVE_FLOOR));
+    b.push(slab(
+        BrushKind::Floor,
+        8.0,
+        5.0,
+        HALF_X,
+        HALF_Z,
+        0.0,
+        EXECUTIVE_FLOOR,
+    ));
     stairs(&mut b, 8.6, 11.0, 2.2, 2.8, EXECUTIVE_FLOOR, 4);
     b.push(slab(
         BrushKind::Floor,
@@ -193,8 +265,24 @@ pub fn grossraumbuero() -> MapDesc {
         EXECUTIVE_FLOOR * 0.5,
     ));
     // Brüstung mit Lücke an den Aufgängen.
-    b.push(slab(BrushKind::Glass, 8.0, 5.0, 8.3, 15.0, EXECUTIVE_FLOOR, EXECUTIVE_FLOOR + 1.1));
-    b.push(slab(BrushKind::Glass, 11.2, 5.0, 17.2, 5.3, EXECUTIVE_FLOOR, EXECUTIVE_FLOOR + 1.1));
+    b.push(slab(
+        BrushKind::Glass,
+        8.0,
+        5.0,
+        8.3,
+        15.0,
+        EXECUTIVE_FLOOR,
+        EXECUTIVE_FLOOR + 1.1,
+    ));
+    b.push(slab(
+        BrushKind::Glass,
+        11.2,
+        5.0,
+        17.2,
+        5.3,
+        EXECUTIVE_FLOOR,
+        EXECUTIVE_FLOOR + 1.1,
+    ));
     // Chefschreibtisch, quer, damit er als Deckung taugt.
     b.push(slab(
         BrushKind::Desk,
@@ -219,18 +307,54 @@ pub fn grossraumbuero() -> MapDesc {
     // Über die ganze Karte verteilt; welcher benutzt wird, entscheidet die
     // Simulation anhand der Gegnerpositionen.
     let spawns = vec![
-        SpawnPoint { pos: Vec3::new(-17.0, 0.0, -12.5), yaw: 0.6 },
-        SpawnPoint { pos: Vec3::new(-17.5, 0.0, 3.0), yaw: 0.0 },
-        SpawnPoint { pos: Vec3::new(-16.0, 0.0, 11.0), yaw: -0.8 },
-        SpawnPoint { pos: Vec3::new(-8.0, 0.0, 11.5), yaw: -1.4 },
-        SpawnPoint { pos: Vec3::new(0.0, 0.0, 12.5), yaw: 3.1 },
-        SpawnPoint { pos: Vec3::new(2.0, 0.0, -12.5), yaw: 0.2 },
-        SpawnPoint { pos: Vec3::new(9.5, 0.0, -4.0), yaw: 1.6 },
-        SpawnPoint { pos: Vec3::new(14.5, 0.0, -10.5), yaw: 2.4 },
-        SpawnPoint { pos: Vec3::new(18.0, 0.0, 0.5), yaw: 2.0 },
-        SpawnPoint { pos: Vec3::new(-11.0, 0.0, -3.0), yaw: 1.0 },
-        SpawnPoint { pos: Vec3::new(5.5, 0.0, 8.0), yaw: -1.2 },
-        SpawnPoint { pos: Vec3::new(15.0, 0.0, 13.0), yaw: 3.6 },
+        SpawnPoint {
+            pos: Vec3::new(-17.0, 0.0, -12.5),
+            yaw: 0.6,
+        },
+        SpawnPoint {
+            pos: Vec3::new(-17.5, 0.0, 3.0),
+            yaw: 0.0,
+        },
+        SpawnPoint {
+            pos: Vec3::new(-16.0, 0.0, 11.0),
+            yaw: -0.8,
+        },
+        SpawnPoint {
+            pos: Vec3::new(-8.0, 0.0, 11.5),
+            yaw: -1.4,
+        },
+        SpawnPoint {
+            pos: Vec3::new(0.0, 0.0, 12.5),
+            yaw: 3.1,
+        },
+        SpawnPoint {
+            pos: Vec3::new(2.0, 0.0, -12.5),
+            yaw: 0.2,
+        },
+        SpawnPoint {
+            pos: Vec3::new(9.5, 0.0, -4.0),
+            yaw: 1.6,
+        },
+        SpawnPoint {
+            pos: Vec3::new(14.5, 0.0, -10.5),
+            yaw: 2.4,
+        },
+        SpawnPoint {
+            pos: Vec3::new(18.0, 0.0, 0.5),
+            yaw: 2.0,
+        },
+        SpawnPoint {
+            pos: Vec3::new(-11.0, 0.0, -3.0),
+            yaw: 1.0,
+        },
+        SpawnPoint {
+            pos: Vec3::new(5.5, 0.0, 8.0),
+            yaw: -1.2,
+        },
+        SpawnPoint {
+            pos: Vec3::new(15.0, 0.0, 13.0),
+            yaw: 3.6,
+        },
     ];
 
     MapDesc {

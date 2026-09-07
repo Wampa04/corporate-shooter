@@ -103,7 +103,13 @@ fn forward() -> InputFrame {
 #[test]
 fn spieler_faellt_auf_den_boden_und_bleibt_liegen() {
     let mut app = app_with(GameConfig::default(), arena());
-    let p = add_player(&mut app, 1, Team::Engineering, Vec3::new(0.0, 4.0, 0.0), 0.0);
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(0.0, 4.0, 0.0),
+        0.0,
+    );
 
     run(&mut app, 60);
 
@@ -129,13 +135,23 @@ fn yaw_null_laeuft_nach_minus_z() {
 
     let b = body(&app, p);
     assert!(b.pos.z < -3.0, "erwartet Bewegung nach -Z, war {}", b.pos.z);
-    assert!(b.pos.x.abs() < 0.01, "kein Seitwaertsdrift, war {}", b.pos.x);
+    assert!(
+        b.pos.x.abs() < 0.01,
+        "kein Seitwaertsdrift, war {}",
+        b.pos.x
+    );
 }
 
 #[test]
 fn spieler_laeuft_nicht_aus_dem_spielfeld() {
     let mut app = app_with(GameConfig::default(), arena());
-    let p = add_player(&mut app, 1, Team::Engineering, Vec3::new(0.0, 0.0, -18.0), 0.0);
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(0.0, 0.0, -18.0),
+        0.0,
+    );
     set_input(&mut app, p, forward());
 
     run(&mut app, 120);
@@ -171,6 +187,132 @@ fn wand_stoppt_den_spieler() {
     );
 }
 
+/// Testarena mit Aussenwaenden genau auf der Spielfeldgrenze - so wie im
+/// echten Grossraumbuero.
+fn arena_mit_aussenwaenden() -> MapDesc {
+    let mut map = arena();
+    let (hx, hz, h) = (20.0f32, 20.0f32, 3.4f32);
+    let t = 0.4;
+    for (min, max) in [
+        (Vec3::new(-hx - t, 0.0, -hz - t), Vec3::new(-hx, h, hz + t)),
+        (Vec3::new(hx, 0.0, -hz - t), Vec3::new(hx + t, h, hz + t)),
+        (Vec3::new(-hx - t, 0.0, -hz - t), Vec3::new(hx + t, h, -hz)),
+        (Vec3::new(-hx - t, 0.0, hz), Vec3::new(hx + t, h, hz + t)),
+    ] {
+        map.brushes
+            .push(Brush::new(BrushKind::Wall, Aabb::new(min, max)));
+    }
+    map.bounds = Aabb::new(Vec3::new(-hx, 0.0, -hz), Vec3::new(hx, h, hz));
+    map
+}
+
+#[test]
+fn spieler_kommt_von_der_aussenwand_wieder_los() {
+    // Regression: eine Aussenwand faellt mit der Spielfeldgrenze zusammen, der
+    // Spieler steht also unvermeidlich *beruehrend* daran - und Beruehrung
+    // gilt als Ueberlappung. Wurde die Kollision nach der Bewegungsrichtung
+    // aufgeloest, landete der Schritt von der Wand weg hinter der Wand, die
+    // Spielfeldgrenze zog sofort zurueck, und man klebte dauerhaft fest.
+    let mut app = app_with(GameConfig::default(), arena_mit_aussenwaenden());
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(-19.0, 0.0, 0.0),
+        0.0,
+    );
+
+    // Erst gegen die Westwand laufen, dann nach Osten wieder weg.
+    set_input(
+        &mut app,
+        p,
+        InputFrame {
+            move_x: -1.0,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 30);
+    let an_der_wand = body(&app, p).pos.x;
+    assert!(
+        an_der_wand < -19.0,
+        "Spieler hat die Wand nicht erreicht: x = {an_der_wand}"
+    );
+
+    set_input(
+        &mut app,
+        p,
+        InputFrame {
+            move_x: 1.0,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 60);
+
+    let danach = body(&app, p).pos.x;
+    assert!(
+        danach > an_der_wand + 5.0,
+        "Spieler klebt an der Wand fest: von {an_der_wand} nach {danach}"
+    );
+}
+
+#[test]
+fn spieler_wird_nie_hinter_eine_wand_geschoben() {
+    // Aus jeder Richtung gegen jede Aussenwand laufen und pruefen, dass der
+    // Spieler im Spielfeld bleibt.
+    for (mx, mz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+        let mut app = app_with(GameConfig::default(), arena_mit_aussenwaenden());
+        let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+        set_input(
+            &mut app,
+            p,
+            InputFrame {
+                move_x: mx,
+                move_z: mz,
+                buttons: buttons::DASH,
+                ..Default::default()
+            },
+        );
+        run(&mut app, 200);
+
+        let pos = body(&app, p).pos;
+        let bounds = app.world().resource::<Level>().desc.bounds;
+        assert!(
+            pos.x >= bounds.min.x && pos.x <= bounds.max.x,
+            "Richtung ({mx}, {mz}): x = {} liegt ausserhalb",
+            pos.x
+        );
+        assert!(
+            pos.z >= bounds.min.z && pos.z <= bounds.max.z,
+            "Richtung ({mx}, {mz}): z = {} liegt ausserhalb",
+            pos.z
+        );
+    }
+}
+
+#[test]
+fn spieler_bleibt_unter_der_decke() {
+    let mut app = app_with(GameConfig::default(), arena_mit_aussenwaenden());
+    let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    set_input(
+        &mut app,
+        p,
+        InputFrame {
+            buttons: buttons::JUMP,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 200);
+
+    let config = app.world().resource::<Config>().0.clone();
+    let bounds = app.world().resource::<Level>().desc.bounds;
+    let pos = body(&app, p).pos;
+    assert!(
+        pos.y <= bounds.max.y - config.player_height + 0.01,
+        "Spieler ist durch die Decke gesprungen: y = {}",
+        pos.y
+    );
+}
+
 #[test]
 fn agile_sprint_tunnelt_nicht_durch_duenne_trennwand() {
     // Ein Dash legt 16 m/s * 1/30 s = 0.53 m pro Tick zurueck, mehr als die
@@ -181,7 +323,13 @@ fn agile_sprint_tunnelt_nicht_durch_duenne_trennwand() {
         Aabb::new(Vec3::new(-6.0, 0.0, -3.12), Vec3::new(6.0, 1.45, -3.0)),
     ));
     let mut app = app_with(GameConfig::default(), map);
-    let p = add_player(&mut app, 1, Team::Engineering, Vec3::new(0.0, 0.0, -1.0), 0.0);
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(0.0, 0.0, -1.0),
+        0.0,
+    );
 
     set_input(
         &mut app,
@@ -207,7 +355,13 @@ fn treppe_zur_chef_etage_ist_begehbar() {
     // Gegen die echte Karte: die Chef-Etage darf nicht nur per Sprung
     // erreichbar sein.
     let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
-    let p = add_player(&mut app, 1, Team::Engineering, Vec3::new(9.8, 0.0, 0.5), 0.0);
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(9.8, 0.0, 0.5),
+        0.0,
+    );
     set_input(
         &mut app,
         p,
@@ -390,7 +544,11 @@ fn kein_beschuss_der_eigenen_abteilung() {
 
     let events = halte_feuer(&mut app, shooter, 60);
 
-    assert_eq!(vitals(&app, target).health, 100, "Friendly Fire aufgetreten");
+    assert_eq!(
+        vitals(&app, target).health,
+        100,
+        "Friendly Fire aufgetreten"
+    );
     assert!(!events.iter().any(|e| matches!(e, GameEvent::Hit { .. })));
     // Geschossen wurde trotzdem: der Schuetze verbraucht Munition.
     assert!(events.iter().any(|e| matches!(e, GameEvent::Shot { .. })));
@@ -407,7 +565,11 @@ fn whiteboard_haelt_den_schuss_auf() {
 
     halte_feuer(&mut app, shooter, 40);
 
-    assert_eq!(vitals(&app, target).health, 100, "Whiteboard war durchlaessig");
+    assert_eq!(
+        vitals(&app, target).health,
+        100,
+        "Whiteboard war durchlaessig"
+    );
 }
 
 #[test]
@@ -676,5 +838,43 @@ fn respawn_meidet_die_naehe_von_gegnern() {
         pos.x > 0.0,
         "Respawn direkt neben dem Gegner bei x = {}",
         pos.x
+    );
+}
+
+#[test]
+fn spieler_loest_sich_von_der_westwand_der_echten_karte() {
+    // Regression aus dem End-to-End-Test: an der Aussenwand des
+    // Grossraumbueros war jede Bewegung nach Osten blockiert, weil die
+    // beruehrte Wand auch auf der Y-Achse "aufgeloest" wurde und den Spieler
+    // nach unten schob, worauf die Spielfeldgrenze ihn zurueckklemmte.
+    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(-19.65, 0.0, -4.3),
+        -1.70,
+    );
+    set_input(
+        &mut app,
+        p,
+        InputFrame {
+            move_z: 1.0,
+            yaw: -1.70,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 30);
+
+    let b = body(&app, p);
+    assert!(
+        b.pos.x > -15.0,
+        "Spieler klebt an der Westwand: x = {}",
+        b.pos.x
+    );
+    assert!(
+        b.pos.y.abs() < 0.05,
+        "Spieler wurde durch den Boden geschoben: y = {}",
+        b.pos.y
     );
 }

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corporate Shooter</title>
+<!-- Als Data-URI eingebettet: spart einen Request und die 404-Meldung in der
+     Konsole, wenn der Browser blind /favicon.ico anfragt. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231e232b'/%3E%3Crect x='7' y='6' width='7' height='20' rx='1.5' fill='%23f2d024'/%3E%3Crect x='7' y='6' width='7' height='4' rx='1.5' fill='%23ffffff'/%3E%3Crect x='18' y='13' width='8' height='6' rx='1.5' fill='%233d8bfd'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<canvas id="viewport"></canvas>
+
+<!-- Anmeldung. Liegt über allem, bis der Server die Willkommensnachricht
+     geschickt hat. -->
+<div id="join" class="overlay">
+  <div class="panel">
+    <h1>Corporate Shooter</h1>
+    <p class="subtitle">Großraumbüro, 3. OG &mdash; Marketing gegen Engineering</p>
+    <form id="join-form" autocomplete="off">
+      <label for="name">Anzeigename</label>
+      <input id="name" name="name" maxlength="24" placeholder="Praktikant:in" autofocus>
+      <button type="submit">Zum Daily erscheinen</button>
+    </form>
+    <p id="join-status" class="status" role="status"></p>
+    <dl class="controls">
+      <dt>W A S D</dt><dd>Laufen</dd>
+      <dt>Maus</dt><dd>Umsehen &middot; Linksklick feuert</dd>
+      <dt>Leertaste</dt><dd>Springen</dd>
+      <dt>Umschalt</dt><dd>Agile Sprint</dd>
+      <dt>E</dt><dd>Wellness-Tag</dd>
+      <dt>R</dt><dd>Nachladen</dd>
+      <dt>1 / 2</dt><dd>Textmarker-Pistole / Locher-Schrotflinte</dd>
+      <dt>Tab</dt><dd>Rangliste</dd>
+      <dt>Esc</dt><dd>Maus freigeben</dd>
+    </dl>
+  </div>
+</div>
+
+<!-- Hinweis, solange die Maus nicht gefangen ist. -->
+<div id="resume" class="overlay hidden">
+  <div class="panel compact">
+    <h2>Pause</h2>
+    <p>Klicken, um weiterzuspielen.</p>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="crosshair"><span></span><span></span><span></span><span></span></div>
+  <div id="hitmarker"></div>
+  <div id="damage-flash"></div>
+
+  <div id="hud-bottom-left">
+    <div class="health">
+      <div class="health-bar"><div id="health-fill"></div></div>
+      <span id="health-value">100</span>
+    </div>
+    <div id="skills">
+      <div class="skill" id="skill-dash"><b>Umschalt</b><span>Agile Sprint</span><i></i></div>
+      <div class="skill" id="skill-heal"><b>E</b><span>Wellness-Tag</span><i></i></div>
+    </div>
+  </div>
+
+  <div id="hud-bottom-right">
+    <div id="weapon-name">Textmarker-Pistole</div>
+    <div id="ammo"><b id="ammo-current">30</b> / <span id="ammo-max">30</span></div>
+    <div id="reloading" class="hidden">Nachladen&hellip;</div>
+  </div>
+
+  <div id="killfeed"></div>
+
+  <div id="respawn" class="hidden">
+    <h2>Freigestellt</h2>
+    <p>Wiedereinstieg in <b id="respawn-timer">3.0</b> s</p>
+  </div>
+
+  <div id="scoreboard" class="hidden">
+    <h2>Quartalsziele</h2>
+    <table>
+      <thead><tr><th>Abteilung</th><th>Name</th><th>Abschlüsse</th><th>Freistellungen</th></tr></thead>
+      <tbody id="scoreboard-body"></tbody>
+    </table>
+  </div>
+
+  <div id="netstat"><span id="ping">–</span> ms</div>
+</div>
+
+<div id="disconnected" class="overlay hidden">
+  <div class="panel compact">
+    <h2>Verbindung verloren</h2>
+    <p id="disconnect-reason">Der Server ist nicht mehr erreichbar.</p>
+    <button onclick="location.reload()">Neu verbinden</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -153,7 +153,11 @@ impl Level {
             .filter(|b| b.kind.blocks_bullets())
             .map(|b| b.aabb)
             .collect();
-        Self { desc, solid, opaque }
+        Self {
+            desc,
+            solid,
+            opaque,
+        }
     }
 }
 

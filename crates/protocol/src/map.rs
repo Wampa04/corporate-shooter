@@ -39,8 +39,20 @@ impl Aabb {
         self.max - self.min
     }
 
+    /// Überlappung einschließlich Berührung: zwei Boxen, die sich eine Fläche
+    /// teilen, gelten als überlappend.
     pub fn intersects(&self, other: &Aabb) -> bool {
         self.min.cmple(other.max).all() && self.max.cmpge(other.min).all()
+    }
+
+    /// Echte Überlappung: Berührung zählt nicht.
+    ///
+    /// Das ist der Test, den Kollisionsauflösung braucht. Zählte Berührung als
+    /// Kollision, würde jede Box, an der ein Spieler nur anliegt, auf *allen*
+    /// Achsen aufgelöst - eine Wand, an der man lehnt, schöbe einen dann durch
+    /// den Boden, und der Boden, auf dem man steht, quer durch den Raum.
+    pub fn overlaps_strictly(&self, other: &Aabb) -> bool {
+        self.min.cmplt(other.max).all() && self.max.cmpgt(other.min).all()
     }
 
     pub fn contains_point(&self, p: Vec3) -> bool {

@@ -47,14 +47,6 @@ impl Rng {
         (self.next_u32() >> 8) as f32 / (1u32 << 24) as f32
     }
 
-    /// Gleichverteilt in `[lo, hi)`. Bei `lo >= hi` wird `lo` geliefert.
-    pub fn range(&mut self, lo: f32, hi: f32) -> f32 {
-        if hi <= lo {
-            return lo;
-        }
-        lo + self.unit() * (hi - lo)
-    }
-
     /// Gleichverteilt in `0..n`. Bei `n == 0` wird `0` geliefert.
     pub fn below(&mut self, n: usize) -> usize {
         if n == 0 {
@@ -70,9 +62,6 @@ mod tests {
 
     #[test]
     fn gleicher_seed_gleiche_folge() {
-        let a: Vec<u32> = (0..16).map(|_| Rng::from_seed(7).next_u32()).collect();
-        let mut rng = Rng::from_seed(7);
-        assert_eq!(a[0], rng.next_u32());
         let mut b = Rng::from_seed(7);
         let mut c = Rng::from_seed(7);
         for _ in 0..64 {
@@ -110,16 +99,5 @@ mod tests {
         }
         assert!(gesehen.iter().all(|&g| g));
         assert_eq!(rng.below(0), 0);
-    }
-
-    #[test]
-    fn range_haelt_die_grenzen_ein() {
-        let mut rng = Rng::from_seed(3);
-        for _ in 0..10_000 {
-            let v = rng.range(-2.5, 4.0);
-            assert!((-2.5..4.0).contains(&v));
-        }
-        assert_eq!(rng.range(1.0, 1.0), 1.0);
-        assert_eq!(rng.range(5.0, 1.0), 5.0);
     }
 }
