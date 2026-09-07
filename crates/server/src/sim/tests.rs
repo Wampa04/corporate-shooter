@@ -878,3 +878,82 @@ fn spieler_loest_sich_von_der_westwand_der_echten_karte() {
         b.pos.y
     );
 }
+
+#[test]
+fn stuhl_haelt_den_spieler_nicht_fest() {
+    // Der Bürostuhl besteht aus zwölf Boxen, von denen nur das Sitzpolster
+    // massiv ist. Der Grund steht in `maps::parts::office_chair`: die
+    // Kollisionsauflösung schiebt einen Spieler nacheinander aus jeder
+    // überlappenden Box, ohne zwischendurch neu zu prüfen - zwischen dünnen
+    // Stuhlbeinen bliebe er zappelnd hängen. Dieser Test hält die Entscheidung
+    // fest.
+    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+
+    // Mitten in eine Tischinsel, dort stehen vier Stühle dicht beieinander.
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(-10.0, 0.0, -6.6),
+        0.0,
+    );
+
+    // Nach Osten durch die Stuhlreihe laufen.
+    set_input(
+        &mut app,
+        p,
+        InputFrame {
+            move_x: 1.0,
+            ..Default::default()
+        },
+    );
+    let start = body(&app, p).pos;
+    run(&mut app, 60);
+    let ende = body(&app, p).pos;
+
+    let strecke = (ende - start).length();
+    assert!(
+        strecke > 1.5,
+        "Spieler steckt zwischen den Stühlen fest: nur {strecke:.2} m in zwei Sekunden"
+    );
+    assert!(
+        ende.y.abs() < 0.6,
+        "Spieler wurde von der Stuhlgeometrie nach oben gedrückt: y = {}",
+        ende.y
+    );
+}
+
+#[test]
+fn spawnpunkte_stecken_nicht_in_der_geometrie() {
+    // Eine neue Wand mitten durch einen Spawnpunkt ist der klassische Fehler
+    // beim Erweitern einer Karte - und er fällt erst auf, wenn jemand darin
+    // steckt.
+    let config = GameConfig::default();
+    let map = crate::maps::grossraumbuero();
+    let half = crate::sim::movement::player_half_extents(config.player_radius, config.player_height);
+
+    for (i, spawn) in map.spawns.iter().enumerate() {
+        // Einen Millimeter kleiner: wer exakt auf einer Kante steht - etwa mit
+        // den Füßen auf dem Chef-Podest - berührt sie, und Berührung ist in
+        // f32 nicht von einer Überlappung zu unterscheiden. Gesucht sind
+        // Spawnpunkte, die *in* der Geometrie stecken.
+        let luft = Vec3::splat(0.001);
+        let center = spawn.pos + Vec3::Y * (config.player_height * 0.5);
+        let me = Aabb {
+            min: center - half + luft,
+            max: center + half - luft,
+        };
+        for brush in &map.brushes {
+            if !brush.kind.blocks_movement() {
+                continue;
+            }
+            assert!(
+                !me.overlaps_strictly(&brush.aabb),
+                "Spawn {i} auf {:?} steckt in {:?} bei {:?}",
+                spawn.pos,
+                brush.kind,
+                brush.aabb.min
+            );
+        }
+    }
+}
