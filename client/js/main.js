@@ -26,12 +26,25 @@ const CAMERA_FOLLOW_RATE = 26;
 /** Ab dieser Distanz wird die Kamera gesetzt statt gezogen (Respawn). */
 const CAMERA_TELEPORT = 3.0;
 
+/** Text des Pausenbildes im Normalfall. */
+const RESUME_HINT = "Klicken, um weiterzuspielen.";
+
+/**
+ * Wartezeit vor dem zweiten Versuch, die Maus einzufangen.
+ *
+ * Browser sperren das Einfangen fuer etwa eine Sekunde, nachdem der Nutzer
+ * es per Escape freigegeben hat. Wer sofort wieder klickt, faellt in diese
+ * Frist - ein Versuch kurz danach greift dann von selbst.
+ */
+const LOCK_RETRY_MS = 1300;
+
 const canvas = document.getElementById("viewport");
 const joinOverlay = document.getElementById("join");
 const joinForm = document.getElementById("join-form");
 const joinStatus = document.getElementById("join-status");
 const nameField = document.getElementById("name");
 const resumeOverlay = document.getElementById("resume");
+const resumeHint = document.getElementById("resume-hint");
 const disconnectOverlay = document.getElementById("disconnected");
 const disconnectReason = document.getElementById("disconnect-reason");
 
@@ -97,9 +110,47 @@ function start(connection, welcome) {
   window.addEventListener("resize", resize);
   resize();
 
-  // Maus einfangen: beim Start und nach jedem Klick ins Bild.
-  input.onLockChange = (locked) => resumeOverlay.classList.toggle("hidden", locked);
-  canvas.addEventListener("click", () => input.requestLock());
+  // Maus einfangen: beim Start und nach jedem Klick.
+  //
+  // Der Handler haengt bewusst *auch* am Pausenbild. Es liegt als Overlay
+  // ueber dem Canvas und faengt jeden Klick ab - haenge er nur am Canvas,
+  // bliebe ausgerechnet der Klick wirkungslos, zu dem das Bild auffordert.
+  let retryTimer = null;
+  // Nach einem Verbindungsverlust gibt es nichts mehr fortzusetzen. Ohne
+  // diese Schranke wuerde ein Klick neben dem Verbindungsdialog die Maus
+  // fuer ein totes Spiel einfangen.
+  let running = true;
+
+  const resumeGame = () => {
+    if (!running) return;
+    clearTimeout(retryTimer);
+    retryTimer = null;
+    input.requestLock();
+  };
+
+  canvas.addEventListener("click", resumeGame);
+  resumeOverlay.addEventListener("click", resumeGame);
+
+  input.onLockChange = (locked) => {
+    resumeOverlay.classList.toggle("hidden", locked || !running);
+    if (locked) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+      resumeHint.textContent = RESUME_HINT;
+    }
+  };
+
+  input.onLockError = () => {
+    if (!running || retryTimer !== null) return; // Beendet oder Versuch laeuft.
+    resumeHint.textContent = "Der Browser gibt die Maus noch nicht frei \u2013 gleich noch einmal \u2026";
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      input.requestLock();
+      // Klappt auch das nicht, muss der Nutzer selbst klicken.
+      if (!input.locked) resumeHint.textContent = RESUME_HINT;
+    }, LOCK_RETRY_MS);
+  };
+
   input.requestLock();
 
   connection.onSnapshot = (snapshot) => {
@@ -186,9 +237,14 @@ function start(connection, welcome) {
   frame = requestAnimationFrame(render);
 
   function stop() {
+    running = false;
     clearInterval(inputTimer);
+    clearTimeout(retryTimer);
     cancelAnimationFrame(frame);
+    // Erst die Maus freigeben, dann das Pausenbild wegnehmen: die Freigabe
+    // loest `onLockChange` aus, das es sonst wieder einblenden wuerde.
     document.exitPointerLock?.();
+    resumeOverlay.classList.add("hidden");
     players.dispose();
     effects.dispose();
     viewmodel.dispose();

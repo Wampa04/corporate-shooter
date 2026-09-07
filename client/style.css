@@ -55,6 +55,9 @@ html, body {
 
 .panel.compact { width: min(380px, 90vw); text-align: center; }
 
+/* Die ganze Flaeche setzt das Spiel fort, nicht nur das Kaestchen. */
+#resume { cursor: pointer; }
+
 .panel h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.4px; }
 .panel h2 { margin: 0 0 8px; font-size: 20px; }
 .subtitle { margin: 0 0 22px; color: var(--muted); font-size: 14px; }

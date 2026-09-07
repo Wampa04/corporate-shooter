@@ -55,6 +55,7 @@ export class InputController {
     this._slots = new Set(weapons.map((w) => w.slot));
 
     this.onLockChange = () => {};
+    this.onLockError = () => {};
 
     this._bind();
   }
@@ -66,7 +67,22 @@ export class InputController {
   }
 
   requestLock() {
-    this.canvas.requestPointerLock?.();
+    // Das Einfangen der Maus kann fehlschlagen, ohne dass etwas passiert:
+    // Browser sperren es fuer rund eine Sekunde, nachdem der Nutzer es per
+    // Escape freigegeben hat. Ohne Rueckmeldung stuende man dann vor einem
+    // Pausenbild, das auf Klicks scheinbar nicht reagiert.
+    let request;
+    try {
+      request = this.canvas.requestPointerLock?.();
+    } catch {
+      this.onLockError();
+      return;
+    }
+    // Neuere Browser liefern ein Promise. Bliebe dessen Ablehnung
+    // unbehandelt, meldete die Konsole zusaetzlich einen Fehler.
+    if (request && typeof request.catch === "function") {
+      request.catch(() => this.onLockError());
+    }
   }
 
   _bind() {
@@ -81,6 +97,9 @@ export class InputController {
       }
       this.onLockChange(this.locked);
     });
+
+    // Aeltere Browser melden das Scheitern nur ueber dieses Ereignis.
+    document.addEventListener("pointerlockerror", () => this.onLockError());
 
     document.addEventListener("mousemove", (event) => {
       if (!this.locked) return;
