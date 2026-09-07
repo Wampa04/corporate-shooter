@@ -16,7 +16,8 @@ pub mod message;
 pub use config::{GameConfig, WeaponDesc, WeaponId};
 pub use map::{Aabb, Brush, BrushKind, MapDesc, SpawnPoint};
 pub use message::{
-    ClientMessage, GameEvent, InputFrame, PlayerId, PlayerState, ServerMessage, Team, buttons,
+    ClientMessage, GameEvent, InputFrame, LocalState, PlayerId, PlayerState, ServerMessage, Team,
+    Tracer, buttons,
 };
 
 /// Re-Export, damit Server und Protokoll garantiert denselben Vektortyp nutzen
