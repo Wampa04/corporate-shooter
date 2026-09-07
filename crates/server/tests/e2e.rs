@@ -188,6 +188,25 @@ impl Client {
         }
     }
 
+    /// Liest Snapshots ueber eine echte Zeitspanne und misst den Takt.
+    ///
+    /// Ohne eigene Eingaben - der Server schickt unabhaengig davon jeden Tick.
+    async fn measure_tick_rate(&mut self, over: Duration) -> f64 {
+        let start = std::time::Instant::now();
+        let mut first_tick = None;
+        let mut last_tick = 0u64;
+
+        while start.elapsed() < over {
+            if let ServerMessage::Snapshot { tick, .. } = expect_message(&mut self.socket).await {
+                first_tick.get_or_insert(tick);
+                last_tick = tick;
+            }
+        }
+
+        let elapsed = start.elapsed().as_secs_f64();
+        (last_tick - first_tick.expect("kein Snapshot empfangen")) as f64 / elapsed
+    }
+
     fn me(&self) -> &PlayerState {
         self.players
             .iter()
@@ -386,6 +405,30 @@ async fn server_laesst_sich_allein_ueber_die_umgebung_einstellen() {
             .await
             .contains("Corporate Shooter"),
         "CORPSHOOT_CLIENT_DIR wurde nicht uebernommen"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn simulation_laeuft_im_konfigurierten_takt() {
+    // Regression: mit `default-features = false` fehlte Bevy das Feature
+    // "std". Dessen Schlaffunktion fiel damit still auf eine no_std-
+    // Spinnschleife zurueck, die zu frueh zurueckkehrte - die Simulation lief
+    // mit 84 statt 30 Hz, also 2.8-fach zu schnell, verbrannte dabei einen
+    // ganzen Kern und schickte Snapshots in Buendeln.
+    //
+    // Das faellt in den uebrigen Tests nicht auf: die takten die App von Hand
+    // und messen nie gegen die Wanduhr.
+    let server = TestServer::start().await;
+    let mut client = Client::join(server.port, "Taktmesser").await;
+
+    let configured = 30.0;
+    let measured = client.measure_tick_rate(Duration::from_secs(2)).await;
+
+    // Grosszuegige Grenzen: ein ausgelasteter Rechner darf den Takt druecken.
+    // Ein Fehler wie der obige liegt um ein Vielfaches daneben.
+    assert!(
+        measured > configured * 0.6 && measured < configured * 1.5,
+        "Simulation laeuft mit {measured:.1} Hz statt {configured} Hz"
     );
 }
 
