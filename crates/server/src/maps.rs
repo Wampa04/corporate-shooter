@@ -79,14 +79,120 @@ fn whiteboard(out: &mut Vec<Brush>, cx: f32, cz: f32, length: f32, along_x: bool
     ));
 }
 
-/// Vierertisch-Insel mit Sichtschutz in der Mitte, wie sie das Großraumbüro
-/// zu Dutzenden enthält.
+/// Bildschirm auf einer Tischplatte, zentriert auf (`cx`, `cz`).
+/// `base` ist die Höhe des Fußbodens darunter.
+fn monitor(out: &mut Vec<Brush>, cx: f32, cz: f32, base: f32) {
+    out.push(slab(
+        BrushKind::Monitor,
+        cx - 0.28,
+        cz - 0.04,
+        cx + 0.28,
+        cz + 0.04,
+        base + 0.75,
+        base + 1.25,
+    ));
+}
+
+/// Bürostuhl in Hausfarbe. Sitzt tief und ragt nur wenig in den Gang.
+fn chair(out: &mut Vec<Brush>, cx: f32, cz: f32, base: f32) {
+    out.push(slab(
+        BrushKind::Chair,
+        cx - 0.24,
+        cz - 0.24,
+        cx + 0.24,
+        cz + 0.24,
+        base,
+        base + 0.52,
+    ));
+}
+
+/// Tragende Stütze vom Boden bis zur Decke.
+fn pillar(out: &mut Vec<Brush>, cx: f32, cz: f32) {
+    out.push(slab(
+        BrushKind::Pillar,
+        cx - 0.32,
+        cz - 0.32,
+        cx + 0.32,
+        cz + 0.32,
+        0.0,
+        CEILING,
+    ));
+}
+
+/// Aktenschrank an einer Wand.
+fn cabinet(out: &mut Vec<Brush>, cx: f32, cz: f32, width: f32, along_x: bool, height: f32) {
+    let (hw, hd) = if along_x {
+        (width * 0.5, 0.24)
+    } else {
+        (0.24, width * 0.5)
+    };
+    out.push(slab(
+        BrushKind::Cabinet,
+        cx - hw,
+        cz - hd,
+        cx + hw,
+        cz + hd,
+        0.0,
+        height,
+    ));
+}
+
+/// Leuchtenfeld, bündig in die Rasterdecke eingelassen.
+fn light_panel(out: &mut Vec<Brush>, cx: f32, cz: f32) {
+    out.push(slab(
+        BrushKind::LightPanel,
+        cx - 0.6,
+        cz - 0.3,
+        cx + 0.6,
+        cz + 0.3,
+        CEILING - 0.06,
+        CEILING,
+    ));
+}
+
+/// Wandtafel in der Hausfarbe: Akustikplatte oder Beschilderung.
+fn accent_panel(
+    out: &mut Vec<Brush>,
+    cx: f32,
+    cz: f32,
+    length: f32,
+    along_x: bool,
+    y0: f32,
+    y1: f32,
+) {
+    let (hw, hd) = if along_x {
+        (length * 0.5, 0.03)
+    } else {
+        (0.03, length * 0.5)
+    };
+    out.push(slab(
+        BrushKind::AccentPanel,
+        cx - hw,
+        cz - hd,
+        cx + hw,
+        cz + hd,
+        y0,
+        y1,
+    ));
+}
+
+/// Leitstreifen auf dem Boden, in der Hausfarbe.
+fn floor_stripe(out: &mut Vec<Brush>, x0: f32, z0: f32, x1: f32, z1: f32) {
+    out.push(slab(BrushKind::FloorStripe, x0, z0, x1, z1, 0.0, 0.012));
+}
+
+/// Vierertisch-Insel mit Sichtschutz, Stühlen und Bildschirmen - so wie das
+/// Großraumbüro sie zu Dutzenden enthält.
 fn desk_island(out: &mut Vec<Brush>, cx: f32, cz: f32) {
-    desk(out, cx - 1.0, cz - 1.0, true);
-    desk(out, cx + 1.0, cz - 1.0, true);
-    desk(out, cx - 1.0, cz + 1.0, true);
-    desk(out, cx + 1.0, cz + 1.0, true);
+    for (dx, dz) in [(-1.0f32, -1.0f32), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+        desk(out, cx + dx, cz + dz, true);
+        // Bildschirm zur Mitte hin, Stuhl zur Gangseite.
+        monitor(out, cx + dx, cz + dz * 0.45, 0.0);
+        chair(out, cx + dx, cz + dz * 1.85, 0.0);
+    }
     cubicle(out, cx, cz, 4.4, true);
+    // Schmaler Streifen in der Hausfarbe auf der Oberkante des Sichtschutzes.
+    accent_panel(out, cx, cz, 4.4, true, 1.45, 1.53);
 }
 
 /// Treppenstufen von `y0` auf `y1`, aufsteigend in +Z-Richtung.
@@ -214,6 +320,21 @@ pub fn grossraumbuero() -> MapDesc {
         1.8,
     ));
     b.push(slab(BrushKind::Shelf, -16.6, 13.4, -13.6, 14.6, 0.0, 0.9));
+    // Kühlschrank und Mikrowelle - das Inventar jeder Teeküche.
+    cabinet(&mut b, -19.2, 10.5, 1.6, false, 1.85);
+    b.push(slab(
+        BrushKind::Printer,
+        -13.4,
+        13.6,
+        -12.6,
+        14.4,
+        1.05,
+        1.45,
+    ));
+    accent_panel(&mut b, -16.0, 8.05, 6.0, true, 1.2, 1.9);
+    for (cx, cz) in [(-17.5, 10.0), (-15.0, 12.5)] {
+        chair(&mut b, cx, cz, 0.0);
+    }
     // Durchgang in der Theke, damit die Küche nicht zur Sackgasse wird.
     whiteboard(&mut b, -15.0, 10.5, 2.2, true);
 
@@ -302,6 +423,86 @@ pub fn grossraumbuero() -> MapDesc {
         EXECUTIVE_FLOOR,
         EXECUTIVE_FLOOR + 1.9,
     ));
+    // Chefschreibtisch mit Ausstattung, dazu der obligatorische
+    // Besprechungstisch für Runden, in denen nichts entschieden wird.
+    monitor(&mut b, 15.2, 10.4, EXECUTIVE_FLOOR);
+    chair(&mut b, 15.2, 9.3, EXECUTIVE_FLOOR);
+    b.push(slab(
+        BrushKind::Desk,
+        9.4,
+        7.0,
+        12.6,
+        9.4,
+        EXECUTIVE_FLOOR,
+        EXECUTIVE_FLOOR + 0.74,
+    ));
+    for (cx, cz) in [(9.0f32, 8.2f32), (13.0, 8.2), (11.0, 6.5), (11.0, 9.9)] {
+        chair(&mut b, cx, cz, EXECUTIVE_FLOOR);
+    }
+    accent_panel(
+        &mut b,
+        14.0,
+        14.9,
+        8.0,
+        true,
+        EXECUTIVE_FLOOR + 1.0,
+        EXECUTIVE_FLOOR + 1.6,
+    );
+    for (lx, lz) in [(11.0f32, 8.0f32), (15.5, 11.0), (11.0, 12.5)] {
+        light_panel(&mut b, lx, lz);
+    }
+
+    // --- Rasterdecke: Leuchtenfelder ---------------------------------------
+    // Geben der Decke Struktur und dem Raum Tiefe, ohne irgendetwas zu
+    // blockieren - sie liegen bündig im Deckenraster.
+    let mut x = -17.0f32;
+    while x <= 17.5 {
+        let mut z = -13.0f32;
+        while z <= 13.5 {
+            light_panel(&mut b, x, z);
+            z += 4.5;
+        }
+        x += 4.5;
+    }
+
+    // --- Stützen ------------------------------------------------------------
+    // Stehen in den Gängen und sind die einzige Deckung, die vom Boden bis
+    // zur Decke reicht.
+    for (px, pz) in [
+        (-7.0, -12.5),
+        (-7.0, 3.5),
+        (5.0, -12.5),
+        (5.0, 3.5),
+        (-15.5, 0.0),
+    ] {
+        pillar(&mut b, px, pz);
+    }
+
+    // --- Aktenschränke an den Wänden ---------------------------------------
+    // Die Westwand zwischen z = -7 und z = -2 bleibt frei: dort steht der
+    // Regressionstest zum Loslösen von der Aussenwand.
+    cabinet(&mut b, -6.0, 14.7, 5.0, true, 1.9);
+    cabinet(&mut b, 1.0, 14.7, 3.0, true, 1.2);
+    cabinet(&mut b, 10.0, -14.7, 4.0, true, 1.9);
+    cabinet(&mut b, -13.0, -14.7, 3.5, true, 1.2);
+    cabinet(&mut b, -19.7, -11.0, 4.0, false, 1.9);
+    cabinet(&mut b, -19.7, 4.5, 3.0, false, 1.2);
+
+    // --- Hausfarbe an den Wänden -------------------------------------------
+    // Ein durchlaufendes Band auf Brusthöhe, wie es Unternehmen anbringen
+    // lassen, um Flure "freundlicher" zu machen.
+    accent_panel(&mut b, -10.0, -14.95, 16.0, true, 1.15, 1.75);
+    accent_panel(&mut b, -4.0, 14.95, 10.0, true, 1.15, 1.75);
+    accent_panel(&mut b, -19.95, -3.0, 7.0, false, 1.15, 1.75);
+    accent_panel(&mut b, 19.95, -3.0, 8.0, false, 1.15, 1.75);
+    // Beschilderung über der Kaffeeküche und am Serverraum.
+    accent_panel(&mut b, -15.5, 8.05, 3.0, true, 2.2, 2.7);
+    accent_panel(&mut b, 15.5, -8.05, 3.0, true, 2.2, 2.7);
+
+    // --- Leitstreifen zur Chef-Etage ---------------------------------------
+    // Der Weg nach oben, für alle sichtbar markiert.
+    floor_stripe(&mut b, -18.0, 11.6, 9.2, 11.9);
+    floor_stripe(&mut b, 8.9, 2.2, 9.2, 11.9);
 
     // --- Spawnpunkte -------------------------------------------------------
     // Über die ganze Karte verteilt; welcher benutzt wird, entscheidet die

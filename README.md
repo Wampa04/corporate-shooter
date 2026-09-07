@@ -111,6 +111,21 @@ Server läuft als unprivilegierter Nutzer.
 
 [cargo-chef]: https://github.com/LukeMathWalker/cargo-chef
 
+### Darstellung
+
+Der Client misst nach dem Start seine eigene Bildzeit. Bleibt sie über
+28 ms - also unter gut 35 Bildern je Sekunde -, schaltet er den Schattenwurf
+ab und vermerkt das in der Browserkonsole. Ob ein Rechner ihn trägt, lässt
+sich nicht vorhersagen, also wird es gemessen statt geraten.
+
+Erzwingen lässt sich beides über die Adresse:
+
+| Adresse | Wirkung |
+| --- | --- |
+| `…:4200/` | misst selbst und entscheidet |
+| `…:4200/?grafik=schoen` | Schattenwurf immer an |
+| `…:4200/?grafik=einfach` | Schattenwurf immer aus |
+
 ## Steuerung
 
 | Taste | Wirkung |

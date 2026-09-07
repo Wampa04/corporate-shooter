@@ -7,7 +7,7 @@
 
 import * as THREE from "../vendor/three.module.min.js";
 import { Connection } from "./net.js";
-import { buildScene } from "./world.js";
+import { buildScene, setShadowsEnabled } from "./world.js";
 import { PlayerViews } from "./players.js";
 import { Effects } from "./effects.js";
 import { InputController } from "./input.js";
@@ -25,6 +25,24 @@ const CAMERA_FOLLOW_RATE = 26;
 
 /** Ab dieser Distanz wird die Kamera gesetzt statt gezogen (Respawn). */
 const CAMERA_TELEPORT = 3.0;
+
+/**
+ * Wie viele Bilder abgewartet werden, bevor ueber den Schattenwurf entschieden
+ * wird. Die ersten Bilder sind durch Shader-Uebersetzung und Texturupload
+ * verzerrt und taugen nicht als Massstab.
+ */
+const QUALITY_WARMUP_FRAMES = 30;
+
+/** Wie viele Bilder danach gemessen werden. */
+const QUALITY_SAMPLE_FRAMES = 60;
+
+/**
+ * Ab dieser Bildzeit wird der Schattenwurf abgeschaltet.
+ *
+ * 28 ms entsprechen gut 35 Bildern je Sekunde. Wer darunter liegt, hat mehr
+ * davon, das Buero fluessig zu sehen als es beschattet zu sehen.
+ */
+const QUALITY_BUDGET_MS = 28;
 
 /** Text des Pausenbildes im Normalfall. */
 const RESUME_HINT = "Klicken, um weiterzuspielen.";
@@ -79,8 +97,19 @@ function start(connection, welcome) {
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Schattenwurf gibt dem Buero erst Tiefe: ohne ihn schweben Schreibtische
+  // und Stuehle ueber dem Teppich, statt darauf zu stehen. Eine 1024er
+  // Schattenkarte reicht fuer ein Stockwerk und kostet auch auf einer
+  // eingebauten Grafikeinheit kaum etwas.
+  // `?grafik=einfach` schaltet den Schattenwurf von vornherein ab,
+  // `?grafik=schoen` laesst ihn an, egal wie langsam es laeuft. Ohne Angabe
+  // entscheidet die Messung weiter unten.
+  const wunsch = new URLSearchParams(location.search).get("grafik");
+  const shadows = wunsch !== "einfach";
+  renderer.shadowMap.enabled = shadows;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  const scene = buildScene(map);
+  const scene = buildScene(map, { shadows });
   const camera = new THREE.PerspectiveCamera(78, 1, 0.08, 200);
   // Yaw vor Pitch anwenden, sonst kippt der Horizont beim Umsehen.
   camera.rotation.order = "YXZ";
@@ -202,6 +231,28 @@ function start(connection, welcome) {
   let previous = performance.now();
   let frame = 0;
 
+  // Selbstmessung der Bildzeit. Ob ein Rechner den Schattenwurf traegt, laesst
+  // sich nicht vorhersagen - also wird es gemessen statt geraten.
+  const frameTimes = [];
+  let qualityDecided = wunsch !== null;
+
+  function judgeQuality(dt) {
+    if (qualityDecided) return;
+    frameTimes.push(dt * 1000);
+    if (frameTimes.length < QUALITY_WARMUP_FRAMES + QUALITY_SAMPLE_FRAMES) return;
+
+    qualityDecided = true;
+    const messwerte = frameTimes.slice(QUALITY_WARMUP_FRAMES).sort((a, b) => a - b);
+    const median = messwerte[Math.floor(messwerte.length / 2)];
+    if (median <= QUALITY_BUDGET_MS) return;
+
+    setShadowsEnabled(scene, renderer, false);
+    console.info(
+      `Schattenwurf abgeschaltet: ${median.toFixed(0)} ms je Bild. ` +
+        "Mit ?grafik=schoen laesst er sich erzwingen.",
+    );
+  }
+
   function render(now) {
     frame = requestAnimationFrame(render);
     // Nach einem Tab-Wechsel kann `now` weit springen; ein gedeckelter
@@ -209,6 +260,7 @@ function start(connection, welcome) {
     const dt = Math.min((now - previous) / 1000, 0.1);
     previous = now;
 
+    judgeQuality(dt);
     players.update(connection.snapshots, now);
     effects.update(dt);
     viewmodel.update(dt, local?.reloading ?? false);

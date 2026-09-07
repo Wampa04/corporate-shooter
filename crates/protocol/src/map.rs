@@ -133,17 +133,47 @@ pub enum BrushKind {
     ServerRack,
     /// Yuccapalme. Steht im Weg, hält aber keine Kugel auf.
     Plant,
+
+    // --- Einrichtung -------------------------------------------------------
+    /// Bildschirm auf dem Schreibtisch.
+    Monitor,
+    /// Bürostuhl. Steht unter dem Tisch und ragt nur wenig in den Gang.
+    Chair,
+    /// Tragende Stütze. Die verlässlichste Deckung im ganzen Stockwerk.
+    Pillar,
+    /// Aktenschrank.
+    Cabinet,
+
+    // --- Reine Dekoration --------------------------------------------------
+    // Diese drei blockieren weder Wege noch Schüsse: sie liegen bündig in
+    // Decke, Wand oder Boden. Als Hindernis wären sie nur lästig.
+    /// Leuchtenfeld in der Rasterdecke.
+    LightPanel,
+    /// Akustik- oder Beschilderungstafel in der Hausfarbe.
+    AccentPanel,
+    /// Leitstreifen auf dem Boden, ebenfalls in der Hausfarbe.
+    FloorStripe,
 }
 
 impl BrushKind {
     /// Ob Spieler an dieser Box hängenbleiben.
+    ///
+    /// Bündig eingelassene Dekoration tut das nicht - sonst bliebe man an
+    /// einem aufgeklebten Leitstreifen hängen.
     pub fn blocks_movement(self) -> bool {
-        true
+        !matches!(
+            self,
+            BrushKind::LightPanel | BrushKind::AccentPanel | BrushKind::FloorStripe
+        )
     }
 
     /// Ob Hitscan-Schüsse an dieser Box stoppen.
+    ///
+    /// Was den Weg nicht blockiert, hält auch keine Kugel auf. Die
+    /// Yuccapalme ist die Ausnahme in die andere Richtung: sie steht im Weg,
+    /// taugt aber nicht als Deckung.
     pub fn blocks_bullets(self) -> bool {
-        !matches!(self, BrushKind::Plant)
+        self.blocks_movement() && !matches!(self, BrushKind::Plant)
     }
 }
 
