@@ -2,3 +2,6 @@
 **/*.rs.bk
 *.pdb
 .DS_Store
+
+# Lokale Konfiguration. Die Vorlage dazu ist .env.example.
+.env

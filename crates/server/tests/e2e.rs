@@ -47,7 +47,11 @@ fn free_port() -> u16 {
         .port()
 }
 
+/// Verzeichnis des Browser-Clients im Arbeitsbaum.
+const CLIENT_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../client");
+
 impl TestServer {
+    /// Startet den Server ueber Kommandozeilenargumente.
     async fn start() -> TestServer {
         let port = free_port();
         let child = Command::new(env!("CARGO_BIN_EXE_server"))
@@ -62,8 +66,34 @@ impl TestServer {
                 "--seed",
                 "12345",
                 "--client-dir",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/../../client"),
+                CLIENT_DIR,
             ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Server liess sich nicht starten");
+
+        let server = TestServer { child, port };
+        server.await_ready().await;
+        server
+    }
+
+    /// Startet den Server ohne ein einziges Argument, nur ueber die Umgebung.
+    ///
+    /// Das ist der Weg, den `compose.yaml` mit der durchgereichten `.env`
+    /// nimmt. Geprueft wird hier im echten Prozess statt im Test selbst, weil
+    /// `std::env::set_var` in Rust 2024 unsicher ist und mit den Threads der
+    /// Simulation um die Umgebung raufen wuerde.
+    async fn start_from_env() -> TestServer {
+        let port = free_port();
+        let child = Command::new(env!("CARGO_BIN_EXE_server"))
+            .env("CORPSHOOT_BIND", "127.0.0.1")
+            .env("CORPSHOOT_PORT", port.to_string())
+            .env("CORPSHOOT_NO_MDNS", "true")
+            .env("CORPSHOOT_SEED", "12345")
+            .env("CORPSHOOT_CLIENT_DIR", CLIENT_DIR)
+            .env("CORPSHOOT_TICK_RATE", "20")
+            .env("CORPSHOOT_NAME", "Daily Standup")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -93,6 +123,8 @@ struct Client {
     players: Vec<PlayerState>,
     events: Vec<protocol::GameEvent>,
     last_ack: u32,
+    /// Tickrate aus der Willkommensnachricht.
+    tick_rate: u32,
 }
 
 impl Client {
@@ -109,7 +141,10 @@ impl Client {
         )
         .await;
 
-        let ServerMessage::Welcome { player_id, .. } = expect_message(&mut socket).await else {
+        let ServerMessage::Welcome {
+            player_id, config, ..
+        } = expect_message(&mut socket).await
+        else {
             panic!("erste Servernachricht war kein Welcome");
         };
 
@@ -120,6 +155,7 @@ impl Client {
             players: Vec::new(),
             events: Vec::new(),
             last_ack: 0,
+            tick_rate: config.tick_rate,
         }
     }
 
@@ -329,6 +365,27 @@ async fn duell() {
         hunter.opponent().deaths,
         1,
         "Statistik wurde beim Wiedereinstieg zurueckgesetzt"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn server_laesst_sich_allein_ueber_die_umgebung_einstellen() {
+    // Deckt den Weg ab, den der Container nimmt: `compose.yaml` reicht eine
+    // `.env` durch, die Kommandozeile bleibt leer.
+    let server = TestServer::start_from_env().await;
+
+    let mut client = Client::join(server.port, "Karin").await;
+    client.step(InputFrame::default()).await;
+
+    assert_eq!(
+        client.tick_rate, 20,
+        "CORPSHOOT_TICK_RATE wurde nicht uebernommen"
+    );
+    assert!(
+        reqwest_get(server.port, "/")
+            .await
+            .contains("Corporate Shooter"),
+        "CORPSHOOT_CLIENT_DIR wurde nicht uebernommen"
     );
 }
 

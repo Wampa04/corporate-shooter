@@ -37,7 +37,40 @@ Client und kein npm.
 | `--no-mdns` | mDNS-Bekanntmachung abschalten |
 | `--seed <n>` | Fester Startwert für Streuung und Spawnauswahl (für Tests) |
 
-### Mit Docker
+### Mit Docker Compose
+
+Der bequemste Weg:
+
+```sh
+cp .env.example .env    # optional, alles hat Vorgaben
+docker compose up -d
+docker compose logs     # gibt die Adresse aus, die weiterzugeben ist
+```
+
+`compose.yaml` benutzt `network_mode: host`, weil mDNS Multicast braucht und
+im NAT der bridge nichts davon im LAN ankommt. Das setzt Linux voraus; unter
+Docker Desktop stattdessen die im `compose.yaml` vermerkte Alternative mit
+`ports:` verwenden und `CORPSHOOT_NO_MDNS=true` setzen.
+
+Alles ist über Umgebungsvariablen einstellbar, `.env.example` listet sie mit
+Erklärung auf:
+
+| Variable | Bedeutung |
+| --- | --- |
+| `CORPSHOOT_PORT` | Port für HTTP und WebSocket |
+| `CORPSHOOT_BIND` | Adresse, an die gebunden wird |
+| `CORPSHOOT_NAME` | Name, unter dem der Server im LAN erscheint |
+| `CORPSHOOT_TICK_RATE` | Simulationsschritte pro Sekunde |
+| `CORPSHOOT_NO_MDNS` | mDNS-Bekanntmachung abschalten |
+| `CORPSHOOT_CLIENT_DIR` | Verzeichnis mit dem Browser-Client |
+| `CORPSHOOT_SEED` | Fester Startwert des Zufallsgenerators (für Tests) |
+
+Jede Variable entspricht einer Kommandozeilenoption; wird beides angegeben,
+gewinnt die Kommandozeile. Die Vorgabewerte stehen nur an einer Stelle,
+nämlich im Server — `.env.example` nennt sie als Hinweis, setzt sie aber
+nicht.
+
+### Mit Docker allein
 
 Das Image enthält Server **und** Client. Empfohlen ist `--network host`: der
 Server liegt damit direkt im LAN, die mDNS-Bekanntmachung funktioniert, und
@@ -191,9 +224,15 @@ nachzuziehen.
 
 ### Continuous Integration
 
-`.github/workflows/image.yml` baut das Image bei jedem Push und Pull Request,
-startet es und prüft, dass es den Client ausliefert. Veröffentlicht wird nur
-vom Standardbranch und von `v*`-Tags, nach `ghcr.io/<repo>`.
+`.github/workflows/image.yml` läuft bei jedem Push und Pull Request in zwei
+Stufen:
 
-Der Workflow führt **keine** Tests aus — `cargo test --workspace` gehört vor
-dem Merge gelaufen.
+1. **Tests** — `cargo test --workspace --locked`.
+2. **Image** — bauen, starten und prüfen, dass es den Client ausliefert.
+
+Die zweite Stufe hängt an der ersten: aus rotem Code entsteht erst gar kein
+Image. Veröffentlicht wird nur vom Standardbranch und von `v*`-Tags, nach
+`ghcr.io/<repo>`.
+
+`cargo fmt --all -- --check` und `cargo clippy` laufen **nicht** in der CI und
+gehören vor dem Commit gelaufen.

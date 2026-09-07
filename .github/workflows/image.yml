@@ -1,5 +1,7 @@
-# Baut das Container-Image und veroeffentlicht es in der GitHub Container
-# Registry.
+# Prueft den Quelltext und baut daraus das Container-Image, das in der GitHub
+# Container Registry veroeffentlicht wird.
+#
+# Die Tests laufen vorgeschaltet: aus rotem Code entsteht erst gar kein Image.
 #
 # Veroeffentlicht wird nur vom Standardbranch und von Versions-Tags. Alle
 # anderen Pushes und Pull Requests bauen das Image ebenfalls, behalten es aber
@@ -27,8 +29,38 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Quelltext auschecken
+        uses: actions/checkout@v4
+
+      # Der groesste Posten sind die Abhaengigkeiten: solange sich Cargo.lock
+      # nicht aendert, muss Bevy nicht neu uebersetzt werden.
+      - name: Cargo-Verzeichnisse zwischenspeichern
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # `--locked` erzwingt, dass Cargo.lock zum Stand der Manifeste passt.
+      # Ohne das koennte die CI stillschweigend andere Versionen benutzen als
+      # der Arbeitsplatz - und als das Image, das gleich daraus entsteht.
+      - name: Tests
+        run: cargo test --workspace --locked
+
   image:
     name: Bauen, pruefen, veroeffentlichen
+    needs: test
     runs-on: ubuntu-latest
 
     # Reissleine: der Build braucht regulaer wenige Minuten. Bleibt er haengen,

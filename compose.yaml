@@ -1,0 +1,58 @@
+# Corporate Shooter im LAN starten.
+#
+#     cp .env.example .env      # optional, alles hat Vorgaben
+#     docker compose up -d
+#
+# Danach gibt `docker compose logs` die Adresse aus, die weiterzugeben ist.
+
+name: corporate-shooter
+
+services:
+  server:
+    image: ghcr.io/wampa04/corporate-shooter:latest
+
+    # Damit baut `docker compose up --build` auch aus dem Arbeitsbaum, ohne
+    # dass jemand erst ein Image aus der Registry holen muss.
+    build:
+      context: .
+
+    # Host-Netz statt bridge, und zwar mit Absicht:
+    #
+    #   * mDNS braucht Multicast. Hinter dem NAT der bridge kommt davon
+    #     nichts im LAN an.
+    #   * Die beim Start ausgegebene Adresse ist im bridge-Modus die des
+    #     Containers (172.17.x.x) und damit fuer Kolleg:innen unbrauchbar.
+    #
+    # Das setzt Linux voraus. Unter Docker Desktop (macOS, Windows) verhaelt
+    # sich das Host-Netz anders; dort stattdessen die beiden folgenden Zeilen
+    # verwenden und CORPSHOOT_NO_MDNS=true in der .env setzen:
+    #
+    #   ports:
+    #     - "4200:4200"
+    network_mode: host
+
+    # Fehlt die Datei, startet der Container trotzdem - mit den Vorgaben des
+    # Servers. Braucht Compose v2.24 oder neuer.
+    env_file:
+      - path: .env
+        required: false
+
+    restart: unless-stopped
+
+    # Der Server haelt keinen Zustand, den es zu sichern gaebe. Laenger als
+    # noetig auf ein sauberes Ende zu warten, bringt hier nichts.
+    stop_grace_period: 5s
+
+    # Prueft nur, ob der Port angenommen wird. Das Basisbild hat weder curl
+    # noch wget; bash und dessen /dev/tcp sind bereits da und ersparen ein
+    # zusaetzliches Paket im Laufzeitbild.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/${CORPSHOOT_PORT:-4200}"
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

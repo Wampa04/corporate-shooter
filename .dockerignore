@@ -6,7 +6,12 @@ target/
 .gitignore
 .dockerignore
 Dockerfile
+compose.yaml
 README.md
+
+# Konfiguration gehoert zur Laufzeit in den Container, nicht ins Image.
+.env
+.env.example
 
 # Werkzeugreste
 **/*.rs.bk
