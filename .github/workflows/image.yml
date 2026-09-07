@@ -1,0 +1,141 @@
+# Baut das Container-Image und veroeffentlicht es in der GitHub Container
+# Registry.
+#
+# Veroeffentlicht wird nur vom Standardbranch und von Versions-Tags. Alle
+# anderen Pushes und Pull Requests bauen das Image ebenfalls, behalten es aber
+# fuer sich - so faellt ein kaputtes Dockerfile sofort auf, ohne die Registry
+# mit Zwischenstaenden zu fuellen.
+
+name: Container-Image
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# Ein laufender Build fuer denselben Branch wird abgebrochen, sobald ein
+# neuerer Commit kommt. Bevy zu uebersetzen dauert; veraltete Laeufe muessen
+# das nicht zu Ende tun.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  image:
+    name: Bauen, pruefen, veroeffentlichen
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      # Der Standardbranch wird zur Laufzeit ermittelt statt fest verdrahtet -
+      # das Repository heisst seinen Hauptbranch vielleicht nicht "main".
+      PUBLISH: ${{ github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/')) }}
+
+    steps:
+      - name: Quelltext auschecken
+        uses: actions/checkout@v4
+
+      - name: Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      - name: Namen und Tags bestimmen
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+      # Erst lokal bauen und starten. Ein Image, das sich nicht starten laesst,
+      # hat in der Registry nichts verloren.
+      - name: Image bauen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: corporate-shooter:pruefling
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image starten und ausliefern lassen
+        run: |
+          docker run --rm --detach --name pruefling \
+            --publish 4200:4200 corporate-shooter:pruefling --no-mdns
+
+          bereit=0
+          for _ in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:4200/ \
+                 | grep -q "Corporate Shooter"; then
+              bereit=1
+              break
+            fi
+            sleep 1
+          done
+
+          # Der Client muss vollstaendig im Image liegen, three.js eingeschlossen.
+          if [ "$bereit" = 1 ]; then
+            curl --fail --silent --output /dev/null \
+              http://127.0.0.1:4200/vendor/three.module.min.js || bereit=0
+          fi
+
+          echo "::group::Serverprotokoll"
+          docker logs pruefling 2>&1 || true
+          echo "::endgroup::"
+          docker rm --force pruefling > /dev/null
+
+          if [ "$bereit" != 1 ]; then
+            echo "::error::Das Image hat den Client nicht ausgeliefert."
+            exit 1
+          fi
+          echo "Image laeuft und liefert den Client aus."
+
+      - name: An der Registry anmelden
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Zweiter Durchlauf, der aus dem Cache des ersten schoepft und daher
+      # nichts neu uebersetzt.
+      - name: Image veroeffentlichen
+        if: env.PUBLISH == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          cache-from: type=gha
+
+      - name: Ergebnis zusammenfassen
+        run: |
+          {
+            echo "### Container-Image"
+            echo
+            if [ "$PUBLISH" = "true" ]; then
+              echo "Veroeffentlicht unter:"
+              echo
+              echo '```'
+              echo "${{ steps.meta.outputs.tags }}"
+              echo '```'
+            else
+              echo "Gebaut und gestartet, aber nicht veroeffentlicht."
+              echo "Veroeffentlicht wird nur vom Standardbranch und von \`v*\`-Tags."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

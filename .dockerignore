@@ -1,0 +1,14 @@
+# Alles, was nicht in den Build-Kontext gehoert. Vor allem `target/`: es ist
+# mehrere Gigabyte gross und wuerde bei jedem Build zum Daemon uebertragen.
+target/
+.git/
+.github/
+.gitignore
+.dockerignore
+Dockerfile
+README.md
+
+# Werkzeugreste
+**/*.rs.bk
+**/*.pdb
+.DS_Store

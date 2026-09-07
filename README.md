@@ -37,6 +37,47 @@ Client und kein npm.
 | `--no-mdns` | mDNS-Bekanntmachung abschalten |
 | `--seed <n>` | Fester Startwert für Streuung und Spawnauswahl (für Tests) |
 
+### Mit Docker
+
+Das Image enthält Server **und** Client. Empfohlen ist `--network host`: der
+Server liegt damit direkt im LAN, die mDNS-Bekanntmachung funktioniert, und
+die beim Start ausgegebene Adresse stimmt.
+
+```sh
+docker run --rm --network host ghcr.io/wampa04/corporate-shooter:latest
+```
+
+Ohne `--network host` bleibt der Container hinter NAT. Dann den Port
+veröffentlichen und mDNS abschalten:
+
+```sh
+docker run --rm -p 4200:4200 ghcr.io/wampa04/corporate-shooter:latest --no-mdns
+```
+
+In diesem Fall ist die ausgegebene „LAN-Adresse“ die des Containers
+(`172.17.x.x`) und nicht die des Rechners — dann die Host-IP weitergeben.
+
+Alle Serveroptionen werden durchgereicht:
+
+```sh
+docker run --rm --network host ghcr.io/wampa04/corporate-shooter:latest \
+  --port 8080 --name "Daily Standup"
+```
+
+Selbst bauen:
+
+```sh
+docker build -t corporate-shooter .
+```
+
+Der Build ist zweistufig und nutzt [cargo-chef], damit eine Quelltextänderung
+nicht das Übersetzen von Bevy nach sich zieht — ein Rebuild dauert dann
+Sekunden statt Minuten. Das Laufzeitbild ist `debian-slim` ohne
+nachinstallierte Pakete: die Binärdatei braucht nur libc, libm und libgcc. Der
+Server läuft als unprivilegierter Nutzer.
+
+[cargo-chef]: https://github.com/LukeMathWalker/cargo-chef
+
 ## Steuerung
 
 | Taste | Wirkung |
@@ -144,4 +185,15 @@ laufen zu lassen.
 Der Browser-Client hat keine automatisierten Tests. Änderungen daran gehören
 im Browser angesehen; die Konsole muss dabei fehlerfrei bleiben.
 
-Rust 1.95 oder neuer (Vorgabe von Bevy 0.19).
+Rust 1.95 oder neuer (Vorgabe von Bevy 0.19). Das `Dockerfile` nagelt die
+Compiler-Version fest; wird Bevy angehoben, ist dort `RUST_VERSION`
+nachzuziehen.
+
+### Continuous Integration
+
+`.github/workflows/image.yml` baut das Image bei jedem Push und Pull Request,
+startet es und prüft, dass es den Client ausliefert. Veröffentlicht wird nur
+vom Standardbranch und von `v*`-Tags, nach `ghcr.io/<repo>`.
+
+Der Workflow führt **keine** Tests aus — `cargo test --workspace` gehört vor
+dem Merge gelaufen.
