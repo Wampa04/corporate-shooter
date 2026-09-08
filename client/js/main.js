@@ -8,6 +8,7 @@
 import * as THREE from "../vendor/three.module.min.js";
 import { Connection } from "./net.js";
 import { buildScene, setShadowsEnabled } from "./world.js";
+import { baueStufen, Grafikregler } from "./grafik.js";
 import { PlayerViews } from "./players.js";
 import { Effects } from "./effects.js";
 import { InputController } from "./input.js";
@@ -35,24 +36,6 @@ const CAMERA_TELEPORT = 3.0;
  * dreissig Bildern je Sekunde spielt, holt damit den Rueckstand auf.
  */
 const MAX_EINGABEN_JE_BILD = 3;
-
-/**
- * Wie viele Bilder abgewartet werden, bevor ueber den Schattenwurf entschieden
- * wird. Die ersten Bilder sind durch Shader-Uebersetzung und Texturupload
- * verzerrt und taugen nicht als Massstab.
- */
-const QUALITY_WARMUP_FRAMES = 30;
-
-/** Wie viele Bilder danach gemessen werden. */
-const QUALITY_SAMPLE_FRAMES = 60;
-
-/**
- * Ab dieser Bildzeit wird der Schattenwurf abgeschaltet.
- *
- * 28 ms entsprechen gut 35 Bildern je Sekunde. Wer darunter liegt, hat mehr
- * davon, das Buero fluessig zu sehen als es beschattet zu sehen.
- */
-const QUALITY_BUDGET_MS = 28;
 
 /** Text des Pausenbildes im Normalfall. */
 const RESUME_HINT = "Klicken, um weiterzuspielen.";
@@ -119,21 +102,26 @@ function start(connection, welcome, prediction) {
   if (prediction && !prediction.init(map, config)) prediction = null;
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   // Schattenwurf gibt dem Buero erst Tiefe: ohne ihn schweben Schreibtische
   // und Stuehle ueber dem Teppich, statt darauf zu stehen. Eine 1024er
   // Schattenkarte reicht fuer ein Stockwerk und kostet auch auf einer
   // eingebauten Grafikeinheit kaum etwas.
-  // `?grafik=einfach` schaltet den Schattenwurf von vornherein ab,
-  // `?grafik=schoen` laesst ihn an, egal wie langsam es laeuft. Ohne Angabe
-  // entscheidet die Messung weiter unten.
+  //
+  // `?grafik=schoen` haelt die hoechste Stufe fest, `?grafik=einfach` die
+  // niedrigste. Ohne Angabe regelt die Messung weiter unten laufend nach.
   const params = new URLSearchParams(location.search);
   const wunsch = params.get("grafik");
-  const shadows = wunsch !== "einfach";
-  renderer.shadowMap.enabled = shadows;
+  const stufen = baueStufen(window.devicePixelRatio);
+  let stufe = wunsch === "einfach" ? stufen.length - 1 : 0;
+
+  renderer.setPixelRatio(stufen[stufe].pixel);
+  renderer.shadowMap.enabled = stufen[stufe].schatten;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  const scene = buildScene(map, { shadows });
+  // `buildScene` vermerkt an jedem Netz, ob es werfen *darf*; ob es das
+  // gerade tut, entscheidet `setShadowsEnabled`. Deshalb laesst sich jede
+  // Stufe spaeter in beide Richtungen wechseln, egal womit gestartet wurde.
+  const scene = buildScene(map, { shadows: stufen[stufe].schatten });
   const camera = new THREE.PerspectiveCamera(78, 1, 0.08, 200);
   // Yaw vor Pitch anwenden, sonst kippt der Horizont beim Umsehen.
   camera.rotation.order = "YXZ";
@@ -295,26 +283,31 @@ function start(connection, welcome, prediction) {
   let previous = performance.now();
   let frame = 0;
 
-  // Selbstmessung der Bildzeit. Ob ein Rechner den Schattenwurf traegt, laesst
-  // sich nicht vorhersagen - also wird es gemessen statt geraten.
-  const frameTimes = [];
-  let qualityDecided = wunsch !== null;
+  // Selbstmessung der Bildzeit. Was ein Rechner traegt, laesst sich nicht
+  // vorhersagen - also wird es gemessen, und zwar laufend. Die Entscheidung
+  // selbst steht in `grafik.js`; hier wird sie nur angewandt.
+  const regler = new Grafikregler(stufen.length, stufe);
+  const geregelt = wunsch === null && stufen.length > 1;
+
+  function setzeStufe(neu, median) {
+    const alt = stufen[stufe];
+    stufe = neu;
+    const jetzt = stufen[stufe];
+    if (jetzt.schatten !== alt.schatten) setShadowsEnabled(scene, renderer, jetzt.schatten);
+    if (jetzt.pixel !== alt.pixel) {
+      renderer.setPixelRatio(jetzt.pixel);
+      // `setPixelRatio` allein aendert den Zeichenpuffer nicht - erst die
+      // erneute Groessenangabe rechnet ihn um.
+      resize();
+    }
+    console.info(`Grafikstufe: ${jetzt.name} (${median.toFixed(0)} ms je Bild).`);
+    hud.notify(`Grafik: ${jetzt.name}`);
+  }
 
   function judgeQuality(dt) {
-    if (qualityDecided) return;
-    frameTimes.push(dt * 1000);
-    if (frameTimes.length < QUALITY_WARMUP_FRAMES + QUALITY_SAMPLE_FRAMES) return;
-
-    qualityDecided = true;
-    const messwerte = frameTimes.slice(QUALITY_WARMUP_FRAMES).sort((a, b) => a - b);
-    const median = messwerte[Math.floor(messwerte.length / 2)];
-    if (median <= QUALITY_BUDGET_MS) return;
-
-    setShadowsEnabled(scene, renderer, false);
-    console.info(
-      `Schattenwurf abgeschaltet: ${median.toFixed(0)} ms je Bild. ` +
-        "Mit ?grafik=schoen laesst er sich erzwingen.",
-    );
+    if (!geregelt) return;
+    const wechsel = regler.bild(dt * 1000);
+    if (wechsel) setzeStufe(wechsel.stufe, wechsel.median);
   }
 
   function render(now) {
@@ -343,6 +336,7 @@ function start(connection, welcome, prediction) {
     viewmodel.update(dt, local?.reloading ?? false);
     hud.tick(now);
     hud.setPing(connection.ping);
+    hud.setFrameTime(dt);
 
     const latest = connection.latest;
     const self = latest?.players.find((p) => p.id === selfId);
@@ -397,6 +391,12 @@ function start(connection, welcome, prediction) {
       korrektur: () => prediction?.lastError ?? null,
       offen: () => prediction?.pendingCount ?? null,
       statistik: () => prediction?.stats ?? null,
+      grafik: () => ({
+        stufe: stufen[stufe].name,
+        pixel: renderer.getPixelRatio(),
+        schatten: renderer.shadowMap.enabled,
+        geregelt,
+      }),
     };
   }
 

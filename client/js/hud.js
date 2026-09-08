@@ -31,6 +31,7 @@ export class Hud {
     this.dash = el("skill-dash");
     this.heal = el("skill-heal");
     this.killfeed = el("killfeed");
+    this.fps = el("fps");
     this.respawn = el("respawn");
     this.respawnTimer = el("respawn-timer");
     this.scoreboard = el("scoreboard");
@@ -84,6 +85,32 @@ export class Hud {
 
   setPing(ms) {
     this.ping.textContent = ms === null ? "–" : Math.round(ms);
+  }
+
+  /**
+   * Zeigt die Bildrate an.
+   *
+   * Nicht Kosmetik: ruckelt es, ist die erste Frage, ob es am Netz oder am
+   * Zeichnen liegt. Ohne die Zahl laesst sich das von aussen nicht
+   * unterscheiden - beides sieht gleich aus.
+   *
+   * Gezeigt wird der gleitende Mittelwert und, wenn er auffaellt, der
+   * schlechteste Wert der letzten Sekunde: eine Bildrate von 120 mit einem
+   * Ausreisser auf 20 fuehlt sich schlechter an als konstante 60.
+   */
+  setFrameTime(dt) {
+    this._fpsBuf ??= [];
+    this._fpsBuf.push(dt);
+    if (this._fpsBuf.length < 30) return;
+
+    const mittel = this._fpsBuf.reduce((a, b) => a + b, 0) / this._fpsBuf.length;
+    const schlimmster = Math.max(...this._fpsBuf);
+    this._fpsBuf.length = 0;
+
+    const fps = Math.round(1 / mittel);
+    const min = Math.round(1 / schlimmster);
+    // Nur zeigen, wenn der Ausreisser deutlich unter dem Mittel liegt.
+    this.fps.textContent = min < fps * 0.7 ? `${fps} (min ${min})` : String(fps);
   }
 
   setScoreboard(players, visible) {

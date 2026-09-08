@@ -102,6 +102,21 @@ const NO_SHADOW_CAST = new Set([
   "AccentPanel",
   "Vent",
   "Trim",
+
+  // Kleinteile. Die Schattenkarte ist 1024 Texel breit und deckt gut sechzig
+  // Meter ab - ein Texel ist also knapp sechs Zentimeter. Eine Stuhlrolle
+  // wirft damit genau einen Texel, ein Papierstapel liegt ohnehin flach auf
+  // der Platte, und die Tasse verschwindet im Schatten des Bildschirms.
+  //
+  // Sie kosten trotzdem den vollen Schattenpass: der zeichnet jede werfende
+  // Box ein zweites Mal. Allein die Stuhlgestelle waren 558 von 1068 Werfern.
+  "ChairFrame",
+  "Keyboard",
+  "Mug",
+  "Paper",
+  "Soil",
+  "PlantRim",
+  "Stem",
 ]);
 
 /**

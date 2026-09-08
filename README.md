@@ -16,7 +16,7 @@ Der Server gibt beim Start aus, unter welchen Adressen er erreichbar ist:
 ```
 Corporate Shooter laeuft.
   Karte:   Großraumbüro, 3. OG
-  Takt:    30 Hz
+  Takt:    60 Hz
   Client:  client
   lokal:   http://localhost:4200
   im LAN:  http://192.168.1.42:4200
@@ -142,18 +142,35 @@ Server läuft als unprivilegierter Nutzer.
 
 ### Darstellung
 
-Der Client misst nach dem Start seine eigene Bildzeit. Bleibt sie über
-28 ms - also unter gut 35 Bildern je Sekunde -, schaltet er den Schattenwurf
-ab und vermerkt das in der Browserkonsole. Ob ein Rechner ihn trägt, lässt
-sich nicht vorhersagen, also wird es gemessen statt geraten.
+Der Client misst laufend seine eigene Bildzeit und regelt danach die
+Grafikstufe. Bleibt der Median eines Messfensters über 28 ms - also unter gut
+35 Bildern je Sekunde -, fällt er eine Stufe; bleibt er über mehrere Fenster
+unter 14 ms, steigt er wieder. Die Bildrate steht im HUD neben dem Ping.
 
-Erzwingen lässt sich beides über die Adresse:
+Die Stufen, von schön nach schnell: voller Schattenwurf, ohne Schattenwurf,
+dann in zwei Schritten weniger Bildpunkte. Der Schattenwurf fällt zuerst, weil
+er das ganze Stockwerk ein zweites Mal zeichnet und damit unabhängig von der
+Bildgröße kostet; die Auflösung sinkt zuletzt, weil man das sieht. Auf einem
+Bildschirm mit Pixelverhältnis 1 entfällt die erste Auflösungsstufe, weil sie
+dort nichts änderte.
+
+Gemessen im Prüflauf (SwiftShader, ein und dieselbe Sitzung): 83 ms bei voller
+Stufe, 67 ms ohne Schattenwurf, 50 ms bei 75 Prozent Auflösung - zwölf,
+fünfzehn, zwanzig Bilder je Sekunde.
+
+Gemessen wird der Median, nicht der Mittelwert: ein einzelnes langes Bild -
+eine Speicherbereinigung, die Rückkehr aus einem anderen Tab - sagt nichts
+darüber, ob die Maschine die Stufe trägt. Und wer zweimal von derselben Stufe
+herunter musste, kommt nicht mehr hinauf, sonst pendelt eine Maschine an der
+Grenze im Sekundentakt.
+
+Erzwingen lässt sich das über die Adresse:
 
 | Adresse | Wirkung |
 | --- | --- |
-| `…:4200/` | misst selbst und entscheidet |
-| `…:4200/?grafik=schoen` | Schattenwurf immer an |
-| `…:4200/?grafik=einfach` | Schattenwurf immer aus |
+| `…:4200/` | misst laufend und regelt nach |
+| `…:4200/?grafik=schoen` | immer die volle Stufe |
+| `…:4200/?grafik=einfach` | immer die schnellste Stufe |
 
 ## Steuerung
 
@@ -171,7 +188,8 @@ Erzwingen lässt sich beides über die Adresse:
 
 ## Was drin ist
 
-* Autoritativer Server, 30 Hz, Clients schicken nur Eingaben
+* Autoritativer Server, 60 Hz simuliert, 30 Snapshots je Sekunde;
+  Clients schicken nur Eingaben
 * Karte „Großraumbüro, 3. OG“ mit Kaffeeküche, verglastem Serverraum und
   erhöhter Chef-Etage
 * Textmarker-Pistole und Locher-Schrotflinte

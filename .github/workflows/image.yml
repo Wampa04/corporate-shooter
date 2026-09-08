@@ -72,6 +72,13 @@ jobs:
       - name: Zwischenbild-Ausgleich der Vorhersage
         run: node scripts/zwischenbild.mjs
 
+      # Ob ein Rechner den Schattenwurf traegt, entscheidet der Client selbst
+      # anhand der gemessenen Bildzeit. Der Weg nach unten laesst sich im
+      # Prueflauf noch beobachten, der Weg nach oben nicht: dafuer braeuchte es
+      # eine Maschine, die erst langsam ist und dann schnell.
+      - name: Regler fuer die Grafikstufe
+        run: node scripts/grafikregler.mjs
+
   image:
     name: Bauen, pruefen, veroeffentlichen
     needs: test
