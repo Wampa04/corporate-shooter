@@ -59,6 +59,19 @@ const OPENING_Z1: f32 = 1.0;
 const STAIR_DOOR_Z0: f32 = 5.8;
 const STAIR_DOOR_Z1: f32 = 8.6;
 
+// --- Nullpunkte der beiden Zonen im Altbau ---------------------------------
+// Küche und Serverraum standen als einzige noch in Weltkoordinaten da. Beide
+// haben jetzt einen eigenen Nullpunkt; die Zahlen sind bewusst ganze Meter,
+// damit die Umrechnung in f32 nichts verliert.
+
+/// Mitte der Kaffeeküche in der Nordwestecke.
+const KITCHEN_X: f32 = -16.0;
+const KITCHEN_Z: f32 = 11.0;
+
+/// Mitte des Serverraums in der Südostecke.
+const SERVER_X: f32 = 16.0;
+const SERVER_Z: f32 = -11.0;
+
 /// Baut das Großraumbüro samt Kaffeeküche, Serverraum und Chef-Etage.
 pub fn grossraumbuero() -> MapDesc {
     let mut b = Build::new();

@@ -195,8 +195,9 @@ Erzwingen lässt sich das über die Adresse:
 
 * Autoritativer Server, 60 Hz simuliert, 30 Snapshots je Sekunde;
   Clients schicken nur Eingaben
-* Karte „Großraumbüro, 3. OG“ mit Kaffeeküche, verglastem Serverraum und
-  erhöhter Chef-Etage
+* Karte „Großraumbüro, 3. OG“ mit Kaffeeküche, verglastem Serverraum,
+  erhöhter Chef-Etage und einem Ostflügel aus Besprechungsraum und zwei
+  verschieden eingerichteten Einzelbüros
 * Textmarker-Pistole und Locher-Schrotflinte
 * Agile Sprint und Wellness-Tag
 * Team Deathmatch: Marketing gegen Engineering, kein Friendly Fire

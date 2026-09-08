@@ -1038,6 +1038,82 @@ fn ostfluegel_ist_begehbar() {
 }
 
 #[test]
+fn raeume_des_ostfluegels_sind_durch_ihre_tuer_betretbar() {
+    // Ein Raum, in den man nicht hineinkommt, sieht im Grundriss völlig normal
+    // aus. Genau das war hier der Fall, und zwar bei allen drei Räumen: das
+    // Oberlicht über jeder Tür wurde mit y0 = 2.10 gebaut, aber `glass_bay`
+    // fragte y0 für Milchglasband und Oberglas gar nicht ab und stellte sie
+    // immer auf 0.90 bis 3.30 - mitten in die Türöffnung. Offen blieben neun
+    // Zentimeter über dem Boden.
+    //
+    // `ostfluegel_ist_begehbar` hat das nicht gemerkt: der Test läuft in den
+    // *Flur*, und der war frei.
+    //
+    // Die Tür sitzt zum Nordende jedes Raums hin: 0.6 m Wand hinter ihr, dann
+    // 1.1 m Öffnung. Ihre Mitte liegt also 1.15 m vor der Nordkante - nicht in
+    // festem Abstand zur Südkante, denn der Besprechungsraum ist zwei Meter
+    // länger als die Büros.
+    let tuer_mitte = |nordkante: f32| nordkante - 1.15;
+    for (name, z) in [
+        ("Besprechungsraum", tuer_mitte(-2.2)),
+        ("Aktenbüro", tuer_mitte(2.0)),
+        ("Besprechungsecke", tuer_mitte(6.2)),
+    ] {
+        let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+        let p = add_player(&mut app, 1, Team::Engineering, Vec3::new(21.6, 0.0, z), 0.0);
+        set_input(
+            &mut app,
+            p,
+            InputFrame {
+                move_x: 1.0,
+                ..Default::default()
+            },
+        );
+        run(&mut app, 60);
+        let pos = body(&app, p).pos;
+        assert!(
+            pos.x > 25.0,
+            "{name}: kommt nicht durch die Tür, x = {:.2} (z = {:.2})",
+            pos.x,
+            pos.z
+        );
+    }
+}
+
+#[test]
+fn die_beiden_einzelbueros_sind_verschieden_eingerichtet() {
+    // Gegenprobe zur Einrichtung: vorher rief `east_wing` zweimal dieselbe
+    // Funktion mit denselben Werten auf. Wer das versehentlich zurückbaut,
+    // merkt es sonst nur beim Spielen.
+    let map = crate::maps::grossraumbuero();
+
+    // Alles im Ostflügel östlich des Flurs, je Raum nach Art gezählt.
+    let inventar = |z0: f32, z1: f32| {
+        let mut arten: Vec<String> = map
+            .brushes
+            .iter()
+            .filter(|b| {
+                let m = b.aabb.min;
+                m.x > 22.6 && m.z >= z0 && m.z < z1
+            })
+            .map(|b| format!("{:?}", b.kind))
+            .collect();
+        arten.sort();
+        arten
+    };
+
+    let akten = inventar(-2.2, 2.0);
+    let besprechung = inventar(2.0, 6.2);
+
+    assert!(!akten.is_empty(), "im Aktenbüro steht gar nichts");
+    assert!(!besprechung.is_empty(), "in der Besprechungsecke steht gar nichts");
+    assert_ne!(
+        akten, besprechung,
+        "beide Einzelbüros enthalten genau dasselbe - sie spielen sich gleich"
+    );
+}
+
+#[test]
 fn milchglasband_haelt_den_schuss_auf() {
     // Das Band auf Brusthöhe ist Glas, keine Deko. Wäre es dekorativ, hätte
     // jede verglaste Wand einen kugeldurchlässigen Schlitz auf genau der Höhe,

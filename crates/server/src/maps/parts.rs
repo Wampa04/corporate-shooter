@@ -30,6 +30,47 @@ pub fn worktop(b: &mut Build, x0: f32, z0: f32, x1: f32, z1: f32, base: f32) {
     );
 }
 
+/// Tiefe der Hängeschränke über einer Küchenzeile.
+const WALL_CABINET_DEPTH: f32 = 0.4;
+const WALL_CABINET_Y0: f32 = 1.55;
+const WALL_CABINET_Y1: f32 = 2.15;
+
+/// Eine Zeile aus Korpus und Arbeitsplatte, auf Wunsch mit Hängeschrank.
+///
+/// Küchenzeile, Sideboard und Raumteiler sind dasselbe Bauteil: ein Kasten mit
+/// einer Platte obendrauf. In der Küche stand das dreimal als eigene
+/// Zahlenreihe da, einmal je Wand - und wer die Zeile verschieben wollte,
+/// musste vier Zahlen und die Platte von Hand nachziehen.
+///
+/// Die Zeile beschreibt sich um ihre eigene Mitte: die Wand liegt im Rücken
+/// (lokal z = 0), die Front zeigt nach vorn (lokal -Z, also in die
+/// Blickrichtung des Rahmens). Dadurch ist die Zeile an der Westwand dieselbe
+/// Funktion wie die an der Nordwand, nur anders herum gedreht.
+pub fn counter_run(
+    b: &mut Build,
+    kind: BrushKind,
+    length: f32,
+    depth: f32,
+    height: f32,
+    over: Option<f32>,
+) {
+    let hw = length * 0.5;
+    b.cuboid(kind, -hw, -depth, hw, 0.0, 0.0, height);
+    worktop(b, -hw, -depth, hw, 0.0, height);
+
+    if let Some(oben) = over {
+        b.cuboid(
+            kind,
+            -oben * 0.5,
+            -WALL_CABINET_DEPTH,
+            oben * 0.5,
+            0.0,
+            WALL_CABINET_Y0,
+            WALL_CABINET_Y1,
+        );
+    }
+}
+
 /// Leitstreifen auf dem Boden, in der Hausfarbe.
 pub fn floor_stripe(b: &mut Build, x0: f32, z0: f32, x1: f32, z1: f32) {
     b.cuboid(BrushKind::FloorStripe, x0, z0, x1, z1, 0.0, 0.012);
@@ -455,29 +496,35 @@ fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
     }
     let unten = y0.max(0.10);
 
-    if unten < BAND_LOW {
-        b.cuboid(BrushKind::Glass, x0, -t, x1, t, unten, BAND_LOW);
-    }
-    if y1 > BAND_LOW {
-        // Das Milchglasband: verdeckt den Rumpf, lässt Kopf und Beine frei.
-        // Die Höhen kommen aus der Spielerfigur, nicht aus dem Gefühl - Beine
-        // bis 0.82, Rumpf bis 1.60, Augen auf 1.62.
-        b.cuboid(
-            BrushKind::FrostedGlass,
-            x0,
-            -t,
-            x1,
-            t,
-            BAND_LOW,
-            BAND_HIGH.min(y1),
-        );
+    // Jedes der drei Bänder wird auf [unten, y1] beschnitten und nur gebaut,
+    // wenn davon etwas übrig bleibt.
+    //
+    // Genau daran hing ein Fehler, der die drei Räume des Ostflügels
+    // unbetretbar machte: das Oberlicht über einer Tür wird mit y0 = 2.10
+    // gebaut, aber Milchglasband und Oberglas fragten y0 gar nicht - sie
+    // standen immer auf 0.90 bis 3.30, also mitten in der Türöffnung. Von
+    // aussen sah die Tür normal aus, nur durchgehen konnte man nicht.
+    let stueck = |b: &mut Build, kind: BrushKind, a: f32, e: f32| {
+        let (a, e) = (a.max(unten), e.min(y1));
+        if e > a + 1e-4 {
+            b.cuboid(kind, x0, -t, x1, t, a, e);
+            true
+        } else {
+            false
+        }
+    };
+
+    stueck(b, BrushKind::Glass, 0.0, BAND_LOW);
+    // Das Milchglasband: verdeckt den Rumpf, lässt Kopf und Beine frei. Die
+    // Höhen kommen aus der Spielerfigur, nicht aus dem Gefühl - Beine bis
+    // 0.82, Rumpf bis 1.60, Augen auf 1.62.
+    if stueck(b, BrushKind::FrostedGlass, BAND_LOW, BAND_HIGH) {
         // Zwei schmale Streifen in der Hausfarbe fassen das Band ein.
-        for y in [BAND_LOW, BAND_HIGH.min(y1)] {
+        for y in [BAND_LOW.max(unten), BAND_HIGH.min(y1)] {
             b.cuboid(BrushKind::AccentPanel, x0, -band, x1, band, y - 0.01, y + 0.01);
         }
     }
-    if y1 > BAND_HIGH {
-        b.cuboid(BrushKind::Glass, x0, -t, x1, t, BAND_HIGH, y1 - 0.10);
+    if stueck(b, BrushKind::Glass, BAND_HIGH, y1 - 0.10) {
         // Kopfschiene.
         b.cuboid(BrushKind::Trim, x0, -t, x1, t, y1 - 0.10, y1);
     }
