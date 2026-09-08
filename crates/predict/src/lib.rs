@@ -179,6 +179,9 @@ pub extern "C" fn step(
         pitch,
         buttons: buttons as u8,
         weapon_slot: 0,
+        // Die Vorhersage betrifft nur die eigene Bewegung; für sie spielt es
+        // keine Rolle, welchen Tick der Client von den anderen sah.
+        view_tick: None,
     };
 
     let mut state = lesen(&w.state);

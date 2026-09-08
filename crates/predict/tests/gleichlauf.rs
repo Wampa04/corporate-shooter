@@ -131,6 +131,8 @@ fn rust_bahn_aufzeichnen() {
                 pitch: 0.0,
                 buttons: btn,
                 weapon_slot: 0,
+                // Betrifft nur die Trefferauswertung, nicht die Bewegung.
+                view_tick: None,
             };
             sim_core::step(&mut state, &input, prev, true, &config, &solid, &map.bounds);
             prev = btn;

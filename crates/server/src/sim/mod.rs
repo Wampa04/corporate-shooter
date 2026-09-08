@@ -12,6 +12,7 @@
 mod tests;
 
 pub mod combat;
+pub mod history;
 pub mod movement;
 pub mod skills;
 pub mod spawn;
@@ -273,6 +274,7 @@ impl Plugin for SimPlugin {
                 None => Rng::from_entropy(),
             }))
             .init_resource::<Tick>()
+            .init_resource::<history::History>()
             .init_resource::<PendingDamage>()
             .init_resource::<EventLog>()
             .init_resource::<Lobby>()
@@ -282,6 +284,7 @@ impl Plugin for SimPlugin {
                     skills::tick_cooldowns,
                     skills::apply_skills,
                     movement::move_players,
+                    history::record,
                     combat::fire_weapons,
                     combat::resolve_deaths,
                     spawn::respawn_players,

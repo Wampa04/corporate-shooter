@@ -109,6 +109,7 @@ export class PlayerViews {
     this.delayMs = (INTERPOLATION_TICKS * 1000) / tickRate;
     /** @type {Map<number, {group: THREE.Group, team: string}>} */
     this.avatars = new Map();
+
   }
 
   /**
@@ -149,6 +150,25 @@ export class PlayerViews {
     for (const id of [...this.avatars.keys()]) {
       if (!states.has(id)) this._remove(id);
     }
+  }
+
+  /**
+   * Welchen Serverstand ein Betrachter zum Zeitpunkt `now` sieht, gebrochen.
+   *
+   * Der Server braucht das fuer die Lag-Kompensation: fremde Spieler werden
+   * hier bewusst verzoegert gezeigt, damit ihre Bewegung nicht ruckelt, und
+   * dazu kommt die Laufzeit. Wer auf einen Kopf zielt, zielt also auf eine
+   * Vergangenheit.
+   *
+   * Bewusst frisch gerechnet und nicht aus `update` gemerkt: Eingaben gehen
+   * mit der Tickrate raus, gezeichnet wird mit der Bildrate. Bei zwanzig
+   * Bildern je Sekunde waere ein gemerkter Wert bis zu fuenfzig Millisekunden
+   * alt, und der Server spulte entsprechend zu weit zurueck.
+   */
+  viewTick(snapshots, now) {
+    if (!snapshots || snapshots.length === 0) return null;
+    const [older, newer, t] = bracket(snapshots, now - this.delayMs);
+    return older.tick + (newer.tick - older.tick) * t;
   }
 
   _remove(id) {

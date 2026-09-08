@@ -8,14 +8,16 @@
 use bevy::ecs::prelude::*;
 use protocol::{Aabb, GameEvent, PlayerId, Team, Tracer, Vec3, WeaponDesc, WeaponId, buttons};
 
+use super::history::History;
 use super::movement::{look_direction, player_aabb, player_half_extents};
 use super::{
     Body, Config, DamageEvent, EventLog, Inputs, Level, Loadout, PendingDamage, Player, Rand,
-    Vitals,
+    Tick, Vitals,
 };
 use crate::rng::Rng;
 
 /// Mögliches Ziel eines Schusses, einmal pro Tick eingesammelt.
+#[derive(Clone)]
 struct Target {
     entity: Entity,
     id: PlayerId,
@@ -110,6 +112,8 @@ fn damage_at(weapon: &WeaponDesc, distance: f32) -> u16 {
 pub fn fire_weapons(
     config: Res<Config>,
     level: Res<Level>,
+    tick: Res<Tick>,
+    history: Res<History>,
     mut rand: ResMut<Rand>,
     mut events: ResMut<EventLog>,
     mut pending: ResMut<PendingDamage>,
@@ -184,6 +188,25 @@ pub fn fire_weapons(
         let aim = look_direction(body.yaw, body.pitch);
         let mut tracers = Vec::with_capacity(weapon.pellets as usize);
 
+        // Lag-Kompensation: die Gegner dorthin zurücksetzen, wo der Schütze
+        // sie gesehen hat. Nur die Gegner - die eigene Position ist aktuell
+        // und bleibt es, und Geometrie bewegt sich ohnehin nicht.
+        let zurueckgespult = history
+            .at(tick.0, inputs.current.view_tick)
+            .map(|damals| {
+                let mut kopie = targets.clone();
+                for ziel in &mut kopie {
+                    if let Some((_, pos)) = damals.iter().find(|(id, _)| *id == ziel.id) {
+                        ziel.aabb = player_aabb(*pos, half);
+                    }
+                    // Wer damals noch nicht dabei war, bleibt an seinem
+                    // aktuellen Platz - das ist der einzige Stand, den es von
+                    // ihm gibt.
+                }
+                kopie
+            });
+        let ziele: &[Target] = zurueckgespult.as_deref().unwrap_or(&targets);
+
         for _ in 0..weapon.pellets.max(1) {
             let dir = spread_direction(aim, weapon.spread_deg, &mut rand.0);
             let impact = trace(
@@ -191,7 +214,7 @@ pub fn fire_weapons(
                 dir,
                 weapon.range,
                 &level.opaque,
-                &targets,
+                ziele,
                 player.id,
                 player.team,
             );

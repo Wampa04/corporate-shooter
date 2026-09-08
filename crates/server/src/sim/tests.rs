@@ -1050,3 +1050,129 @@ fn fluegeltreppe_fuehrt_auf_die_chef_etage() {
         b.pos
     );
 }
+
+// ---------------------------------------------------------------------------
+// Lag-Kompensation
+// ---------------------------------------------------------------------------
+
+/// Baut die Lage nach, um die es geht: das Ziel laeuft seitwaerts, der Schuetze
+/// sieht es verzoegert und zielt dorthin, wo es *war*.
+///
+/// Liefert (App, Schuetze, Ziel, gesehener Tick, Blickwinkel auf die damalige
+/// Position).
+fn nachlaufendes_ziel(verzoegerung_ticks: u64) -> (App, Entity, Entity, f32, f32) {
+    let mut app = app_with(precise_config(), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let target = add_player(
+        &mut app,
+        2,
+        Team::Marketing,
+        Vec3::new(0.0, 0.0, -6.0),
+        0.0,
+    );
+
+    // Das Ziel laeuft nach rechts (+X), quer zur Schussbahn.
+    set_input(
+        &mut app,
+        target,
+        InputFrame {
+            move_x: 1.0,
+            ..Default::default()
+        },
+    );
+
+    // Erst laufen lassen, bis Geschwindigkeit im Spiel ist.
+    run(&mut app, 10);
+
+    // Diesen Stand sieht der Schuetze - und zwar erst spaeter.
+    //
+    // Der zuletzt aufgezeichnete Tick ist `Tick - 1`: der Zaehler steht schon
+    // auf dem naechsten, waehrend die Position die vom Ende des vorigen ist.
+    let gesehen = app.world().resource::<Tick>().0 - 1;
+    let damals = body(&app, target).pos;
+
+    // Erst jetzt vergeht die Verzoegerung; das Ziel laeuft dabei weiter.
+    run(&mut app, verzoegerung_ticks as u32);
+
+    // Der Schuetze zielt auf die Stelle, an der er das Ziel sieht.
+    // yaw = 0 blickt nach -Z; positives X liegt bei negativem yaw.
+    let winkel = (damals.x).atan2(-damals.z);
+    (app, shooter, target, gesehen as f32, -winkel)
+}
+
+#[test]
+fn ohne_kompensation_geht_der_schuss_ins_leere() {
+    // Erst der Gegenbeweis: ohne Angabe des gesehenen Ticks wertet der Server
+    // gegen den aktuellen Stand aus, und wer auf die Vergangenheit zielt,
+    // trifft nichts. Ohne diesen Test wuesste man nicht, ob der naechste
+    // ueberhaupt etwas beweist.
+    let (mut app, shooter, target, _gesehen, winkel) = nachlaufendes_ziel(6);
+
+    set_input(
+        &mut app,
+        shooter,
+        InputFrame {
+            buttons: buttons::FIRE,
+            yaw: winkel,
+            view_tick: None,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 2);
+
+    assert_eq!(
+        vitals(&app, target).health,
+        precise_config().max_health,
+        "ohne Kompensation duerfte der Schuss nicht treffen"
+    );
+}
+
+#[test]
+fn mit_kompensation_trifft_der_schuss_auf_die_gesehene_stelle() {
+    let (mut app, shooter, target, gesehen, winkel) = nachlaufendes_ziel(6);
+
+    set_input(
+        &mut app,
+        shooter,
+        InputFrame {
+            buttons: buttons::FIRE,
+            yaw: winkel,
+            view_tick: Some(gesehen),
+            ..Default::default()
+        },
+    );
+    run(&mut app, 2);
+
+    assert!(
+        vitals(&app, target).health < precise_config().max_health,
+        "mit Kompensation haette der Schuss treffen muessen"
+    );
+}
+
+#[test]
+fn rueckspulen_ist_gedeckelt() {
+    // Der gewuenschte Zeitpunkt kommt vom Client. Ohne Deckel koennte jemand
+    // behaupten, er habe den Stand von vor einer Minute gesehen, und Gegner
+    // dort erschiessen, wo sie laengst nicht mehr sind.
+    let (mut app, shooter, target, _gesehen, winkel) =
+        nachlaufendes_ziel(crate::sim::history::MAX_REWIND_TICKS + 20);
+
+    set_input(
+        &mut app,
+        shooter,
+        InputFrame {
+            buttons: buttons::FIRE,
+            yaw: winkel,
+            // Weit jenseits des Erlaubten.
+            view_tick: Some(-1000.0),
+            ..Default::default()
+        },
+    );
+    run(&mut app, 2);
+
+    assert_eq!(
+        vitals(&app, target).health,
+        precise_config().max_health,
+        "zu weites Rueckspulen darf keinen Treffer ergeben"
+    );
+}

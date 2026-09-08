@@ -67,6 +67,20 @@ pub struct InputFrame {
     pub buttons: u8,
     /// Gewünschte Waffe (`WeaponDesc::slot`). 0 bedeutet "keine Änderung".
     pub weapon_slot: u8,
+
+    /// Der Tick, den der Client gerade *sah*, als er diese Eingabe machte.
+    ///
+    /// Grundlage der Lag-Kompensation. Fremde Spieler werden im Client
+    /// bewusst verzögert dargestellt, damit ihre Bewegung nicht ruckelt;
+    /// dazu kommt die Laufzeit vom Server zum Client. Wer auf einen Kopf
+    /// zielt, zielt also auf eine Vergangenheit, und der Server muss beim
+    /// Auswerten dorthin zurückspulen.
+    ///
+    /// Gebrochen, weil der Client zwischen zwei Snapshots interpoliert.
+    /// `None` heißt "keine Angabe" - dann wertet der Server gegen den
+    /// aktuellen Stand aus, wie vor der Lag-Kompensation.
+    #[serde(default)]
+    pub view_tick: Option<f32>,
 }
 
 impl InputFrame {

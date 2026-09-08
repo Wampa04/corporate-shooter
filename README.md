@@ -197,10 +197,7 @@ Aus dem ursprünglichen Entwurf ist bewusst noch nicht umgesetzt:
   `InputFrame::seq` und `Snapshot::ack_seq` sind dafür bereits vorgesehen.
   Nachgebaut wird die Bewegung dabei **nicht** in JavaScript: die vorhandene
   Rust-Funktion soll nach WASM übersetzt und im Browser dieselbe bleiben.
-* **Lag-Kompensation der Schüsse.** Solange nur im LAN gespielt wurde, war sie
-  entbehrlich. Über das Internet muss man ohne sie um die eigene Umlaufzeit
-  vorhalten — bei 80 ms und 5,4 m/s sind das gut 40 cm, und Hitscan fühlt sich
-  kaputt an.
+
 
 ## Aufbau
 
@@ -220,6 +217,30 @@ auseinanderlaufen könnte. In `client/js/` steht keine Spiellogik.
 Einzige Ausnahme ist die Blickrichtung: sie entsteht lokal aus der
 Mausbewegung, weil Umsehen nicht auf eine Netzwerkantwort warten darf. Der
 Server begrenzt sie und behandelt sie für alles Weitere als verbindlich.
+
+### Vorhersage und Lag-Kompensation
+
+Zwei Dinge, die über das Internet nötig werden und im LAN entbehrlich waren:
+
+**Die eigene Bewegung wird vorhergesagt.** Der Client wartet nicht auf die
+Antwort des Servers, sondern rechnet selbst weiter und gleicht bei jedem
+Snapshot ab. Gerechnet wird dabei nicht in JavaScript: `crates/predict`
+übersetzt dieselbe Rust-Funktion nach WebAssembly, die auch der Server
+ausführt. `scripts/gleichlauf.sh` hält fest, dass beide dasselbe rechnen.
+
+**Schüsse werden zurückgespult.** Fremde Spieler werden im Client bewusst
+verzögert gezeigt, damit ihre Bewegung nicht ruckelt; dazu kommt die Laufzeit.
+Wer auf einen Kopf zielt, zielt also auf eine Vergangenheit. Der Client meldet
+mit jeder Eingabe, welchen Serverstand er gerade sah, und der Server wertet den
+Schuss gegen diesen Stand aus statt gegen den aktuellen. Ohne das müsste man
+über das Internet um die eigene Umlaufzeit vorhalten — bei 80 ms und 5,4 m/s
+gut 40 cm.
+
+Das Rückspulen ist auf 12 Ticks (400 ms) gedeckelt. Der gewünschte Zeitpunkt
+kommt vom Client, und ohne Deckel könnte jemand behaupten, er habe den Stand
+von vor einer Minute gesehen. Die übliche Kehrseite bleibt: wer gerade hinter
+eine Ecke gelaufen ist, kann dort noch getroffen werden, wo der Schütze ihn
+sah. Das ist der Preis dafür, dass Zielen überhaupt funktioniert.
 
 ### Warum WebSocket und nicht UDP
 

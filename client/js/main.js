@@ -259,6 +259,10 @@ function start(connection, welcome, prediction) {
   // bei 30 Hz Monitor wuerden Eingaben verschluckt.
   const inputTimer = setInterval(() => {
     const frame = input.nextFrame();
+    // Was gerade zu sehen ist, gehoert zur Eingabe: der Server wertet Schuesse
+    // gegen diesen Stand aus, statt gegen den aktuellen. Sonst muesste man
+    // ueber das Internet um die eigene Laufzeit vorhalten.
+    frame.view_tick = players.viewTick(connection.snapshots, performance.now());
     connection.sendInput(frame);
     if (prediction) {
       // Erst merken, dann sofort anwenden: der Server bestaetigt diese
