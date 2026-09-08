@@ -58,6 +58,13 @@ jobs:
       - name: Tests
         run: cargo test --workspace --locked
 
+      # Der ganze Sinn des WASM-Umwegs ist, dass es nur *eine* Bewegung gibt.
+      # Laufen Rust und WebAssembly auseinander, faellt das sonst niemandem
+      # auf: der Client stuende einfach an anderer Stelle als der Server ihn
+      # sieht, und beide waeren fuer sich in Ordnung.
+      - name: Gleichlauf Rust und WebAssembly
+        run: scripts/gleichlauf.sh
+
   image:
     name: Bauen, pruefen, veroeffentlichen
     needs: test

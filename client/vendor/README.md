@@ -22,3 +22,20 @@ die der Browser direkt laedt.
     cp package/LICENSE client/vendor/three-LICENSE.txt
 
 Danach die Versionsnummer in dieser Datei anpassen.
+
+## predict.wasm
+
+Die Bewegungsvorhersage: `crates/predict`, übersetzt nach
+`wasm32-unknown-unknown`. Enthält dieselbe Funktion, die auch der Server
+rechnet — es gibt keine zweite, in JavaScript gepflegte Fassung der Bewegung.
+
+Neu bauen:
+
+```sh
+cargo build -p predict --target wasm32-unknown-unknown --profile wasm
+cp target/wasm32-unknown-unknown/wasm/predict.wasm client/vendor/
+```
+
+`scripts/gleichlauf.sh` prüft, dass Rust und WebAssembly dieselbe Bewegung
+rechnen. Docker und CI bauen die Datei ohnehin frisch; eingecheckt ist sie,
+damit `cargo run -p server` ohne WASM-Werkzeugkette funktioniert.

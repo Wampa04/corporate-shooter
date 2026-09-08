@@ -60,13 +60,21 @@ RUN rm -f rust-toolchain.toml \
  && cargo build --release --bin server \
  && strip target/release/server
 
+# Das Vorhersagemodul frisch uebersetzen und ueber die eingecheckte Fassung
+# legen. Eingecheckt ist sie, damit `cargo run -p server` ohne
+# WASM-Werkzeugkette funktioniert; im Bild soll aber garantiert der Stand
+# stecken, der zu diesem Server gehoert.
+RUN rustup target add wasm32-unknown-unknown \
+ && cargo build -p predict --target wasm32-unknown-unknown --profile wasm \
+ && cp target/wasm32-unknown-unknown/wasm/predict.wasm client/vendor/predict.wasm
+
 # ---------------------------------------------------------------------------
 # Laufzeitbild
 # ---------------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 
 LABEL org.opencontainers.image.title="Corporate Shooter" \
-      org.opencontainers.image.description="LAN-Shooter im Grossraumbuero: autoritativer Rust-Server samt Browser-Client" \
+      org.opencontainers.image.description="Browser-Shooter im Grossraumbuero: autoritativer Rust-Server samt Client" \
       org.opencontainers.image.source="https://github.com/Wampa04/corporate-shooter" \
       org.opencontainers.image.licenses="MIT"
 
@@ -84,7 +92,10 @@ COPY --from=builder /build/target/release/server /usr/local/bin/corporate-shoote
 # Der Client liegt neben dem Arbeitsverzeichnis, wo der Server ihn von selbst
 # findet. Er gehoert root und wird nur gelesen - der Serverprozess kann ihn
 # also nicht veraendern.
-COPY client /srv/client
+#
+# Aus der Bau-Stufe und nicht aus dem Kontext: dort liegt das frisch
+# uebersetzte `predict.wasm`.
+COPY --from=builder /build/client /srv/client
 
 USER buero
 
@@ -95,15 +106,16 @@ ENTRYPOINT ["corporate-shooter"]
 
 # Hinweis zum Netzwerkmodus
 # -------------------------
-# Im Standardmodus (bridge) funktioniert die mDNS-Bekanntmachung nicht: der
-# Container sieht das LAN nur ueber NAT und wuerde seine interne Adresse
-# verkuenden. Fuer LAN-Betrieb deshalb:
-#
-#     docker run --rm --network host corporate-shooter
-#
-# Wer bei bridge bleiben will, veroeffentlicht den Port und schaltet mDNS ab:
+# Fuer den Serverbetrieb den Port veroeffentlichen und mDNS abschalten - es
+# traegt ohnehin nur im lokalen Netzsegment:
 #
 #     docker run --rm -p 4200:4200 corporate-shooter --no-mdns
 #
-# Die beim Start ausgegebene LAN-Adresse ist im bridge-Modus die des
-# Containers, nicht die des Rechners - dann die Host-IP weitergeben.
+# Oeffentlich erreichbar gehoert ein Reverse Proxy davor, der TLS beendet und
+# das Upgrade auf WebSocket durchreicht; der Client waehlt `wss` von selbst,
+# sobald die Seite ueber `https` kommt.
+#
+# Fuer den Betrieb im eigenen LAN braucht mDNS Multicast, das im NAT der
+# bridge nicht ankommt:
+#
+#     docker run --rm --network host corporate-shooter

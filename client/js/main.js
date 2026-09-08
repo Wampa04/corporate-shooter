@@ -14,6 +14,7 @@ import { InputController } from "./input.js";
 import { ViewModel } from "./viewmodel.js";
 import { Hud } from "./hud.js";
 import { Audio } from "./audio.js";
+import { Prediction } from "./predict.js";
 
 /**
  * Wie schnell die Kamera der autoritativen Position folgt (1/s).
@@ -70,6 +71,14 @@ const disconnectReason = document.getElementById("disconnect-reason");
 // Zuletzt benutzter Name, damit niemand ihn bei jedem Neuladen neu tippt.
 nameField.value = localStorage.getItem("corpshoot.name") ?? "";
 
+// Das Vorhersagemodul frueh anstossen: es laedt parallel zur Namenseingabe
+// und steht damit in aller Regel bereit, bevor jemand auf Beitreten klickt.
+// `?vorhersage=aus` laesst es weg - dann bleibt es beim alten Verhalten.
+const vorhersageLaedt =
+  new URLSearchParams(location.search).get("vorhersage") === "aus"
+    ? Promise.resolve(null)
+    : Prediction.load();
+
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = joinForm.querySelector("button");
@@ -84,7 +93,7 @@ joinForm.addEventListener("submit", async (event) => {
   try {
     const welcome = await connection.connect(name);
     joinOverlay.classList.add("hidden");
-    start(connection, welcome);
+    start(connection, welcome, await vorhersageLaedt);
   } catch (error) {
     joinStatus.className = "status error";
     joinStatus.textContent = error.message;
@@ -93,8 +102,13 @@ joinForm.addEventListener("submit", async (event) => {
 });
 
 /** Startet das Spiel, nachdem Karte und Konfiguration vorliegen. */
-function start(connection, welcome) {
+function start(connection, welcome, prediction) {
   const { config, map, player_id: selfId } = welcome;
+
+  // Schlaegt das Laden oder Uebernehmen fehl, bleibt `prediction` null und
+  // die Kamera folgt wie bisher der Serverposition. Eine Verzweigung, kein
+  // zweiter Codepfad im Spiel.
+  if (prediction && !prediction.init(map, config)) prediction = null;
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -130,6 +144,10 @@ function start(connection, welcome) {
   // Lautstaerke. M schaltet stumm, Komma und Punkt regeln.
   const audio = new Audio(params.get("ton") === "aus" ? 0 : null);
   audio.onStatus = (text) => hud.notify(text);
+
+  /** Eigener Spielerzustand aus dem neuesten Snapshot, falls vorhanden. */
+  const latestSelf = () =>
+    connection.latest?.players.find((p) => p.id === selfId);
 
   const cameraPos = new THREE.Vector3();
   const targetPos = new THREE.Vector3();
@@ -220,6 +238,8 @@ function start(connection, welcome) {
       }
     }
 
+    if (prediction) prediction.reconcile(self, snapshot.local, snapshot.ack_seq);
+
     if (self) viewmodel.setWeapon(self.weapon);
     audio.handleEvents(snapshot.events, selfId);
     audio.setReloading(snapshot.local?.reloading ?? false);
@@ -237,10 +257,16 @@ function start(connection, welcome) {
   // Eingaben laufen mit der Tickrate des Servers, unabhaengig von der
   // Bildwiederholrate. Bei 144 Hz waere pro Bild zu senden reine Verschwendung,
   // bei 30 Hz Monitor wuerden Eingaben verschluckt.
-  const inputTimer = setInterval(
-    () => connection.sendInput(input.nextFrame()),
-    1000 / config.tick_rate,
-  );
+  const inputTimer = setInterval(() => {
+    const frame = input.nextFrame();
+    connection.sendInput(frame);
+    if (prediction) {
+      // Erst merken, dann sofort anwenden: der Server bestaetigt diese
+      // Eingabe erst in einer Umlaufzeit, bis dahin gilt die Vorhersage.
+      prediction.record(frame);
+      prediction.advance(frame, latestSelf()?.alive ?? true);
+    }
+  }, 1000 / config.tick_rate);
 
   let previous = performance.now();
   let frame = 0;
@@ -284,10 +310,19 @@ function start(connection, welcome) {
     const latest = connection.latest;
     const self = latest?.players.find((p) => p.id === selfId);
     if (self) {
-      targetPos.set(self.pos[0], self.pos[1] + config.eye_height, self.pos[2]);
+      // Die Vorhersage liefert bereits die Position dieses Bildes; die
+      // Glaettung ist dann nicht nur ueberfluessig, sondern schaedlich - sie
+      // waere reine Verzoegerung. Ohne Vorhersage buegelt sie weiter die
+      // Stufen der 30-Hz-Updates aus.
+      const vorher = prediction?.position();
+      const ziel = vorher ?? { x: self.pos[0], y: self.pos[1], z: self.pos[2] };
+      targetPos.set(ziel.x, ziel.y + config.eye_height, ziel.z);
+
       if (!cameraPlaced || cameraPos.distanceTo(targetPos) > CAMERA_TELEPORT) {
         cameraPos.copy(targetPos);
         cameraPlaced = true;
+      } else if (vorher) {
+        cameraPos.copy(targetPos);
       } else {
         // Zeitschrittunabhaengige Glaettung: bei jeder Bildrate gleich schnell.
         cameraPos.lerp(targetPos, 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt));
@@ -308,6 +343,22 @@ function start(connection, welcome) {
     renderer.render(scene, camera);
   }
   frame = requestAnimationFrame(render);
+
+  // Messpunkt, nur mit `?messen=1`. Die Vorhersage laesst sich sonst nicht von
+  // aussen pruefen: ohne Zugriff auf Kamera und Serverposition bliebe nur der
+  // Augenschein, und der taugt nicht als Beleg. Ohne den Schalter existiert
+  // das Objekt nicht.
+  if (params.get("messen") === "1") {
+    window.__messen = {
+      kamera: () => camera.position,
+      vorhergesagt: () => prediction?.position() ?? null,
+      server: () => {
+        const p = latestSelf();
+        return p ? { x: p.pos[0], y: p.pos[1], z: p.pos[2] } : null;
+      },
+      aktiv: () => prediction !== null,
+    };
+  }
 
   function stop() {
     running = false;
