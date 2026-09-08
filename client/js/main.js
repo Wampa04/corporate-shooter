@@ -29,6 +29,14 @@ const CAMERA_FOLLOW_RATE = 26;
 const CAMERA_TELEPORT = 3.0;
 
 /**
+ * Wie viele Eingaben hoechstens in einem Bild abgeschickt werden.
+ *
+ * Deckt sich mit der Grenze des Servers: mehr nimmt er nicht an, und wer bei
+ * dreissig Bildern je Sekunde spielt, holt damit den Rueckstand auf.
+ */
+const MAX_EINGABEN_JE_BILD = 3;
+
+/**
  * Wie viele Bilder abgewartet werden, bevor ueber den Schattenwurf entschieden
  * wird. Die ersten Bilder sind durch Shader-Uebersetzung und Texturupload
  * verzerrt und taugen nicht als Massstab.
@@ -254,10 +262,22 @@ function start(connection, welcome, prediction) {
     stop();
   };
 
-  // Eingaben laufen mit der Tickrate des Servers, unabhaengig von der
-  // Bildwiederholrate. Bei 144 Hz waere pro Bild zu senden reine Verschwendung,
-  // bei 30 Hz Monitor wuerden Eingaben verschluckt.
-  const inputTimer = setInterval(() => {
+  // Eingabetakt.
+  //
+  // Getrieben aus der Renderschleife, nicht aus `setInterval`. Das ist der
+  // Unterschied zwischen "fast fluessig" und fluessig: `setInterval` schwankt
+  // im Browser um zehn Millisekunden und mehr, und weil der Ausgleich
+  // zwischen zwei Vorhersageschritten an der Bildschleife haengt, liefen
+  // beide Uhren gegeneinander. Die Kamera blieb bei jedem Schritt entweder
+  // kurz stehen oder sprang ein Stueck vor.
+  //
+  // Mit einem Zeitkonto in der Bildschleife gibt es nur noch eine Uhr: der
+  // Rest im Konto *ist* der Mischfaktor des Ausgleichs, exakt und ohne Drift.
+  const TICK_DT = 1 / config.tick_rate;
+  let konto = 0;
+
+  /** Schickt eine Eingabe und rechnet sie sofort voraus. */
+  function sendeEingabe() {
     const frame = input.nextFrame();
     // Was gerade zu sehen ist, gehoert zur Eingabe: der Server wertet Schuesse
     // gegen diesen Stand aus, statt gegen den aktuellen. Sonst muesste man
@@ -270,7 +290,7 @@ function start(connection, welcome, prediction) {
       prediction.record(frame);
       prediction.advance(frame, latestSelf()?.alive ?? true);
     }
-  }, 1000 / config.tick_rate);
+  }
 
   let previous = performance.now();
   let frame = 0;
@@ -305,6 +325,19 @@ function start(connection, welcome, prediction) {
     previous = now;
 
     judgeQuality(dt);
+
+    // Faellige Eingaben abarbeiten. Mehr als drei in einem Bild nimmt der
+    // Server ohnehin nicht an - er begrenzt genauso, damit oefter Senden
+    // nicht schneller macht.
+    konto += dt;
+    for (let i = 0; i < MAX_EINGABEN_JE_BILD && konto >= TICK_DT; i++) {
+      konto -= TICK_DT;
+      sendeEingabe();
+    }
+    // Kein Rueckstand von einem Tabwechsel mitschleppen: aufholen kann man
+    // ihn nicht, und ein volles Konto liesse den Ausgleich festkleben.
+    if (konto > TICK_DT) konto = TICK_DT;
+
     players.update(connection.snapshots, now);
     effects.update(dt);
     viewmodel.update(dt, local?.reloading ?? false);
@@ -318,7 +351,7 @@ function start(connection, welcome, prediction) {
       // Glaettung ist dann nicht nur ueberfluessig, sondern schaedlich - sie
       // waere reine Verzoegerung. Ohne Vorhersage buegelt sie weiter die
       // Stufen der 30-Hz-Updates aus.
-      const vorher = prediction?.position(dt);
+      const vorher = prediction?.position(dt, konto / TICK_DT);
       const ziel = vorher ?? { x: self.pos[0], y: self.pos[1], z: self.pos[2] };
       targetPos.set(ziel.x, ziel.y + config.eye_height, ziel.z);
 
@@ -369,7 +402,6 @@ function start(connection, welcome, prediction) {
 
   function stop() {
     running = false;
-    clearInterval(inputTimer);
     clearTimeout(retryTimer);
     cancelAnimationFrame(frame);
     // Erst die Maus freigeben, dann das Pausenbild wegnehmen: die Freigabe

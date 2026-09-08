@@ -64,7 +64,6 @@ export class Prediction {
     /** Vorheriger und aktueller Schritt, zum Zwischenbild-Ausgleich. */
     this._vor = null;
     this._jetzt = null;
-    this._seitSchritt = 0;
     /**
      * Statistik ueber alle Abgleiche.
      *
@@ -220,7 +219,6 @@ export class Prediction {
     this._step(frame, this._lastButtons ?? 0, alive);
     this._lastButtons = frame.buttons;
     this._jetzt = this._lesePos();
-    this._seitSchritt = 0;
   }
 
   _lesePos() {
@@ -247,7 +245,11 @@ export class Prediction {
    * gezeigt wird die geglaettete - der Unterschied betraegt hoechstens ein
    * paar Zentimeter und ist nach achtzig Millisekunden weg.
    */
-  position(dt = 0) {
+  /**
+   * @param {number} dt Zeitschritt dieses Bildes, fuer das Abklingen
+   * @param {number} mischung 0..1 - wie weit der naechste Schritt faellig ist
+   */
+  position(dt = 0, mischung = 1) {
     if (!this._ready || !this._synced) return null;
 
     if (dt > 0) {
@@ -255,7 +257,6 @@ export class Prediction {
       this._fehler[0] *= rest;
       this._fehler[1] *= rest;
       this._fehler[2] *= rest;
-      this._seitSchritt += dt;
     }
 
     // Zwischen zwei Vorhersageschritten ausgleichen.
@@ -265,14 +266,15 @@ export class Prediction {
     // Bilder still und spraenge dann achtzehn Zentimeter - das liest sich als
     // Ruckeln, obwohl die Vorhersage stimmt.
     //
+    // Der Mischfaktor kommt von aussen: er ist der Rest im Zeitkonto der
+    // Bildschleife, aus dem auch die Schritte ausgeloest werden. Fuehrte
+    // dieses Modul eine eigene Uhr, liefen beide gegeneinander - und genau
+    // daran hat es zuvor noch sichtbar geruckelt.
+    //
     // Bewusst zwischen zwei bekannten Staenden statt darueber hinaus: eine
     // Fortschreibung schoebe die Kamera an einer Wand in die Wand hinein und
-    // beim Stehenbleiben ueber das Ziel. Der Preis ist ein halber Tick
-    // Verzoegerung gegenueber gar keinem Ausgleich - bei den 60 bis 150 ms,
-    // die die Vorhersage einspart, ein guter Handel.
-    const a = this._vor && this._jetzt
-      ? Math.min(this._seitSchritt / this._tickDt, 1)
-      : 1;
+    // beim Stehenbleiben ueber das Ziel.
+    const a = this._vor && this._jetzt ? Math.min(Math.max(mischung, 0), 1) : 1;
     const vor = this._vor ?? this._lesePos();
     const jetzt = this._jetzt ?? vor;
 

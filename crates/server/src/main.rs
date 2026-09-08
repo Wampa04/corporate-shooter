@@ -50,8 +50,19 @@ struct Args {
     name: String,
 
     /// Simulationsschritte pro Sekunde.
-    #[arg(long, env = "CORPSHOOT_TICK_RATE", default_value_t = 30)]
+    ///
+    /// Ein feiner Takt kostet fast nichts und bringt viel: kürzere
+    /// Eingabewege und kleinere Schritte in der Vorhersage. Was er nicht
+    /// kostet, ist Bandbreite - die hängt an `--snapshot-interval`.
+    #[arg(long, env = "CORPSHOOT_TICK_RATE", default_value_t = 60)]
     tick_rate: u32,
+
+    /// Wie viele Simulationsschritte auf einen Snapshot kommen.
+    ///
+    /// Bei 60 Hz Takt und 2 gehen 30 Snapshots je Sekunde raus - genauso viele
+    /// wie zuvor, bei halb so langen Simulationsschritten.
+    #[arg(long, env = "CORPSHOOT_SNAPSHOT_INTERVAL", default_value_t = 2)]
+    snapshot_interval: u32,
 
     /// mDNS-Bekanntmachung im LAN abschalten.
     ///
@@ -145,6 +156,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(dir) = &args.dump_map {
         let config = GameConfig {
             tick_rate: args.tick_rate,
+            snapshot_interval: args.snapshot_interval.max(1),
             ..GameConfig::default()
         };
         std::fs::create_dir_all(dir)?;
@@ -157,6 +169,7 @@ fn main() -> anyhow::Result<()> {
     let client_dir = find_client_dir(args.client_dir)?;
     let config = GameConfig {
         tick_rate: args.tick_rate,
+        snapshot_interval: args.snapshot_interval.max(1),
         ..GameConfig::default()
     };
 
@@ -218,7 +231,8 @@ mod tests {
     fn vorgaben_ohne_argumente() {
         let args = Args::parse_from(["server"]);
         assert_eq!(args.port, 4200);
-        assert_eq!(args.tick_rate, 30);
+        assert_eq!(args.tick_rate, 60);
+        assert_eq!(args.snapshot_interval, 2);
         assert!(!args.no_mdns);
         assert_eq!(args.seed, None);
     }

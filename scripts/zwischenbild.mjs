@@ -45,15 +45,19 @@ function laufen({ ausgleich }) {
 
   const wege = [];
   let vor = null;
-  let seit = 0;
+  let konto = 0;
   for (let i = 0; i < BILDER; i++) {
-    seit += BILD;
-    if (seit >= TICK) {
-      seit -= TICK;
+    // Genau wie die Bildschleife: ein Zeitkonto treibt Schritte *und* den
+    // Mischfaktor, damit es nur eine Uhr gibt.
+    konto += BILD;
+    while (konto >= TICK) {
+      konto -= TICK;
       p.advance({ seq: i, move_x: 0, move_z: 1, yaw: 0, pitch: 0, buttons: 0 }, true);
     }
     // Ohne Ausgleich: der rohe Vorhersagestand, wie er vor dem Einbau war.
-    const q = ausgleich ? p.position(BILD) : { x: speicher[0], z: speicher[2] };
+    const q = ausgleich
+      ? p.position(BILD, konto / TICK)
+      : { x: speicher[0], z: speicher[2] };
     if (vor) wege.push(Math.hypot(q.x - vor.x, q.z - vor.z));
     vor = { x: q.x, z: q.z };
   }

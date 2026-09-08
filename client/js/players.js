@@ -14,8 +14,18 @@ export const TEAM_COLOR = {
   Engineering: 0x29c1b8,
 };
 
-/** Verzoegerung in Ticks. Zwei reichen, um einen ausgefallenen Snapshot zu ueberbruecken. */
-const INTERPOLATION_TICKS = 2;
+/**
+ * Verzoegerung, mit der fremde Spieler gezeigt werden.
+ *
+ * In Millisekunden gedacht und nicht in Ticks: der Puffer soll einen
+ * ausgefallenen Snapshot ueberbruecken, und wie lange das dauert, haengt an
+ * der Leitung und nicht an der Tickrate. Zwei Ticks bei 30 Hz waren 67 ms -
+ * bei 60 Hz waeren daraus 33 ms geworden, also ein halb so grosser Puffer.
+ *
+ * Mindestens zwei Ticks, damit immer zwischen zwei Staenden interpoliert
+ * werden kann statt fortzuschreiben.
+ */
+const INTERPOLATION_MS = 70;
 
 /** Ab dieser Distanz wird gesprungen statt interpoliert (Respawn, Wiederverbinden). */
 const TELEPORT_DISTANCE = 4.0;
@@ -106,7 +116,7 @@ export class PlayerViews {
   constructor(scene, selfId, tickRate) {
     this.scene = scene;
     this.selfId = selfId;
-    this.delayMs = (INTERPOLATION_TICKS * 1000) / tickRate;
+    this.delayMs = Math.max(INTERPOLATION_MS, (2 * 1000) / tickRate);
     /** @type {Map<number, {group: THREE.Group, team: string}>} */
     this.avatars = new Map();
 

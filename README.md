@@ -35,7 +35,8 @@ gehosteten Server ist sie ohne Belang.
 | `--port <n>` | Port für HTTP und WebSocket (Standard 4200, `0` wählt einen freien) |
 | `--bind <ip>` | Adresse, an die gebunden wird (Standard `0.0.0.0`) |
 | `--name <text>` | Name, unter dem der Server erscheint |
-| `--tick-rate <hz>` | Simulationsschritte pro Sekunde (Standard 30) |
+| `--tick-rate <hz>` | Simulationsschritte pro Sekunde (Standard 60) |
+| `--snapshot-interval <n>` | Simulationsschritte je Snapshot (Standard 2) |
 | `--client-dir <pfad>` | Verzeichnis mit dem Browser-Client, falls es nicht gefunden wird |
 | `--no-mdns` | mDNS-Bekanntmachung abschalten (beim Hosten sinnvoll) |
 | `--max-players <n>` | Höchstzahl gleichzeitiger Spieler (Standard 16) |
@@ -221,6 +222,11 @@ Server begrenzt sie und behandelt sie für alles Weitere als verbindlich.
 ### Vorhersage und Lag-Kompensation
 
 Zwei Dinge, die über das Internet nötig werden und im LAN entbehrlich waren:
+
+**Simulation und Versand sind entkoppelt.** Der Server rechnet mit 60 Hz,
+verschickt aber nur jeden zweiten Schritt. Der feine Takt halbiert Eingabeweg
+und Schrittgröße in der Vorhersage; die Bandbreite bleibt die von 30 Hz.
+Gemessen: 0,38 ms je Tick von 16,7 ms Budget bei acht Spielern.
 
 **Die eigene Bewegung wird vorhergesagt.** Der Client wartet nicht auf die
 Antwort des Servers, sondern rechnet selbst weiter und gleicht bei jedem

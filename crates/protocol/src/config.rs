@@ -45,6 +45,14 @@ pub struct WeaponDesc {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameConfig {
     pub tick_rate: u32,
+
+    /// Wie viele Simulationsschritte auf einen Snapshot kommen.
+    ///
+    /// Simulation und Versand sind bewusst entkoppelt. Die Simulation profitiert
+    /// von einem feinen Takt: kleinere Schritte heissen kürzere Eingabewege und
+    /// ein glatteres Bild. Der Versand profitiert nicht davon - er kostet nur
+    /// Bandbreite, und die zahlt der Server je Spieler doppelt.
+    pub snapshot_interval: u32,
     pub max_health: u16,
     /// Kollisionsradius des Spielers in der XZ-Ebene.
     pub player_radius: f32,
@@ -68,7 +76,8 @@ pub struct GameConfig {
 impl Default for GameConfig {
     fn default() -> Self {
         Self {
-            tick_rate: 30,
+            tick_rate: 60,
+            snapshot_interval: 2,
             max_health: 100,
             player_radius: 0.35,
             player_height: 1.8,

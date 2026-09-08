@@ -104,6 +104,20 @@ fn vitals(app: &App, entity: Entity) -> Vitals {
 
 /// Sammelt die Ereignisse aller Ticks ein - `EventLog` wird sonst nur von der
 /// Netzwerkschicht geleert und würde über den ganzen Lauf anwachsen.
+/// Wie viele Ticks `sekunden` entsprechen.
+///
+/// Tests sollen an der Zeit haengen, nicht an der Taktrate: "zwei Sekunden
+/// laufen" bleibt zwei Sekunden, ob der Server mit 30 oder 60 Hz rechnet.
+fn ticks(app: &App, sekunden: f32) -> u32 {
+    (app.world().resource::<Config>().tick_rate as f32 * sekunden).round() as u32
+}
+
+/// Laesst die Simulation `sekunden` lang laufen.
+fn run_s(app: &mut App, sekunden: f32) -> Vec<GameEvent> {
+    let n = ticks(app, sekunden);
+    run(app, n)
+}
+
 fn run(app: &mut App, ticks: u32) -> Vec<GameEvent> {
     let mut collected = Vec::new();
     for _ in 0..ticks {
@@ -167,7 +181,7 @@ fn yaw_null_laeuft_nach_minus_z() {
     let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     set_input(&mut app, p, forward());
 
-    run(&mut app, 30);
+    run_s(&mut app, 1.0);
 
     let b = body(&app, p);
     assert!(b.pos.z < -3.0, "erwartet Bewegung nach -Z, war {}", b.pos.z);
@@ -190,7 +204,7 @@ fn spieler_laeuft_nicht_aus_dem_spielfeld() {
     );
     set_input(&mut app, p, forward());
 
-    run(&mut app, 120);
+    run_s(&mut app, 4.0);
 
     let b = body(&app, p);
     let bounds = app.world().resource::<Level>().desc.bounds;
@@ -212,7 +226,7 @@ fn wand_stoppt_den_spieler() {
     let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     set_input(&mut app, p, forward());
 
-    run(&mut app, 90);
+    run_s(&mut app, 3.0);
 
     let b = body(&app, p);
     let radius = app.world().resource::<Config>().player_radius;
@@ -267,7 +281,7 @@ fn spieler_kommt_von_der_aussenwand_wieder_los() {
             ..Default::default()
         },
     );
-    run(&mut app, 30);
+    run_s(&mut app, 1.0);
     let an_der_wand = body(&app, p).pos.x;
     assert!(
         an_der_wand < -19.0,
@@ -376,7 +390,7 @@ fn agile_sprint_tunnelt_nicht_durch_duenne_trennwand() {
             ..Default::default()
         },
     );
-    run(&mut app, 30);
+    run_s(&mut app, 1.0);
 
     let b = body(&app, p);
     assert!(
@@ -407,7 +421,7 @@ fn treppe_zur_chef_etage_ist_begehbar() {
         },
     );
 
-    run(&mut app, 150);
+    run_s(&mut app, 5.0);
 
     let b = body(&app, p);
     assert!(
@@ -444,7 +458,7 @@ fn agile_sprint_hat_cooldown() {
 
     // Nach Ablauf des Cooldowns wieder moeglich.
     set_input(&mut app, p, forward());
-    run(&mut app, 150);
+    run_s(&mut app, 5.0);
     set_input(&mut app, p, dash);
     let third = run(&mut app, 1);
     assert_eq!(count_dashes(&third), 1, "Cooldown lief nicht ab");
@@ -547,7 +561,7 @@ fn duell(map: MapDesc, target_team: Team) -> (App, Entity, Entity) {
     (app, shooter, target)
 }
 
-fn halte_feuer(app: &mut App, shooter: Entity, ticks: u32) -> Vec<GameEvent> {
+fn halte_feuer(app: &mut App, shooter: Entity, sekunden: f32) -> Vec<GameEvent> {
     set_input(
         app,
         shooter,
@@ -556,14 +570,14 @@ fn halte_feuer(app: &mut App, shooter: Entity, ticks: u32) -> Vec<GameEvent> {
             ..Default::default()
         },
     );
-    run(app, ticks)
+    run_s(app, sekunden)
 }
 
 #[test]
 fn textmarker_trifft_und_toetet() {
     let (mut app, shooter, target) = duell(arena(), Team::Marketing);
 
-    let events = halte_feuer(&mut app, shooter, 60);
+    let events = halte_feuer(&mut app, shooter, 2.0);
 
     assert!(vitals(&app, target).deaths >= 1, "Ziel hat ueberlebt");
     assert_eq!(vitals(&app, shooter).kills, vitals(&app, target).deaths);
@@ -578,7 +592,7 @@ fn textmarker_trifft_und_toetet() {
 fn kein_beschuss_der_eigenen_abteilung() {
     let (mut app, shooter, target) = duell(arena(), Team::Engineering);
 
-    let events = halte_feuer(&mut app, shooter, 60);
+    let events = halte_feuer(&mut app, shooter, 2.0);
 
     assert_eq!(
         vitals(&app, target).health,
@@ -599,7 +613,7 @@ fn whiteboard_haelt_den_schuss_auf() {
     ));
     let (mut app, shooter, target) = duell(map, Team::Marketing);
 
-    halte_feuer(&mut app, shooter, 40);
+    halte_feuer(&mut app, shooter, 1.35);
 
     assert_eq!(
         vitals(&app, target).health,
@@ -619,7 +633,7 @@ fn yuccapalme_haelt_keinen_schuss_auf() {
     ));
     let (mut app, shooter, target) = duell(map, Team::Marketing);
 
-    halte_feuer(&mut app, shooter, 40);
+    halte_feuer(&mut app, shooter, 1.35);
 
     assert!(
         vitals(&app, target).health < 100,
@@ -639,7 +653,7 @@ fn schuss_nach_hinten_trifft_nicht() {
         0.0,
     );
 
-    halte_feuer(&mut app, shooter, 40);
+    halte_feuer(&mut app, shooter, 1.35);
 
     assert_eq!(vitals(&app, target).health, 100);
 }
@@ -653,7 +667,7 @@ fn magazin_leert_sich_und_laedt_automatisch_nach() {
 
     // Genau so lange feuern, dass das Magazin leer wird (Kadenz 0.09 s bei
     // 1/30 s Tick: drei Ticks je Schuss).
-    let events = halte_feuer(&mut app, shooter, mag as u32 * 3);
+    let events = halte_feuer(&mut app, shooter, mag as f32 * 0.1);
     let shots = events
         .iter()
         .filter(|e| matches!(e, GameEvent::Shot { .. }))
@@ -667,7 +681,7 @@ fn magazin_leert_sich_und_laedt_automatisch_nach() {
     // einstellen, damit das volle Magazin messbar bleibt.
     run(&mut app, 2);
     set_input(&mut app, shooter, InputFrame::default());
-    run(&mut app, 90);
+    run_s(&mut app, 3.0);
     let loadout = app.world().get::<Loadout>(shooter).unwrap().clone();
     assert_eq!(loadout.ammo[loadout.index], mag, "nicht nachgeladen");
 }
@@ -692,7 +706,7 @@ fn locher_schrotflinte_feuert_nicht_automatisch() {
             ..Default::default()
         },
     );
-    run(&mut app, 20);
+    run_s(&mut app, 0.67);
     set_input(
         &mut app,
         shooter,
@@ -702,7 +716,7 @@ fn locher_schrotflinte_feuert_nicht_automatisch() {
             ..Default::default()
         },
     );
-    let events = run(&mut app, 120);
+    let events = run_s(&mut app, 4.0);
 
     let shots = events
         .iter()
@@ -728,7 +742,7 @@ fn locher_verschiesst_alle_schrotkugeln() {
             ..Default::default()
         },
     );
-    run(&mut app, 20);
+    run_s(&mut app, 0.67);
     set_input(
         &mut app,
         shooter,
@@ -739,7 +753,7 @@ fn locher_verschiesst_alle_schrotkugeln() {
         },
     );
 
-    let events = run(&mut app, 30);
+    let events = run_s(&mut app, 1.0);
     let tracers = events
         .iter()
         .find_map(|e| match e {
@@ -758,7 +772,7 @@ fn waffenwechsel_ersetzt_kein_nachladen() {
     let mut app = app_with(config, arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
 
-    halte_feuer(&mut app, shooter, 30);
+    halte_feuer(&mut app, shooter, 1.0);
     let vorher = ammo_of_slot(&app, shooter, textmarker_slot);
     assert!(vorher < 30, "es wurde nicht geschossen");
 
@@ -771,7 +785,7 @@ fn waffenwechsel_ersetzt_kein_nachladen() {
             ..Default::default()
         },
     );
-    run(&mut app, 20);
+    run_s(&mut app, 0.67);
     set_input(
         &mut app,
         shooter,
@@ -780,7 +794,7 @@ fn waffenwechsel_ersetzt_kein_nachladen() {
             ..Default::default()
         },
     );
-    run(&mut app, 20);
+    run_s(&mut app, 0.67);
 
     assert_eq!(
         ammo_of_slot(&app, shooter, textmarker_slot),
@@ -802,7 +816,7 @@ fn ammo_of_slot(app: &App, entity: Entity, slot: u8) -> u16 {
 #[test]
 fn toter_spieler_steigt_nach_der_wartezeit_wieder_ein() {
     let (mut app, shooter, target) = duell(arena(), Team::Marketing);
-    halte_feuer(&mut app, shooter, 60);
+    halte_feuer(&mut app, shooter, 2.0);
     assert!(!vitals(&app, target).alive, "Ziel lebt noch");
 
     set_input(&mut app, shooter, InputFrame::default());
@@ -829,7 +843,7 @@ fn toter_spieler_kann_nicht_schiessen() {
         .unwrap()
         .respawn_timer = 999.0;
 
-    let events = halte_feuer(&mut app, shooter, 30);
+    let events = halte_feuer(&mut app, shooter, 1.0);
 
     assert!(!events.iter().any(|e| matches!(e, GameEvent::Shot { .. })));
 }
@@ -900,7 +914,7 @@ fn spieler_loest_sich_von_der_westwand_der_echten_karte() {
             ..Default::default()
         },
     );
-    run(&mut app, 30);
+    run_s(&mut app, 1.0);
 
     let b = body(&app, p);
     assert!(

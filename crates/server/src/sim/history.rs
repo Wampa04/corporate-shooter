@@ -17,13 +17,15 @@ use super::{Body, Player, Tick, Vitals};
 
 /// Wie weit höchstens zurückgespult wird, in Ticks.
 ///
-/// Bei 30 Hz sind zwölf Ticks 400 ms - mehr, als eine brauchbare Verbindung
-/// zusammen mit der Interpolationsverzögerung braucht. Die Grenze ist kein
+/// Bei 60 Hz sind vierundzwanzig Ticks 400 ms - mehr, als eine brauchbare
+/// Verbindung zusammen mit der Interpolationsverzögerung braucht. Der Wert
+/// zählt in Ticks, gemeint sind aber Millisekunden: wird die Taktrate
+/// geändert, gehört er mitgezogen. Die Grenze ist kein
 /// Ressourcenschutz, sondern Notwehr: der gewünschte Zeitpunkt kommt vom
 /// Client, und ohne Deckel könnte jemand behaupten, er habe den Stand von vor
 /// fünf Sekunden gesehen, und Gegner dort erschießen, wo sie längst nicht mehr
 /// sind.
-pub const MAX_REWIND_TICKS: u64 = 12;
+pub const MAX_REWIND_TICKS: u64 = 24;
 
 /// Ein aufgezeichneter Tick.
 struct Frame {

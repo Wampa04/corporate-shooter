@@ -189,6 +189,13 @@ fn broadcast(
         return;
     }
 
+    // Nicht jeder Simulationsschritt wird verschickt. Der Ereignisspeicher
+    // bleibt dabei bewusst stehen: was zwischen zwei Snapshots passiert ist,
+    // muss mit dem naechsten mitgehen, sonst verschwinden Schuesse und Treffer.
+    if config.snapshot_interval > 1 && tick.0 % config.snapshot_interval as u64 != 0 {
+        return;
+    }
+
     let players: Vec<PlayerState> = q
         .iter()
         .map(|(player, body, vitals, loadout, _, _)| PlayerState {

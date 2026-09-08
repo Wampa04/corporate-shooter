@@ -150,6 +150,8 @@ struct Client {
     last_ack: u32,
     /// Tickrate aus der Willkommensnachricht.
     tick_rate: u32,
+    /// Wie viele Simulationsschritte auf einen Snapshot kommen.
+    snapshot_interval: u32,
 }
 
 impl Client {
@@ -181,17 +183,26 @@ impl Client {
             events: Vec::new(),
             last_ack: 0,
             tick_rate: config.tick_rate,
+            snapshot_interval: config.snapshot_interval,
         }
     }
 
     /// Schickt einen Eingabe-Frame und liest den nächsten Snapshot ein.
+    /// Schickt Eingaben fuer einen Snapshot und wartet darauf.
+    ///
+    /// Wie der echte Client: Eingaben gehen mit der Simulationsrate raus,
+    /// Snapshots kommen seltener. Bei 60 Hz Takt und Snapshots je zweitem
+    /// Tick sind das zwei Eingaben je Snapshot - schickte der Test nur eine,
+    /// bewegte sich seine Figur halb so schnell wie eine echte.
     async fn step(&mut self, frame: InputFrame) {
-        self.seq += 1;
-        let frame = InputFrame {
-            seq: self.seq,
-            ..frame
-        };
-        send(&mut self.socket, &ClientMessage::Input(frame)).await;
+        for _ in 0..self.snapshot_interval.max(1) {
+            self.seq += 1;
+            let frame = InputFrame {
+                seq: self.seq,
+                ..frame.clone()
+            };
+            send(&mut self.socket, &ClientMessage::Input(frame)).await;
+        }
 
         // Bis zum nächsten Snapshot lesen; alles andere durchlassen.
         loop {
@@ -446,7 +457,12 @@ async fn simulation_laeuft_im_konfigurierten_takt() {
     let server = TestServer::start().await;
     let mut client = Client::join(server.port, "Taktmesser").await;
 
-    let configured = 30.0;
+    // Gegen die Konfiguration messen, die der Server selbst gemeldet hat -
+    // nicht gegen eine hier eingetragene Zahl. Mit einer festen 30 war der
+    // Test nach dem Umstellen auf 60 Hz Takt und halbe Snapshotrate nur noch
+    // zufaellig gruen: er mass Simulationsschritte, verglich sie aber mit der
+    // Versandrate.
+    let configured = client.tick_rate as f64;
     let measured = client.measure_tick_rate(Duration::from_secs(2)).await;
 
     // Grosszuegige Grenzen: ein ausgelasteter Rechner darf den Takt druecken.
