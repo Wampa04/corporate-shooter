@@ -308,8 +308,10 @@ button:disabled { background: var(--line); color: var(--muted); cursor: progress
   border-radius: 8px;
 }
 
-#scoreboard table { width: 100%; border-collapse: collapse; font-size: 14px; }
-#scoreboard th {
+#scoreboard table,
+#match-end table { width: 100%; border-collapse: collapse; font-size: 14px; }
+#scoreboard th,
+#match-end th {
   padding: 6px 10px;
   text-align: left;
   font-size: 11px;
@@ -318,11 +320,16 @@ button:disabled { background: var(--line); color: var(--muted); cursor: progress
   color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
-#scoreboard td { padding: 6px 10px; border-bottom: 1px solid rgba(47, 55, 66, 0.5); }
-#scoreboard tr.self td { background: rgba(61, 139, 253, 0.12); }
-#scoreboard td.num { text-align: right; font-variant-numeric: tabular-nums; }
-#scoreboard td.marketing   { color: var(--marketing); }
-#scoreboard td.engineering { color: var(--engineering); }
+#scoreboard td,
+#match-end td { padding: 6px 10px; border-bottom: 1px solid rgba(47, 55, 66, 0.5); }
+#scoreboard tr.self td,
+#match-end tr.self td { background: rgba(61, 139, 253, 0.12); }
+#scoreboard td.num,
+#match-end td.num { text-align: right; font-variant-numeric: tabular-nums; }
+#scoreboard td.marketing,
+#match-end td.marketing   { color: var(--marketing); }
+#scoreboard td.engineering,
+#match-end td.engineering { color: var(--engineering); }
 
 #netstat {
   position: absolute;
@@ -333,3 +340,55 @@ button:disabled { background: var(--line); color: var(--muted); cursor: progress
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* --- Rundenstand -------------------------------------------------------- */
+
+/* Der laufende Punktestand sitzt oben mittig, wo er niemanden verdeckt: das
+   Fadenkreuz liegt in der Mitte, das Killfeed rechts, die Werte unten. */
+#teamscore {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 14px;
+  background: rgba(20, 23, 28, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+#teamscore b { font-size: 17px; font-variant-numeric: tabular-nums; }
+#teamscore .sep { color: var(--muted); }
+#teamscore .marketing { color: var(--marketing); }
+#teamscore .engineering { color: var(--engineering); }
+#teamscore em { color: var(--muted); font-style: normal; font-size: 11px; }
+
+/* Das Abschlussbild laesst Klicks durch: die Maus bleibt in der Pause
+   gefangen, und ein Klick soll weiter feuern statt am Overlay zu verpuffen. */
+#match-end,
+#match-end .panel { pointer-events: none; }
+
+#match-end h1,
+#match-end .subtitle { text-align: center; }
+
+#match-score {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  margin: 0 0 20px;
+  font-size: 15px;
+}
+
+#match-score b { font-size: 30px; font-variant-numeric: tabular-nums; }
+#match-score .sep { color: var(--muted); }
+#match-score .marketing { color: var(--marketing); }
+#match-score .engineering { color: var(--engineering); }
+
+#match-end table { margin-bottom: 14px; }
+#match-end .status { text-align: center; margin: 0; }
+#match-end .status b { color: var(--text); font-variant-numeric: tabular-nums; }

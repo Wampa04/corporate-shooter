@@ -32,6 +32,17 @@ export class Hud {
     this.heal = el("skill-heal");
     this.killfeed = el("killfeed");
     this.fps = el("fps");
+    this.teamscore = el("teamscore");
+    this.scoreMarketing = el("score-marketing");
+    this.scoreEngineering = el("score-engineering");
+    this.scoreLimit = el("score-limit");
+    this.matchEnd = el("match-end");
+    this.matchWinner = el("match-winner");
+    this.matchSubtitle = el("match-subtitle");
+    this.finalMarketing = el("final-marketing");
+    this.finalEngineering = el("final-engineering");
+    this.matchBody = el("match-body");
+    this.matchTimer = el("match-timer");
     this.respawn = el("respawn");
     this.respawnTimer = el("respawn-timer");
     this.scoreboard = el("scoreboard");
@@ -115,12 +126,21 @@ export class Hud {
 
   setScoreboard(players, visible) {
     this.scoreboard.classList.toggle("hidden", !visible);
-    if (!visible) return;
+    if (visible) this._fillTable(this.scoreboardBody, players);
+  }
 
+  /**
+   * Baut die Ranglistenzeilen in eine beliebige Tabelle.
+   *
+   * Geteilt zwischen der Rangliste auf Tab und dem Abschlussbild: zwei Kopien
+   * derselben Darstellung liefen sonst frueher oder spaeter auseinander, und
+   * ausgerechnet der Endstand ist die Zahl, die am Ende zaehlt.
+   */
+  _fillTable(tbody, players) {
     const sorted = [...players].sort(
       (a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name),
     );
-    this.scoreboardBody.replaceChildren(
+    tbody.replaceChildren(
       ...sorted.map((player) => {
         const row = document.createElement("tr");
         if (player.id === this.selfId) row.className = "self";
@@ -132,6 +152,44 @@ export class Hud {
         return row;
       }),
     );
+  }
+
+  /**
+   * Uebernimmt den Rundenstand aus dem Snapshot.
+   *
+   * Der Client zaehlt nichts selbst - auch die Restzeit nicht. Sie steht in
+   * jedem Snapshot, genau wie die Wartezeit beim Wiedereinstieg. Ein eigener
+   * Zaehler im Browser liefe irgendwann anders als der Server, und dann stuende
+   * auf dem Bildschirm eine Zahl, die nichts bedeutet.
+   *
+   * @param {object} stand `snapshot.match`
+   * @param {Array}  players Spieler desselben Snapshots, fuer den Endstand
+   */
+  setMatchState(stand, players) {
+    if (!stand) return;
+
+    this.scoreMarketing.textContent = String(stand.score_marketing);
+    this.scoreEngineering.textContent = String(stand.score_engineering);
+    // Die Grenze steht in der Konfiguration, nicht im Snapshot: sie aendert
+    // sich nie, und dreissigmal je Sekunde dieselbe Zahl zu schicken waere
+    // Verschwendung.
+    this.scoreLimit.textContent = String(this.config.score_limit);
+
+    const vorbei = stand.phase === "Over";
+    this.matchEnd.classList.toggle("hidden", !vorbei);
+    if (!vorbei) return;
+
+    this.matchWinner.textContent = stand.winner ?? "Niemand";
+    this.matchWinner.className = TEAM_CLASS[stand.winner] ?? "";
+    this.matchSubtitle.textContent = stand.winner
+      ? "hat das Quartal gewonnen"
+      : "das Quartal endet ohne Ergebnis";
+    this.finalMarketing.textContent = String(stand.score_marketing);
+    this.finalEngineering.textContent = String(stand.score_engineering);
+    // Aufgerundet: bei 0.4 Sekunden Rest steht "1", und die Anzeige springt
+    // nicht auf 0, waehrend noch etwas kommt.
+    this.matchTimer.textContent = String(Math.ceil(stand.remaining));
+    this._fillTable(this.matchBody, players);
   }
 
   /**
@@ -172,6 +230,19 @@ export class Hud {
           // Rueckmeldung nur fuer die eigenen Treffer und die eigenen Wunden.
           if (event.d.attacker === this.selfId) this._flashHitmarker();
           if (event.d.target === this.selfId) this._flashDamage();
+          break;
+        case "MatchOver": {
+          const { winner, score_marketing, score_engineering } = event.d;
+          this._addEntry(
+            `<span class="${TEAM_CLASS[winner] ?? ""}">${escapeHtml(winner)}</span> ` +
+              `<span class="verb">gewinnt das Quartal ` +
+              `(${score_marketing}:${score_engineering})</span>`,
+            winner,
+          );
+          break;
+        }
+        case "MatchStarted":
+          this._addEntry(`<span class="verb">Neues Quartal, neue Ziele</span>`);
           break;
       }
     }

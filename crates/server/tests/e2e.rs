@@ -103,6 +103,38 @@ impl TestServer {
         server
     }
 
+    /// Startet den Server mit kurzer Runde und kurzer Pause.
+    ///
+    /// Dreissig Abschuesse ueber eine echte WebSocket-Verbindung zu spielen
+    /// spraengte jede Zeitgrenze; mit einem reicht ein einziges Duell.
+    async fn start_with_round(score_limit: u32, intermission: f32) -> TestServer {
+        let port = free_port();
+        let child = Command::new(env!("CARGO_BIN_EXE_server"))
+            .args([
+                "--bind",
+                "127.0.0.1",
+                "--port",
+                &port.to_string(),
+                "--no-mdns",
+                "--seed",
+                "12345",
+                "--score-limit",
+                &score_limit.to_string(),
+                "--intermission",
+                &intermission.to_string(),
+                "--client-dir",
+                CLIENT_DIR,
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Server liess sich nicht starten");
+
+        let server = TestServer { child, port };
+        server.await_ready().await;
+        server
+    }
+
     /// Startet den Server ohne ein einziges Argument, nur ueber die Umgebung.
     ///
     /// Das ist der Weg, den `compose.yaml` mit der durchgereichten `.env`
@@ -152,6 +184,11 @@ struct Client {
     tick_rate: u32,
     /// Wie viele Simulationsschritte auf einen Snapshot kommen.
     snapshot_interval: u32,
+    /// Rundenstand aus dem zuletzt empfangenen Snapshot.
+    match_state: Option<protocol::MatchState>,
+    /// Punktegrenze aus der Willkommensnachricht - sie steht in der
+    /// Konfiguration, nicht im Snapshot.
+    score_limit: u32,
 }
 
 impl Client {
@@ -184,6 +221,8 @@ impl Client {
             last_ack: 0,
             tick_rate: config.tick_rate,
             snapshot_interval: config.snapshot_interval,
+            match_state: None,
+            score_limit: config.score_limit,
         }
     }
 
@@ -211,11 +250,13 @@ impl Client {
                     players,
                     events,
                     ack_seq,
+                    match_state,
                     ..
                 } => {
                     self.players = players;
                     self.events.extend(events);
                     self.last_ack = ack_seq;
+                    self.match_state = Some(match_state);
                     return;
                 }
                 ServerMessage::Rejected { reason } => panic!("Server hat abgelehnt: {reason}"),
@@ -271,6 +312,63 @@ impl Client {
     }
 }
 
+/// Laesst `hunter` auf `prey` losgehen, bis jemand faellt.
+///
+/// Der Jaeger hat keine Wegfindung und bleibt zwangslaeufig an Schreibtischen
+/// haengen. Statt das Buero leerzuraeumen - was den Test von der echten Karte
+/// entkoppeln wuerde - loest er sich seitwaerts los, sobald er eine Weile nicht
+/// naeher kommt.
+///
+/// Geteilt zwischen dem Duell-Test und dem Rundenende-Test: zwei Kopien dieser
+/// Jagd liefen frueher oder spaeter auseinander, und dann prueften die beiden
+/// Tests verschiedene Dinge, ohne dass es auffiele.
+async fn jage(hunter: &mut Client, prey: &mut Client, hoechstens: u32) -> bool {
+    let mut best_distance = f32::INFINITY;
+    let mut stuck_ticks = 0u32;
+    let mut sidestep = 0i32;
+
+    for _ in 0..hoechstens {
+        let distance = hunter.distance_to_opponent();
+        if distance < best_distance - 0.05 {
+            best_distance = distance;
+            stuck_ticks = 0;
+        } else {
+            stuck_ticks += 1;
+        }
+        // Nach einer halben Sekunde ohne Fortschritt fuer eine halbe Sekunde
+        // ausweichen, Richtung bei jedem Versuch wechseln.
+        if stuck_ticks == 15 {
+            sidestep = if sidestep > 0 { -1 } else { 1 };
+        }
+        if stuck_ticks > 30 {
+            stuck_ticks = 0;
+            best_distance = distance;
+        }
+        let evading = stuck_ticks >= 15;
+
+        hunter
+            .step(InputFrame {
+                move_z: 1.0,
+                move_x: if evading { sidestep as f32 } else { 0.0 },
+                yaw: hunter.yaw_to_opponent(),
+                buttons: if distance < 14.0 { buttons::FIRE } else { 0 }
+                    | if evading { buttons::JUMP } else { 0 },
+                ..InputFrame::default()
+            })
+            .await;
+        prey.step(InputFrame::default()).await;
+
+        if hunter
+            .events
+            .iter()
+            .any(|e| matches!(e, protocol::GameEvent::Death { .. }))
+        {
+            return true;
+        }
+    }
+    false
+}
+
 async fn send(socket: &mut WebSocketStream<MaybeTlsStream<TcpStream>>, message: &ClientMessage) {
     let text = serde_json::to_string(message).unwrap();
     socket.send(Message::Text(text.into())).await.unwrap();
@@ -320,63 +418,12 @@ async fn duell() {
     );
     assert_eq!(hunter.me().name, "Karin (Controlling)");
 
-    // Herangehen und schiessen. Das Opfer steht still.
-    //
-    // Der Jaeger hat keine Wegfindung und bleibt zwangslaeufig an
-    // Schreibtischen haengen. Statt das Buero leerzuraeumen - was den Test von
-    // der echten Karte entkoppeln wuerde - loest er sich seitwaerts los, sobald
-    // er eine Weile nicht naeher kommt.
-    let mut killed = false;
-    let mut best_distance = f32::INFINITY;
-    let mut stuck_ticks = 0u32;
-    let mut sidestep = 0i32;
-
-    for _ in 0..900 {
-        let distance = hunter.distance_to_opponent();
-        if distance < best_distance - 0.05 {
-            best_distance = distance;
-            stuck_ticks = 0;
-        } else {
-            stuck_ticks += 1;
-        }
-        // Nach einer halben Sekunde ohne Fortschritt fuer eine halbe Sekunde
-        // ausweichen, Richtung bei jedem Versuch wechseln.
-        if stuck_ticks == 15 {
-            sidestep = if sidestep > 0 { -1 } else { 1 };
-        }
-        if stuck_ticks > 30 {
-            stuck_ticks = 0;
-            best_distance = distance;
-        }
-        let evading = stuck_ticks >= 15;
-
-        hunter
-            .step(InputFrame {
-                move_z: 1.0,
-                move_x: if evading { sidestep as f32 } else { 0.0 },
-                yaw: hunter.yaw_to_opponent(),
-                buttons: if distance < 14.0 { buttons::FIRE } else { 0 }
-                    | if evading { buttons::JUMP } else { 0 },
-                ..InputFrame::default()
-            })
-            .await;
-        prey.step(InputFrame::default()).await;
-
-        if hunter
-            .events
-            .iter()
-            .any(|e| matches!(e, protocol::GameEvent::Death { .. }))
-        {
-            killed = true;
-            break;
-        }
-    }
+    let killed = jage(&mut hunter, &mut prey, 900).await;
 
     assert!(
         killed,
-        "kein Kill in 900 Ticks - letzter Abstand {:.1} m, geringster {:.1} m, Gegner-HP {}",
+        "kein Kill in 900 Ticks - letzter Abstand {:.1} m, Gegner-HP {}",
         hunter.distance_to_opponent(),
-        best_distance,
         hunter.opponent().health
     );
 
@@ -628,4 +675,89 @@ async fn grosse_clientdateien_werden_komprimiert_ausgeliefert() {
         gezippt.len(),
         roh.len()
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn eine_runde_endet_und_faengt_von_vorne_an() {
+    tokio::time::timeout(OVERALL_TIMEOUT, runde_zu_ende())
+        .await
+        .expect("Testlauf hat die Zeitgrenze ueberschritten - vermutlich haengt der Server");
+}
+
+/// Der ganze Weg ueber die echte Verbindung: schiessen, gewinnen, Pause,
+/// neue Runde.
+///
+/// Die Rundenlogik selbst pruefen die Simulationstests mit Gegenproben. Hier
+/// geht es um das, was die nicht sehen koennen: dass der Stand tatsaechlich im
+/// Snapshot ankommt und unter dem Namen steht, den der Browser liest.
+async fn runde_zu_ende() {
+    // Ein Abschuss genuegt zum Sieg, die Pause dauert drei Sekunden.
+    let server = TestServer::start_with_round(1, 3.0).await;
+
+    let mut hunter = Client::join(server.port, "Karin (Controlling)").await;
+    let mut prey = Client::join(server.port, "Torben").await;
+
+    for _ in 0..5 {
+        hunter.step(InputFrame::default()).await;
+        prey.step(InputFrame::default()).await;
+    }
+
+    let vorher = hunter.match_state.expect("Snapshot ohne Rundenstand");
+    assert_eq!(vorher.phase, protocol::Phase::Running);
+    assert_eq!(hunter.score_limit, 1, "--score-limit kam nicht an");
+    assert_eq!((vorher.score_marketing, vorher.score_engineering), (0, 0));
+
+    assert!(
+        jage(&mut hunter, &mut prey, 900).await,
+        "kein Kill in 900 Ticks - letzter Abstand {:.1} m",
+        hunter.distance_to_opponent()
+    );
+
+    // Der Abschuss faellt in denselben Tick wie das Rundenende; der Snapshot
+    // danach traegt den Endstand.
+    hunter.step(InputFrame::default()).await;
+    let ende = hunter.match_state.expect("Snapshot ohne Rundenstand");
+    assert_eq!(ende.phase, protocol::Phase::Over, "Runde laeuft weiter");
+    assert_eq!(
+        ende.winner,
+        Some(hunter.me().team),
+        "der Sieger ist nicht das Team des Schuetzen"
+    );
+    assert!(ende.remaining > 0.0, "die Pause laeuft nicht");
+    assert!(
+        hunter
+            .events
+            .iter()
+            .any(|e| matches!(e, protocol::GameEvent::MatchOver { .. })),
+        "kein MatchOver ueber die Leitung"
+    );
+
+    // Pause aussitzen. Drei Sekunden bei 30 Snapshots je Sekunde sind neunzig
+    // Schritte; das Doppelte als Reserve.
+    let mut neu = None;
+    for _ in 0..180 {
+        hunter.step(InputFrame::default()).await;
+        prey.step(InputFrame::default()).await;
+        let stand = hunter.match_state.expect("Snapshot ohne Rundenstand");
+        if stand.phase == protocol::Phase::Running {
+            neu = Some(stand);
+            break;
+        }
+    }
+
+    let neu = neu.expect("die Pause ist nicht zu Ende gegangen");
+    assert_eq!((neu.score_marketing, neu.score_engineering), (0, 0));
+    assert_eq!(neu.winner, None);
+    assert!(
+        hunter
+            .events
+            .iter()
+            .any(|e| matches!(e, protocol::GameEvent::MatchStarted)),
+        "kein MatchStarted ueber die Leitung"
+    );
+    // Alle stehen wieder frisch auf dem Feld.
+    for p in &hunter.players {
+        assert!(p.alive, "{} lebt nach dem Neustart nicht", p.name);
+        assert_eq!((p.kills, p.deaths), (0, 0), "{}: Statistik nicht genullt", p.name);
+    }
 }

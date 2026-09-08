@@ -70,6 +70,12 @@ pub struct GameConfig {
     pub heal_amount: u16,
     pub heal_cooldown: f32,
     pub respawn_delay: f32,
+
+    /// Abschüsse, die ein Team für den Rundensieg braucht.
+    pub score_limit: u32,
+    /// Wie lange der Endstand stehen bleibt, bevor die nächste Runde beginnt.
+    pub intermission: f32,
+
     pub weapons: Vec<WeaponDesc>,
 }
 
@@ -91,6 +97,8 @@ impl Default for GameConfig {
             heal_amount: 60,
             heal_cooldown: 20.0,
             respawn_delay: 3.0,
+            score_limit: 30,
+            intermission: 12.0,
             weapons: vec![
                 WeaponDesc {
                     id: WeaponId::Textmarker,

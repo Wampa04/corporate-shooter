@@ -96,3 +96,47 @@ fn localstate_traegt_die_grundlage_der_vorhersage() {
     assert!(nah(json["vel_y"].as_f64().unwrap(), -2.5));
     assert!(nah(json["dash_timer"].as_f64().unwrap(), 0.12));
 }
+
+#[test]
+fn snapshot_traegt_den_rundenstand_unter_match() {
+    // Der Client liest `snapshot.match`. Der Rust-Name ist `match_state`, weil
+    // `match` ein Schluesselwort ist - dazwischen steht ein `#[serde(rename)]`,
+    // und der faellt beim Umbenennen leicht unter den Tisch. Im Browser waere
+    // das Ergebnis kein Fehler, sondern `undefined`: das Abschlussbild bliebe
+    // einfach aus.
+    let json = serde_json::to_value(ServerMessage::Snapshot {
+        tick: 7,
+        ack_seq: 3,
+        players: vec![],
+        local: LocalState::default(),
+        events: vec![],
+        match_state: MatchState {
+            phase: Phase::Over,
+            score_marketing: 12,
+            score_engineering: 30,
+            winner: Some(Team::Engineering),
+            remaining: 8.5,
+        },
+    })
+    .expect("Snapshot serialisiert");
+
+    let stand = &json["d"]["match"];
+    assert!(!stand.is_null(), "Feld `match` fehlt im Snapshot");
+    assert_eq!(stand["phase"], "Over");
+    assert_eq!(stand["winner"], "Engineering");
+    assert_eq!(stand["score_engineering"], 30);
+    assert_eq!(stand["score_marketing"], 12);
+    // Die Punktegrenze steht bewusst *nicht* im Snapshot - sie kommt beim
+    // Beitritt mit der Konfiguration und aendert sich nie.
+    assert!(stand.get("score_limit").is_none(), "Punktegrenze doppelt uebertragen");
+}
+
+#[test]
+fn laufende_runde_hat_keinen_sieger_im_json() {
+    // Gegenprobe: `Option<Team>` muss als `null` ankommen und nicht als
+    // verschachteltes Objekt - der Client fragt schlicht auf Wahrheit ab.
+    let json = serde_json::to_value(MatchState::default()).unwrap();
+    assert_eq!(json["winner"], serde_json::Value::Null);
+    assert_eq!(json["phase"], "Running");
+    assert_eq!(json["remaining"], 0.0);
+}

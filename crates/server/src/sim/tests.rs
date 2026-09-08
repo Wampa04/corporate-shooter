@@ -1037,6 +1037,264 @@ fn ostfluegel_ist_begehbar() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Rundenverlauf
+// ---------------------------------------------------------------------------
+
+/// Konfiguration mit kurzer Runde und kurzer Pause, damit ein Test nicht
+/// dreissig Abschuesse simulieren muss.
+fn runden_config(limit: u32, pause: f32) -> GameConfig {
+    GameConfig {
+        score_limit: limit,
+        intermission: pause,
+        // Kurze Wartezeit, damit sich beobachten laesst, ob in der Pause
+        // jemand einsteigt. Mit den regulaeren drei Sekunden waere in einer
+        // kurzen Pause ohnehin niemand aufgestanden - ein Test darauf haette
+        // die Sperre gar nicht geprueft, sondern nur die Wartezeit.
+        respawn_delay: 0.1,
+        ..precise_config()
+    }
+}
+
+fn runde(app: &App) -> protocol::MatchState {
+    app.world().resource::<matchstate::Match>().0
+}
+
+/// Schiesst, bis das Ziel faellt, und hoert dann auf.
+///
+/// Bewusst nicht "feuere pauschal zweieinhalb Sekunden": eine kurze Pause
+/// waere in dieser Zeit schon wieder abgelaufen, und der Test praefte den
+/// Zustand *nach* dem Neustart statt den beim Rundenende.
+fn ein_abschuss(app: &mut App, shooter: Entity) -> Vec<GameEvent> {
+    set_input(
+        app,
+        shooter,
+        InputFrame {
+            buttons: buttons::FIRE,
+            ..Default::default()
+        },
+    );
+
+    let mut events = Vec::new();
+    for _ in 0..30 {
+        events.append(&mut run_s(app, 0.1));
+        if events.iter().any(|e| matches!(e, GameEvent::Death { .. })) {
+            // Feuer einstellen, sonst zielt der Schuetze im naechsten Tick auf
+            // den naechsten Gegner.
+            set_input(app, shooter, InputFrame::default());
+            return events;
+        }
+    }
+    panic!("in drei Sekunden ist niemand gestorben - der Test misst nichts");
+}
+
+#[test]
+fn punktegrenze_beendet_die_runde() {
+    let mut app = app_with(runden_config(1, 10.0), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+
+    let events = ein_abschuss(&mut app, shooter);
+
+    let stand = runde(&app);
+    assert_eq!(stand.phase, protocol::Phase::Over, "Runde laeuft weiter");
+    assert_eq!(stand.winner, Some(Team::Engineering), "falscher Sieger");
+    assert_eq!(stand.score_engineering, 1);
+    assert_eq!(stand.score_marketing, 0);
+    assert!(
+        stand.remaining > 0.0,
+        "die Pause laeuft nicht: {}",
+        stand.remaining
+    );
+    assert!(
+        events.iter().any(|e| matches!(e, GameEvent::MatchOver { .. })),
+        "kein MatchOver gemeldet"
+    );
+}
+
+#[test]
+fn ein_punkt_unter_der_grenze_laeuft_die_runde_weiter() {
+    // Die Gegenprobe zum Test darueber. Ohne sie prueft der nur, dass
+    // irgendwann irgendetwas passiert - eine Grenze von "immer" bestuende ihn
+    // genauso.
+    let mut app = app_with(runden_config(2, 10.0), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+
+    ein_abschuss(&mut app, shooter);
+
+    let stand = runde(&app);
+    assert_eq!(stand.score_engineering, 1, "Punkt nicht oder doppelt gebucht");
+    assert_eq!(
+        stand.phase,
+        protocol::Phase::Running,
+        "Runde bei 1 von 2 Punkten schon vorbei"
+    );
+    assert_eq!(stand.winner, None);
+}
+
+#[test]
+fn nach_der_pause_faengt_alles_von_vorn_an() {
+    let mut app = app_with(runden_config(1, 0.5), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+
+    ein_abschuss(&mut app, shooter);
+    assert_eq!(runde(&app).phase, protocol::Phase::Over);
+
+    let events = run_s(&mut app, 0.9);
+
+    let stand = runde(&app);
+    assert_eq!(stand.phase, protocol::Phase::Running, "Pause endet nicht");
+    assert_eq!(stand.winner, None, "Sieger nicht zurueckgesetzt");
+    assert_eq!((stand.score_engineering, stand.score_marketing), (0, 0));
+    assert!(
+        events.iter().any(|e| matches!(e, GameEvent::MatchStarted)),
+        "kein MatchStarted gemeldet"
+    );
+
+    for (name, e) in [("Schuetze", shooter), ("Ziel", target)] {
+        let v = vitals(&app, e);
+        assert!(v.alive, "{name} lebt nach dem Neustart nicht");
+        assert_eq!(v.health, app.world().resource::<Config>().max_health);
+        assert_eq!((v.kills, v.deaths), (0, 0), "{name}: Statistik nicht genullt");
+    }
+}
+
+#[test]
+fn punkte_bleiben_wenn_der_schuetze_geht() {
+    // Der eigentliche Grund, warum die Teampunkte in einer eigenen Ressource
+    // stehen und nicht je Tick aus den Spielern summiert werden. Wuerden sie
+    // summiert, naehme ein Spieler beim Verlassen die Punkte seines Teams mit.
+    let mut app = app_with(runden_config(5, 10.0), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+
+    ein_abschuss(&mut app, shooter);
+    assert_eq!(runde(&app).score_engineering, 1);
+
+    app.world_mut().despawn(shooter);
+    run_s(&mut app, 0.5);
+
+    assert_eq!(
+        runde(&app).score_engineering,
+        1,
+        "der Punkt ist mit dem Spieler verschwunden"
+    );
+}
+
+#[test]
+fn in_der_pause_steigt_niemand_ein() {
+    // Der Endstand soll stehen bleiben, nicht von Wiedereinsteigern
+    // durchkreuzt werden.
+    //
+    // Der Test taugt nur, wenn die Wartezeit *kuerzer* ist als das, was hier
+    // beobachtet wird - sonst prueft er die Wartezeit statt die Sperre. Genau
+    // daran ist die erste Fassung gescheitert: sie wartete 0.3 s bei drei
+    // Sekunden Wiedereinstiegszeit und haette den Wegfall der Sperre nie
+    // bemerkt. `runden_config` setzt die Wartezeit deshalb auf 0.1 s.
+    let mut app = app_with(runden_config(1, 2.0), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+
+    ein_abschuss(&mut app, shooter);
+    assert_eq!(runde(&app).phase, protocol::Phase::Over);
+
+    let wartezeit = app.world().resource::<Config>().respawn_delay;
+    run_s(&mut app, 1.0);
+    assert!(
+        1.0 > wartezeit * 2.0,
+        "der Test wartet nicht laenger als die Wiedereinstiegszeit ({wartezeit} s) \
+         und prueft damit nur diese statt die Sperre"
+    );
+    assert!(
+        !vitals(&app, target).alive,
+        "Wiedereinstieg trotz laufender Pause"
+    );
+}
+
+#[test]
+fn in_der_pause_faellt_kein_schuss() {
+    let mut app = app_with(runden_config(1, 10.0), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+
+    ein_abschuss(&mut app, shooter);
+    assert_eq!(runde(&app).phase, protocol::Phase::Over);
+
+    // Zweites Ziel, das in der Pause lebendig danebensteht.
+    let zweites = add_player(&mut app, 3, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+    let vorher = vitals(&app, zweites).health;
+
+    let events = halte_feuer(&mut app, shooter, 2.0);
+
+    assert!(
+        !events.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
+        "in der Pause wurde geschossen"
+    );
+    assert_eq!(
+        vitals(&app, zweites).health,
+        vorher,
+        "in der Pause wurde Schaden gemacht"
+    );
+    assert_eq!(runde(&app).score_engineering, 1, "in der Pause gepunktet");
+    let _ = target;
+}
+
+#[test]
+fn gleichzeitiger_wiedereinstieg_belegt_verschiedene_punkte() {
+    // Beim Neustart einer Runde steigen alle im selben Tick ein. Rechneten sie
+    // alle mit demselben Bild, waehlten sie aus denselben drei sichersten
+    // Punkten - acht Leute auf drei Stellen. Auch im gewoehnlichen Spiel
+    // konnten zwei, die im selben Tick starben, aufeinander landen.
+    let mut map = arena();
+    map.spawns = (0..8)
+        .map(|i| SpawnPoint {
+            pos: Vec3::new(-14.0 + i as f32 * 4.0, 0.0, if i % 2 == 0 { -8.0 } else { 8.0 }),
+            yaw: 0.0,
+        })
+        .collect();
+
+    let mut app = app_with(runden_config(30, 1.0), map);
+    let spieler: Vec<Entity> = (0..4)
+        .map(|i| {
+            add_player(
+                &mut app,
+                i + 1,
+                if i % 2 == 0 { Team::Engineering } else { Team::Marketing },
+                Vec3::new(i as f32, 0.0, 0.0),
+                0.0,
+            )
+        })
+        .collect();
+
+    // Alle im selben Tick faellig machen.
+    for e in &spieler {
+        let mut v = app.world_mut().get_mut::<Vitals>(*e).unwrap();
+        v.alive = false;
+        v.health = 0;
+        v.respawn_timer = 0.0;
+    }
+    run(&mut app, 2);
+
+    let mut orte: Vec<String> = spieler
+        .iter()
+        .map(|e| {
+            let p = body(&app, *e).pos;
+            assert!(vitals(&app, *e).alive, "jemand ist nicht eingestiegen");
+            format!("{:.2}/{:.2}", p.x, p.z)
+        })
+        .collect();
+    let anzahl = orte.len();
+    orte.sort();
+    orte.dedup();
+    assert_eq!(
+        orte.len(),
+        anzahl,
+        "zwei Spieler stehen auf demselben Spawnpunkt: {orte:?}"
+    );
+}
+
 #[test]
 fn raeume_des_ostfluegels_sind_durch_ihre_tuer_betretbar() {
     // Ein Raum, in den man nicht hineinkommt, sieht im Grundriss völlig normal

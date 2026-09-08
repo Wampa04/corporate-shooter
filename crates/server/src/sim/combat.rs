@@ -111,6 +111,7 @@ fn damage_at(weapon: &WeaponDesc, distance: f32) -> u16 {
 
 pub fn fire_weapons(
     config: Res<Config>,
+    runde: Res<super::matchstate::Match>,
     level: Res<Level>,
     tick: Res<Tick>,
     history: Res<History>,
@@ -122,6 +123,14 @@ pub fn fire_weapons(
 ) {
     let dt = config.tick_dt();
     let half = player_half_extents(config.player_radius, config.player_height);
+
+    // In der Pause faellt kein Schuss. Bewusst *hier* und nicht in der
+    // Bewegung: Schuesse sagt der Client nicht voraus, Bewegung schon - eine
+    // Bewegungssperre, die er nicht kennt, waere bei jedem Abgleich ein
+    // sichtbarer Ruck.
+    if !runde.laeuft() {
+        return;
+    }
 
     let targets: Vec<Target> = all
         .iter()
@@ -252,6 +261,7 @@ pub fn resolve_deaths(
     config: Res<Config>,
     mut pending: ResMut<PendingDamage>,
     mut events: ResMut<EventLog>,
+    mut runde: ResMut<super::matchstate::Match>,
     mut q: Query<(&Player, &mut Vitals)>,
 ) {
     let mut deaths: Vec<(Entity, PlayerId, WeaponId)> = Vec::new();
@@ -289,8 +299,19 @@ pub fn resolve_deaths(
     // Punkte des Schützen erst nach dem Abarbeiten gutschreiben: währenddessen
     // ist dessen `Vitals` als Ziel womöglich schon ausgeliehen.
     for (killer, _, _) in deaths {
-        if let Ok((_, mut vitals)) = q.get_mut(killer) {
+        if let Ok((player, mut vitals)) = q.get_mut(killer) {
             vitals.kills += 1;
+            // Der Teampunkt wird hier gebucht und nicht spaeter aus den
+            // Spielern summiert: verlaesst jemand das Spiel, verschwaende
+            // seine Entity - und mit ihr die Punkte, die sein Team bereits
+            // gemacht hat.
+            //
+            // In der Pause zaehlt nichts mehr. Geschossen wird dort ohnehin
+            // nicht; die Abfrage steht trotzdem hier, damit die Regel an der
+            // Stelle sichtbar ist, an der sie gilt.
+            if runde.laeuft() {
+                runde.0.add_score(player.team);
+            }
         }
     }
 }

@@ -57,10 +57,16 @@ pub fn choose_spawn(map: &MapDesc, enemies: &[Vec3], rng: &mut Rng) -> SpawnPoin
 pub fn respawn_players(
     config: Res<Config>,
     level: Res<Level>,
+    runde: Res<super::matchstate::Match>,
     mut rand: ResMut<super::Rand>,
     mut events: ResMut<EventLog>,
     mut q: Query<(&Player, &mut Body, &mut Vitals, &mut Loadout, &mut Skills)>,
 ) {
+    // In der Pause steigt niemand ein: der Endstand soll stehen bleiben.
+    if !runde.laeuft() {
+        return;
+    }
+
     // Positionen der Lebenden je Team, bevor irgendetwas verändert wird.
     let living: Vec<(Team, Vec3)> = q
         .iter()
@@ -68,17 +74,29 @@ pub fn respawn_players(
         .map(|(player, body, _, _, _)| (player.team, body.pos))
         .collect();
 
+    // Punkte, die in *diesem* Tick schon vergeben wurden.
+    //
+    // Ohne das rechnen alle gleichzeitig Einsteigenden mit demselben Bild und
+    // waehlen aus denselben drei sichersten Punkten - beim Neustart einer Runde
+    // steigen also acht Leute auf drei Stellen ein. Auch im gewoehnlichen Spiel
+    // konnten zwei, die im selben Tick starben, aufeinander landen.
+    let mut belegt: Vec<Vec3> = Vec::new();
+
     for (player, mut body, mut vitals, mut loadout, mut skills) in &mut q {
         if vitals.alive || vitals.respawn_timer > 0.0 {
             continue;
         }
 
+        // Bereits belegte Punkte zaehlen wie Gegner, egal welches Team: einer
+        // Kollegin auf dem Kopf zu stehen ist nicht besser als einem Gegner.
         let enemies: Vec<Vec3> = living
             .iter()
             .filter(|(team, _)| *team != player.team)
             .map(|(_, pos)| *pos)
+            .chain(belegt.iter().copied())
             .collect();
         let spawn = choose_spawn(&level.desc, &enemies, &mut rand.0);
+        belegt.push(spawn.pos);
 
         body.pos = spawn.pos;
         body.vel = Vec3::ZERO;

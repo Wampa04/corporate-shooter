@@ -181,6 +181,7 @@ fn broadcast(
     tick: Res<Tick>,
     config: Res<Config>,
     clients: Res<Clients>,
+    runde: Res<crate::sim::matchstate::Match>,
     mut log: ResMut<EventLog>,
     q: Query<(&Player, &Body, &Vitals, &Loadout, &Skills, &Inputs)>,
 ) {
@@ -243,6 +244,8 @@ fn broadcast(
                 dash_dir_z: skills.dash_dir.z,
             },
             events: events.clone(),
+            // Fuer alle gleich, deshalb kopiert statt je Client gerechnet.
+            match_state: runde.0,
         };
         // Fehler bedeutet: die Schreibaufgabe ist bereits beendet. Das
         // zugehörige `Disconnected` folgt, hier ist nichts zu tun.

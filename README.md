@@ -40,6 +40,8 @@ gehosteten Server ist sie ohne Belang.
 | `--client-dir <pfad>` | Verzeichnis mit dem Browser-Client, falls es nicht gefunden wird |
 | `--no-mdns` | mDNS-Bekanntmachung abschalten (beim Hosten sinnvoll) |
 | `--max-players <n>` | Höchstzahl gleichzeitiger Spieler (Standard 16) |
+| `--score-limit <n>` | Abschlüsse für den Rundensieg (Standard 30) |
+| `--intermission <s>` | Pause zwischen zwei Runden (Standard 12 s) |
 | `--seed <n>` | Fester Startwert für Streuung und Spawnauswahl (für Tests) |
 
 ### Mit Docker Compose
@@ -90,6 +92,8 @@ Erklärung auf:
 | `CORPSHOOT_BIND` | Adresse, an die gebunden wird |
 | `CORPSHOOT_NAME` | Name, unter dem der Server erscheint |
 | `CORPSHOOT_TICK_RATE` | Simulationsschritte pro Sekunde |
+| `CORPSHOOT_SCORE_LIMIT` | Abschlüsse für den Rundensieg |
+| `CORPSHOOT_INTERMISSION` | Pause zwischen zwei Runden |
 | `CORPSHOOT_NO_MDNS` | mDNS-Bekanntmachung abschalten |
 | `CORPSHOOT_CLIENT_DIR` | Verzeichnis mit dem Browser-Client |
 | `CORPSHOOT_SEED` | Fester Startwert des Zufallsgenerators (für Tests) |
@@ -201,6 +205,8 @@ Erzwingen lässt sich das über die Adresse:
 * Textmarker-Pistole und Locher-Schrotflinte
 * Agile Sprint und Wellness-Tag
 * Team Deathmatch: Marketing gegen Engineering, kein Friendly Fire
+* Runden mit Punktegrenze: das erste Team mit 30 Abschlüssen gewinnt, danach
+  Endstand, kurze Pause und ein sauberer Neustart
 * Tod, Wartezeit und Wiedereinstieg an einem gegnerfernen Spawnpunkt
 * Rangliste, Killfeed, Trefferanzeige
 
@@ -212,16 +218,9 @@ Aus dem ursprünglichen Entwurf ist bewusst noch nicht umgesetzt:
   Kaffeevollautomat-Minigun (Überhitzung), Whiteboard als tragbares Schild.
   Das Whiteboard steht bisher nur als feste Deckung im Level.
 * **Spielmodi:** „Deadline“ (Capture the Flag) und „Layoff Royale“
-  (schrumpfendes Feld). Es gibt bisher nur Team Deathmatch, und zwar ohne
-  Rundenende und ohne Punktegrenze.
+  (schrumpfendes Feld). Es gibt bisher nur Team Deathmatch.
 * **Ultimate:** der teambasierte „Synergie-Boost“.
-* **Client-seitige Vorhersage.** Bis eine Taste sichtbar wirkt, vergehen ein
-  halber Tick, die Umlaufzeit und die Zeitkonstante der Kameraglättung. Im LAN
-  sind das rund 60 ms, über das Internet eher 100 bis 150 ms — dort ist die
-  Vorhersage keine Politur mehr, sondern Voraussetzung.
-  `InputFrame::seq` und `Snapshot::ack_seq` sind dafür bereits vorgesehen.
-  Nachgebaut wird die Bewegung dabei **nicht** in JavaScript: die vorhandene
-  Rust-Funktion soll nach WASM übersetzt und im Browser dieselbe bleiben.
+* **Spielfiguren:** Mitspieler sind noch vier Kisten statt einer Figur.
 
 
 ## Aufbau

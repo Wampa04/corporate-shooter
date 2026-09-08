@@ -241,6 +241,10 @@ function start(connection, welcome, prediction) {
     audio.setReloading(snapshot.local?.reloading ?? false);
     hud.handleEvents(snapshot.events, byId);
     hud.update(self, snapshot.local);
+    // Der Rundenstand kommt in jedem Snapshot mit, nicht als Ereignis: wer
+    // mitten in der Pause beitritt, sieht das Abschlussbild sofort statt vor
+    // einem leeren Spiel zu stehen.
+    hud.setMatchState(snapshot.match, snapshot.players);
   };
 
   connection.onClose = () => {
@@ -391,6 +395,11 @@ function start(connection, welcome, prediction) {
       korrektur: () => prediction?.lastError ?? null,
       offen: () => prediction?.pendingCount ?? null,
       statistik: () => prediction?.stats ?? null,
+      // Fuer den Blick aufs Abschlussbild: die Rundenlogik selbst pruefen die
+      // Rust-Tests, hier geht es nur darum, ob sich die Anzeige zeichnen
+      // laesst. Ohne Zugriff darauf bliebe nur, eine ganze Runde zu spielen -
+      // im Pruefstand mit zehn Bildern je Sekunde keine Option.
+      hud: () => hud,
       grafik: () => ({
         stufe: stufen[stufe].name,
         pixel: renderer.getPixelRatio(),

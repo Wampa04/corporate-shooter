@@ -35,6 +35,75 @@ impl Team {
     }
 }
 
+/// In welchem Abschnitt die Runde gerade steckt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Phase {
+    /// Es wird gespielt und gezählt.
+    Running,
+    /// Ein Team hat die Punktegrenze erreicht. Der Endstand steht, die Uhr
+    /// läuft bis zur nächsten Runde.
+    Over,
+}
+
+/// Stand der laufenden Runde.
+///
+/// Steht im Snapshot und nicht in einem Ereignis: es ist verbindlicher
+/// Zustand, kein einmaliger Vorfall. Wer mitten in der Pause beitritt, braucht
+/// ihn sofort - ein verpasstes Ereignis liesse ihn ratlos zurück.
+///
+/// Die Punkte stehen als benannte Felder da und nicht als Feld mit zwei
+/// Einträgen: eine Reihenfolge, die nur im Kopf existiert, wird irgendwann
+/// verwechselt, und dann steht der Sieg beim falschen Team.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MatchState {
+    pub phase: Phase,
+    pub score_marketing: u32,
+    pub score_engineering: u32,
+    pub winner: Option<Team>,
+    /// Restsekunden bis zur nächsten Runde; 0.0 während des Spiels.
+    ///
+    /// Der Server zählt, nicht der Client - wie schon beim Wiedereinstieg.
+    /// Was auf dem Bildschirm steht, ist der Stand, den der Server für
+    /// verbindlich hält.
+    pub remaining: f32,
+}
+
+impl Default for MatchState {
+    /// Frische Runde: null zu null, kein Sieger, keine laufende Pause.
+    ///
+    /// Die Punktegrenze steht bewusst *nicht* hier drin, obwohl der Client sie
+    /// anzeigt. Sie aendert sich nie und geht beim Beitritt schon in der
+    /// [`GameConfig`](crate::GameConfig) mit; sie ein zweites Mal in jeden
+    /// Snapshot zu legen waere derselbe Wert an zwei Orten - und gut
+    /// zwanzig Byte, dreissigmal je Sekunde, an jeden Client.
+    fn default() -> Self {
+        MatchState {
+            phase: Phase::Running,
+            score_marketing: 0,
+            score_engineering: 0,
+            winner: None,
+            remaining: 0.0,
+        }
+    }
+}
+
+impl MatchState {
+
+    pub fn score(&self, team: Team) -> u32 {
+        match team {
+            Team::Marketing => self.score_marketing,
+            Team::Engineering => self.score_engineering,
+        }
+    }
+
+    pub fn add_score(&mut self, team: Team) {
+        match team {
+            Team::Marketing => self.score_marketing += 1,
+            Team::Engineering => self.score_engineering += 1,
+        }
+    }
+}
+
 /// Tastenbits in [`InputFrame::buttons`].
 pub mod buttons {
     pub const FIRE: u8 = 1 << 0;
@@ -188,6 +257,16 @@ pub enum GameEvent {
         id: PlayerId,
         amount: u16,
     },
+    /// Ein Team hat die Punktegrenze erreicht. Der Endstand steht im
+    /// Ereignis, damit das Killfeed ihn nennen kann, ohne den Snapshot zu
+    /// durchsuchen.
+    MatchOver {
+        winner: Team,
+        score_marketing: u32,
+        score_engineering: u32,
+    },
+    /// Die nächste Runde hat begonnen; alle stehen frisch auf Spawnpunkten.
+    MatchStarted,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -213,6 +292,9 @@ pub enum ServerMessage {
         players: Vec<PlayerState>,
         local: LocalState,
         events: Vec<GameEvent>,
+        /// Stand der Runde. Für alle Clients gleich.
+        #[serde(rename = "match")]
+        match_state: MatchState,
     },
     Pong {
         client_time_ms: f64,

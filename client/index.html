@@ -70,6 +70,13 @@
     <div id="reloading" class="hidden">Nachladen&hellip;</div>
   </div>
 
+  <div id="teamscore">
+    <span class="marketing"><b id="score-marketing">0</b> Marketing</span>
+    <span class="sep">:</span>
+    <span class="engineering">Engineering <b id="score-engineering">0</b></span>
+    <em>bis <span id="score-limit">30</span></em>
+  </div>
+
   <div id="killfeed"></div>
 
   <div id="respawn" class="hidden">
@@ -86,6 +93,27 @@
   </div>
 
   <div id="netstat"><span id="fps">–</span> fps &middot; <span id="ping">–</span> ms</div>
+</div>
+
+<!-- Abschluss einer Runde. Faengt bewusst keine Klicks ab: die Maus bleibt
+     gefangen, man kann waehrend der Pause weiterlaufen. Wuerde sie
+     freigegeben, blendete `onLockChange` zusaetzlich das Pausenbild ein - und
+     zwei Bilder uebereinander sind eines zu viel. -->
+<div id="match-end" class="overlay hidden">
+  <div class="panel">
+    <h1 id="match-winner">Marketing</h1>
+    <p class="subtitle" id="match-subtitle">hat das Quartal gewonnen</p>
+    <div id="match-score">
+      <span class="marketing"><b id="final-marketing">0</b> Marketing</span>
+      <span class="sep">:</span>
+      <span class="engineering">Engineering <b id="final-engineering">0</b></span>
+    </div>
+    <table>
+      <thead><tr><th>Abteilung</th><th>Name</th><th>Abschlüsse</th><th>Freistellungen</th></tr></thead>
+      <tbody id="match-body"></tbody>
+    </table>
+    <p class="status">Nächste Runde in <b id="match-timer">12</b> s</p>
+  </div>
 </div>
 
 <div id="disconnected" class="overlay hidden">

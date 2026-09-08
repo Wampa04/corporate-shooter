@@ -13,6 +13,7 @@ mod tests;
 
 pub mod combat;
 pub mod history;
+pub mod matchstate;
 pub mod movement;
 pub mod skills;
 pub mod spawn;
@@ -349,6 +350,7 @@ impl Plugin for SimPlugin {
             .init_resource::<PendingDamage>()
             .init_resource::<EventLog>()
             .init_resource::<Lobby>()
+            .insert_resource(matchstate::Match::neu())
             .add_systems(
                 Update,
                 (
@@ -361,6 +363,10 @@ impl Plugin for SimPlugin {
                     history::record,
                     combat::fire_weapons,
                     combat::resolve_deaths,
+                    // Nach der Todesauswertung, vor dem Wiedereinstieg: der
+                    // Neustart der Runde setzt alle auf tot, und
+                    // `respawn_players` direkt danach stellt sie wieder auf.
+                    matchstate::rules,
                     spawn::respawn_players,
                     finish_tick,
                 )
