@@ -109,20 +109,91 @@ pub struct Skills {
     pub heal_cooldown: f32,
 }
 
-/// Zuletzt empfangene Eingaben. `prev_buttons` erlaubt es, gedrückt-Halten von
-/// neu-Drücken zu unterscheiden.
+/// Höchstzahl gepufferter, noch nicht simulierter Eingaben.
+///
+/// Bei 30 Hz sind acht Eingaben eine Viertelsekunde Netzschwankung. Wer mehr
+/// anstaut, hat kein Ruckeln mehr, sondern eine tote Leitung - dann ist es
+/// richtiger, die ältesten fallen zu lassen, als minutenlang Vergangenheit
+/// nachzuspielen.
+const MAX_PENDING: usize = 8;
+
+/// Wie viele Eingaben höchstens in einem Tick simuliert werden.
+///
+/// Ohne Grenze bewegte sich schneller, wer öfter sendet - der einfachste
+/// Cheat überhaupt. Drei erlauben, eine Schwankung von zwei Ticks wieder
+/// aufzuholen, ohne dass daraus ein Vorteil wird.
+const MAX_BURST: u32 = 3;
+
+/// Eingaben eines Spielers: Warteschlange und zuletzt simulierter Stand.
+///
+/// Die Warteschlange ist der Kern der Vorhersage. Simulierte der Server nur
+/// eine Eingabe je Tick und verwürfe den Rest, liefe der Client unweigerlich
+/// weg: er sagt jede gesendete Eingabe voraus, der Server führte aber nur
+/// einen Teil davon aus. Genau ein verschluckter Schritt sind achtzehn
+/// Zentimeter, und die zieht der nächste Abgleich sichtbar zurück.
 #[derive(Component, Debug, Clone, Default)]
 pub struct Inputs {
+    /// Empfangen, noch nicht simuliert.
+    pending: std::collections::VecDeque<InputFrame>,
+    /// Zuletzt simulierte Eingabe.
     pub current: InputFrame,
+    /// Tasten der davor simulierten Eingabe, für die Flankenerkennung.
     pub prev_buttons: u8,
-    /// Höchste verarbeitete `InputFrame::seq`, wird dem Client bestätigt.
+    /// Höchste *simulierte* `InputFrame::seq`, wird dem Client bestätigt.
+    ///
+    /// Bewusst nicht die höchste empfangene: der Client streicht alles
+    /// Bestätigte aus seiner Wiedervorlage. Bestätigte der Server etwas, das
+    /// er nie ausgeführt hat, fehlte dieser Schritt danach für immer.
     pub ack_seq: u32,
+    /// Höchste empfangene seq - gegen zurückspringende Nummern.
+    seen_seq: u32,
+    /// Noch offenes Kontingent an Eingaben für diesen Tick.
+    credit: u32,
 }
 
 impl Inputs {
     /// `true`, wenn die Taste in diesem Tick neu gedrückt wurde.
     pub fn just_pressed(&self, bit: u8) -> bool {
         self.current.pressed(bit) && (self.prev_buttons & bit) == 0
+    }
+
+    /// Nimmt eine empfangene Eingabe in die Warteschlange auf.
+    pub fn push(&mut self, frame: InputFrame) {
+        // Veraltete Frames verwerfen: bei TCP kommen sie zwar in Reihenfolge
+        // an, aber ein Client darf trotzdem nicht rückwärts springen.
+        if frame.seq <= self.seen_seq && self.seen_seq != 0 {
+            return;
+        }
+        self.seen_seq = frame.seq;
+        if self.pending.len() >= MAX_PENDING {
+            self.pending.pop_front();
+        }
+        self.pending.push_back(frame);
+    }
+
+    /// Die Eingaben, die in diesem Tick simuliert werden dürfen.
+    ///
+    /// Leer, wenn nichts angekommen ist - dann bewegt sich der Spieler in
+    /// diesem Tick nicht. Das ist Absicht: der Client sagt nur voraus, was er
+    /// auch gesendet hat, und ein vom Server erfundener Schritt wäre genau
+    /// die Abweichung, die er hinterher zurückzieht.
+    pub fn take_for_tick(&mut self) -> Vec<InputFrame> {
+        self.credit = (self.credit + 1).min(MAX_BURST);
+        let n = self.pending.len().min(self.credit as usize);
+        self.credit -= n as u32;
+        self.pending.drain(..n).collect()
+    }
+
+    /// Übernimmt eine gerade simulierte Eingabe als neuen Stand.
+    pub fn applied(&mut self, frame: InputFrame) {
+        self.prev_buttons = self.current.buttons;
+        self.ack_seq = frame.seq;
+        self.current = frame;
+    }
+
+    #[cfg(test)]
+    pub fn pending_len(&self) -> usize {
+        self.pending.len()
     }
 }
 
@@ -281,9 +352,12 @@ impl Plugin for SimPlugin {
             .add_systems(
                 Update,
                 (
+                    // Zuerst die Bewegung: sie leert die Eingabewarteschlange
+                    // und legt damit fest, welche Eingabe für den Rest des
+                    // Ticks als "aktuell" gilt.
+                    movement::move_players,
                     skills::tick_cooldowns,
                     skills::apply_skills,
-                    movement::move_players,
                     history::record,
                     combat::fire_weapons,
                     combat::resolve_deaths,
@@ -296,13 +370,14 @@ impl Plugin for SimPlugin {
     }
 }
 
-/// Schließt den Tick ab: Flankenerkennung vorbereiten und Tickzähler erhöhen.
+/// Schließt den Tick ab: Tickzähler erhöhen.
+///
+/// Die Flankenerkennung wird nicht mehr hier vorbereitet, sondern je
+/// simulierter Eingabe in [`Inputs::applied`] - in einem Tick können mehrere
+/// anfallen.
 ///
 /// Läuft als letztes System der Simulation, aber *vor* dem Snapshot-Versand -
 /// der Snapshot trägt damit die Nummer des gerade simulierten Ticks.
-fn finish_tick(mut tick: ResMut<Tick>, mut q: Query<&mut Inputs>) {
-    for mut inputs in &mut q {
-        inputs.prev_buttons = inputs.current.buttons;
-    }
+fn finish_tick(mut tick: ResMut<Tick>) {
     tick.0 += 1;
 }

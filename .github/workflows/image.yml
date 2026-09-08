@@ -65,6 +65,13 @@ jobs:
       - name: Gleichlauf Rust und WebAssembly
         run: scripts/gleichlauf.sh
 
+      # Vorhergesagt wird mit der Tickrate, gezeichnet mit der Bildrate. Ohne
+      # Ausgleich dazwischen steht die Kamera drei von vier Bildern still und
+      # springt dann - das liest sich als Ruckeln, obwohl die Vorhersage
+      # stimmt.
+      - name: Zwischenbild-Ausgleich der Vorhersage
+        run: node scripts/zwischenbild.mjs
+
   image:
     name: Bauen, pruefen, veroeffentlichen
     needs: test

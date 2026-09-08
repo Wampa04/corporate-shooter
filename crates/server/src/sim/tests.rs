@@ -55,19 +55,43 @@ fn app_with(config: GameConfig, map: MapDesc) -> App {
 
 fn add_player(app: &mut App, id: u32, team: Team, pos: Vec3, yaw: f32) -> Entity {
     let config = app.world().resource::<Config>().0.clone();
+    // Wie ein verbundener Client: er sendet in jedem Tick eine Eingabe, auch
+    // im Stillstand. Ohne das bewegte sich der Spieler gar nicht - auch nicht
+    // nach unten.
     app.world_mut()
-        .spawn(player_bundle(
-            &config,
-            PlayerId(id),
-            format!("Spieler {id}"),
-            team,
-            SpawnPoint { pos, yaw },
+        .spawn((
+            Held(InputFrame::default()),
+            player_bundle(
+                &config,
+                PlayerId(id),
+                format!("Spieler {id}"),
+                team,
+                SpawnPoint { pos, yaw },
+            ),
         ))
         .id()
 }
 
+/// Eingabe, die ein Testspieler gedrueckt haelt.
+///
+/// Der Server nimmt Eingaben jetzt als Strom entgegen und simuliert jede genau
+/// einmal - ein einmal gesetztes `current` wuerde also genau einen Tick lang
+/// wirken. `run` schickt diesen Rahmen deshalb Tick fuer Tick nach, so wie es
+/// ein echter Client tut.
+#[derive(Component, Debug, Clone, Default)]
+struct Held(InputFrame);
+
 fn set_input(app: &mut App, entity: Entity, frame: InputFrame) {
-    app.world_mut().get_mut::<Inputs>(entity).unwrap().current = frame;
+    app.world_mut().entity_mut(entity).insert(Held(frame));
+}
+
+/// Schickt eine einzelne Eingabe, ohne sie zu halten.
+#[allow(dead_code)]
+fn send_input(app: &mut App, entity: Entity, frame: InputFrame) {
+    app.world_mut()
+        .get_mut::<Inputs>(entity)
+        .unwrap()
+        .push(frame);
 }
 
 fn body(app: &App, entity: Entity) -> Body {
@@ -83,6 +107,18 @@ fn vitals(app: &App, entity: Entity) -> Vitals {
 fn run(app: &mut App, ticks: u32) -> Vec<GameEvent> {
     let mut collected = Vec::new();
     for _ in 0..ticks {
+        // Wie ein echter Client: je Tick eine Eingabe.
+        let gehalten: Vec<(Entity, InputFrame)> = app
+            .world_mut()
+            .query::<(Entity, &Held)>()
+            .iter(app.world())
+            .map(|(e, h)| (e, h.0.clone()))
+            .collect();
+        for (entity, mut frame) in gehalten {
+            let mut inputs = app.world_mut().get_mut::<Inputs>(entity).unwrap();
+            frame.seq = inputs.ack_seq + inputs.pending_len() as u32 + 1;
+            inputs.push(frame);
+        }
         app.update();
         collected.append(&mut app.world_mut().resource_mut::<EventLog>().0);
     }
@@ -1174,5 +1210,120 @@ fn rueckspulen_ist_gedeckelt() {
         vitals(&app, target).health,
         precise_config().max_health,
         "zu weites Rueckspulen darf keinen Treffer ergeben"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Eingabestrom
+// ---------------------------------------------------------------------------
+
+#[test]
+fn jede_eingabe_wird_genau_einmal_simuliert() {
+    // Der Kern der Vorhersage. Der Client sagt jede gesendete Eingabe voraus;
+    // fuehrt der Server nur einen Teil davon aus, laeuft er weg und wird bei
+    // jedem Abgleich sichtbar zurueckgezogen - genau einen Simulationsschritt
+    // weit, also achtzehn Zentimeter.
+    //
+    // Vorher nahm der Server je Tick eine Eingabe und verwarf den Rest, quittierte
+    // aber alle. Zwei Eingaben in einem Tickfenster hiessen: eine Bewegung
+    // ausgefuehrt, zwei bestaetigt.
+    let mut app = app_with(GameConfig::default(), arena());
+    let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    // Nichts halten: die Eingaben kommen hier von Hand.
+    app.world_mut().entity_mut(p).remove::<Held>();
+
+    let start = body(&app, p).pos;
+    let schritte = 6;
+    for i in 0..schritte {
+        send_input(
+            &mut app,
+            p,
+            InputFrame {
+                seq: i + 1,
+                move_z: 1.0,
+                ..Default::default()
+            },
+        );
+    }
+
+    // Genug Ticks, damit die Warteschlange sicher abgearbeitet ist.
+    run(&mut app, 10);
+
+    let strecke = (body(&app, p).pos - start).length();
+    let erwartet = app.world().resource::<Config>().walk_speed
+        * app.world().resource::<Config>().tick_dt()
+        * schritte as f32;
+
+    assert!(
+        (strecke - erwartet).abs() < 0.02,
+        "{schritte} Eingaben haetten {erwartet:.2} m ergeben muessen, gelaufen sind {strecke:.2} m"
+    );
+}
+
+#[test]
+fn bestaetigt_wird_nur_was_simuliert_wurde() {
+    // Der Client streicht alles Bestaetigte aus seiner Wiedervorlage.
+    // Bestaetigte der Server etwas, das er nie ausgefuehrt hat, fehlte dieser
+    // Schritt danach fuer immer - und genau das war der Fehler.
+    let mut app = app_with(GameConfig::default(), arena());
+    let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    app.world_mut().entity_mut(p).remove::<Held>();
+
+    for i in 0..5 {
+        send_input(
+            &mut app,
+            p,
+            InputFrame {
+                seq: i + 1,
+                move_z: 1.0,
+                ..Default::default()
+            },
+        );
+    }
+
+    // Ein einziger Tick: mehr als `MAX_BURST` darf er nicht abarbeiten.
+    run(&mut app, 1);
+
+    let inputs = app.world().get::<Inputs>(p).unwrap();
+    assert!(
+        inputs.ack_seq <= super::MAX_BURST,
+        "es wurden {} Eingaben bestaetigt, simuliert wurden hoechstens {}",
+        inputs.ack_seq,
+        super::MAX_BURST
+    );
+    assert!(inputs.pending_len() > 0, "der Rest muss in der Warteschlange bleiben");
+}
+
+#[test]
+fn oefter_senden_macht_nicht_schneller() {
+    // Ohne Grenze bewegte sich schneller, wer oefter sendet - der einfachste
+    // Cheat ueberhaupt.
+    let mut app = app_with(GameConfig::default(), arena());
+    let ehrlich = add_player(&mut app, 1, Team::Engineering, Vec3::new(-5.0, 0.0, 0.0), 0.0);
+    let flink = add_player(&mut app, 2, Team::Marketing, Vec3::new(5.0, 0.0, 0.0), 0.0);
+    app.world_mut().entity_mut(ehrlich).remove::<Held>();
+    app.world_mut().entity_mut(flink).remove::<Held>();
+
+    let (start_e, start_f) = (body(&app, ehrlich).pos, body(&app, flink).pos);
+    let vorwaerts = |seq| InputFrame {
+        seq,
+        move_z: 1.0,
+        ..Default::default()
+    };
+
+    for tick in 0..40u32 {
+        send_input(&mut app, ehrlich, vorwaerts(tick + 1));
+        // Der Flinke sendet viermal so oft.
+        for k in 0..4 {
+            send_input(&mut app, flink, vorwaerts(tick * 4 + k + 1));
+        }
+        run(&mut app, 1);
+    }
+
+    let strecke_e = (body(&app, ehrlich).pos - start_e).length();
+    let strecke_f = (body(&app, flink).pos - start_f).length();
+    assert!(
+        strecke_f <= strecke_e * 1.15,
+        "Vielsender kam {strecke_f:.2} m weit, ehrlicher Sender nur {strecke_e:.2} m"
     );
 }

@@ -90,13 +90,9 @@ fn ingest(world: &mut World) {
                     continue;
                 };
                 if let Some(mut inputs) = world.get_mut::<Inputs>(entity) {
-                    // Veraltete Frames verwerfen: bei TCP kommen sie zwar in
-                    // Reihenfolge an, aber ein Client darf trotzdem nicht
-                    // rückwärts springen.
-                    if frame.seq >= inputs.ack_seq {
-                        inputs.ack_seq = frame.seq;
-                        inputs.current = frame;
-                    }
+                    // Nur einreihen. Bestätigt wird erst, was die Simulation
+                    // auch wirklich ausgeführt hat.
+                    inputs.push(frame);
                 }
             }
             NetEvent::Ping { id, client_time_ms } => {

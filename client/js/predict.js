@@ -31,6 +31,25 @@ const STATE_FLOATS = 13;
  */
 const RINGGROESSE = 120;
 
+/**
+ * Wie schnell ein Korrekturfehler ausgeblendet wird (1/s).
+ *
+ * Der Server hat immer recht, aber seine Korrektur muss nicht sichtbar sein.
+ * Wird sie hart gesetzt, springt das Bild - und ein paar Zentimeter je
+ * Snapshot fuehlen sich dann an wie Paketverlust. Zwoelf entspricht rund
+ * achtzig Millisekunden: schnell genug, dass niemand an falscher Stelle
+ * spielt, langsam genug, dass es niemand als Ruck wahrnimmt.
+ */
+const FEHLER_ABKLINGEN = 12;
+
+/**
+ * Ab diesem Abstand wird gesprungen statt ausgeblendet.
+ *
+ * Wiedereinstieg und Teleport sind keine Fehler, die man verstecken sollte -
+ * sie langsam einzublenden waere eine Rutschpartie quer durchs Buero.
+ */
+const SPRUNG_AB = 1.5;
+
 export class Prediction {
   constructor(instance) {
     this.x = instance.exports;
@@ -40,6 +59,20 @@ export class Prediction {
     // belegt Speicher, und waechst der WASM-Speicher, wird jede aeltere Sicht
     // entkoppelt.
     this._state = null;
+    /** Sichtbarer Rest einer Korrektur, klingt ab. */
+    this._fehler = [0, 0, 0];
+    /** Vorheriger und aktueller Schritt, zum Zwischenbild-Ausgleich. */
+    this._vor = null;
+    this._jetzt = null;
+    this._seitSchritt = 0;
+    /**
+     * Statistik ueber alle Abgleiche.
+     *
+     * Nicht abgetastet, sondern beim Entstehen gezaehlt: Korrekturen treten je
+     * Snapshot auf, und eine Abtastung von aussen verfehlt sie regelmaessig.
+     * Diese Zahlen sind das Guetemass der Vorhersage.
+     */
+    this.stats = { anzahl: 0, summe: 0, max: 0, ueber5cm: 0 };
   }
 
   /**
@@ -77,6 +110,7 @@ export class Prediction {
       this.x.state_ptr(),
       STATE_FLOATS,
     );
+    this._tickDt = 1 / config.tick_rate;
     this._ready = true;
     return true;
   }
@@ -111,6 +145,12 @@ export class Prediction {
    */
   reconcile(self, local, ackSeq) {
     if (!this._ready || !self || !local) return;
+    // Wie weit der Server der Vorhersage widerspricht. Diese Zahl ist das
+    // Mass fuer die Guete der Vorhersage: bleibt sie klein, merkt niemand
+    // etwas; springt sie, ruckelt das Bild.
+    const vorher = this._synced
+      ? [this._state[POS_X], this._state[POS_Y], this._state[POS_Z]]
+      : null;
     // Vor dem ersten Abgleich steht im Zustand nur der Nullpunkt. Ihn als
     // Position auszugeben hiesse, die Kamera einen Wimpernschlag lang in die
     // Mitte der Karte zu stellen.
@@ -144,13 +184,47 @@ export class Prediction {
       prev = frame.buttons;
     }
     this._lastButtons = prev;
+
+    if (vorher) {
+      // Die Korrektur nicht sofort zeigen, sondern als Rest mitfuehren und
+      // ausblenden. `vorher` ist, was gerade zu sehen war; die Differenz zum
+      // neuen Stand wandert in den Rest und verschwindet von dort.
+      const dx = vorher[0] - this._state[POS_X];
+      const dy = vorher[1] - this._state[POS_Y];
+      const dz = vorher[2] - this._state[POS_Z];
+      this.lastError = Math.hypot(dx, dy, dz);
+      this.pendingCount = this._pending.length;
+      this.stats.anzahl++;
+      this.stats.summe += this.lastError;
+      this.stats.max = Math.max(this.stats.max, this.lastError);
+      if (this.lastError > 0.05) this.stats.ueber5cm++;
+
+      if (this.lastError > SPRUNG_AB) {
+        this._fehler = [0, 0, 0];
+      } else {
+        this._fehler[0] += dx;
+        this._fehler[1] += dy;
+        this._fehler[2] += dz;
+      }
+      // Der Ausgleich zwischen zwei Schritten geht vom neuen Stand aus; die
+      // Differenz zum alten steckt jetzt im abklingenden Rest.
+      this._vor = this._lesePos();
+      this._jetzt = this._vor.slice();
+    }
   }
 
   /** Rechnet eine gerade abgeschickte Eingabe sofort voraus. */
   advance(frame, alive) {
     if (!this._ready) return;
+    this._vor = this._jetzt ?? this._lesePos();
     this._step(frame, this._lastButtons ?? 0, alive);
     this._lastButtons = frame.buttons;
+    this._jetzt = this._lesePos();
+    this._seitSchritt = 0;
+  }
+
+  _lesePos() {
+    return [this._state[POS_X], this._state[POS_Y], this._state[POS_Z]];
   }
 
   _step(frame, prevButtons, alive) {
@@ -165,9 +239,47 @@ export class Prediction {
     );
   }
 
-  /** Vorhergesagte Fussposition, oder `null` solange nichts geladen ist. */
-  position() {
+  /**
+   * Darzustellende Fussposition, oder `null` solange nichts geladen ist.
+   *
+   * Das ist die vorhergesagte Position plus dem, was von der letzten Korrektur
+   * noch nicht ausgeblendet ist. Gespielt wird auf der vorhergesagten,
+   * gezeigt wird die geglaettete - der Unterschied betraegt hoechstens ein
+   * paar Zentimeter und ist nach achtzig Millisekunden weg.
+   */
+  position(dt = 0) {
     if (!this._ready || !this._synced) return null;
-    return { x: this._state[POS_X], y: this._state[POS_Y], z: this._state[POS_Z] };
+
+    if (dt > 0) {
+      const rest = Math.exp(-FEHLER_ABKLINGEN * dt);
+      this._fehler[0] *= rest;
+      this._fehler[1] *= rest;
+      this._fehler[2] *= rest;
+      this._seitSchritt += dt;
+    }
+
+    // Zwischen zwei Vorhersageschritten ausgleichen.
+    //
+    // Vorhergesagt wird mit der Tickrate, gezeichnet mit der Bildrate. Ohne
+    // diesen Ausgleich stuende die Kamera bei 120 Bildern je Sekunde drei
+    // Bilder still und spraenge dann achtzehn Zentimeter - das liest sich als
+    // Ruckeln, obwohl die Vorhersage stimmt.
+    //
+    // Bewusst zwischen zwei bekannten Staenden statt darueber hinaus: eine
+    // Fortschreibung schoebe die Kamera an einer Wand in die Wand hinein und
+    // beim Stehenbleiben ueber das Ziel. Der Preis ist ein halber Tick
+    // Verzoegerung gegenueber gar keinem Ausgleich - bei den 60 bis 150 ms,
+    // die die Vorhersage einspart, ein guter Handel.
+    const a = this._vor && this._jetzt
+      ? Math.min(this._seitSchritt / this._tickDt, 1)
+      : 1;
+    const vor = this._vor ?? this._lesePos();
+    const jetzt = this._jetzt ?? vor;
+
+    return {
+      x: vor[0] + (jetzt[0] - vor[0]) * a + this._fehler[0],
+      y: vor[1] + (jetzt[1] - vor[1]) * a + this._fehler[1],
+      z: vor[2] + (jetzt[2] - vor[2]) * a + this._fehler[2],
+    };
   }
 }

@@ -318,7 +318,7 @@ function start(connection, welcome, prediction) {
       // Glaettung ist dann nicht nur ueberfluessig, sondern schaedlich - sie
       // waere reine Verzoegerung. Ohne Vorhersage buegelt sie weiter die
       // Stufen der 30-Hz-Updates aus.
-      const vorher = prediction?.position();
+      const vorher = prediction?.position(dt);
       const ziel = vorher ?? { x: self.pos[0], y: self.pos[1], z: self.pos[2] };
       targetPos.set(ziel.x, ziel.y + config.eye_height, ziel.z);
 
@@ -361,6 +361,9 @@ function start(connection, welcome, prediction) {
         return p ? { x: p.pos[0], y: p.pos[1], z: p.pos[2] } : null;
       },
       aktiv: () => prediction !== null,
+      korrektur: () => prediction?.lastError ?? null,
+      offen: () => prediction?.pendingCount ?? null,
+      statistik: () => prediction?.stats ?? null,
     };
   }
 
