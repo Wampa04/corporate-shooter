@@ -304,8 +304,6 @@ pub fn chair_at(b: &mut Build, at: At, style: ChairStyle) {
 pub enum PlantSize {
     /// Bodenpalme, knapp zwei Meter.
     Yucca,
-    /// Kleines Grün auf einer Platte.
-    Desktop,
 }
 
 /// Yuccapalme im Übertopf.
@@ -316,7 +314,6 @@ pub enum PlantSize {
 pub fn potted_plant(b: &mut Build, size: PlantSize) {
     let (r, h) = match size {
         PlantSize::Yucca => (0.23f32, 1.92f32),
-        PlantSize::Desktop => (0.09, 0.55),
     };
 
     // Übertopf: unten schmaler, oben mit Rand. Zwei Boxen genügen, damit er

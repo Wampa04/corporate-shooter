@@ -2,11 +2,13 @@
 //!
 //! "Agile Sprint" und "Wellness-Tag" sind bewusst reine Cooldown-Fähigkeiten:
 //! keine Ressourcen, keine Aufladung, nur eine Uhr.
+//!
+//! Der Agile Sprint selbst steckt in `sim_core::step`, weil der Client ihn
+//! vorhersagen können muss - hier bleibt der Wellness-Tag.
 
 use bevy::ecs::prelude::*;
 use protocol::{GameEvent, buttons};
 
-use super::movement::{forward_xz, wish_direction, wrap_angle};
 use super::{Config, EventLog, Inputs, Player, Skills, Vitals};
 
 /// Zählt alle Cooldowns herunter. Läuft als erstes System des Ticks, damit ein
@@ -14,8 +16,8 @@ use super::{Config, EventLog, Inputs, Player, Skills, Vitals};
 pub fn tick_cooldowns(config: Res<Config>, mut q: Query<(&mut Skills, &mut Vitals)>) {
     let dt = config.tick_dt();
     for (mut skills, mut vitals) in &mut q {
-        skills.dash_cooldown = (skills.dash_cooldown - dt).max(0.0);
-        skills.dash_timer = (skills.dash_timer - dt).max(0.0);
+        // Die Zeitgeber des Agile Sprint laufen in `sim_core::step` mit: der
+        // Client muss sie vorhersagen koennen, der Wellness-Tag nicht.
         skills.heal_cooldown = (skills.heal_cooldown - dt).max(0.0);
         if !vitals.alive {
             vitals.respawn_timer = (vitals.respawn_timer - dt).max(0.0);
@@ -31,17 +33,6 @@ pub fn apply_skills(
     for (player, inputs, mut skills, mut vitals) in &mut q {
         if !vitals.alive {
             continue;
-        }
-
-        // "Agile Sprint": Schub in Laufrichtung, ohne Eingabe nach vorn.
-        if inputs.just_pressed(buttons::DASH) && skills.dash_cooldown <= 0.0 {
-            let yaw = wrap_angle(inputs.current.yaw);
-            let wish = wish_direction(yaw, inputs.current.move_x, inputs.current.move_z);
-            let dir = wish.try_normalize().unwrap_or_else(|| forward_xz(yaw));
-            skills.dash_dir = dir;
-            skills.dash_timer = config.dash_duration;
-            skills.dash_cooldown = config.dash_cooldown;
-            events.push(GameEvent::Dashed { id: player.id });
         }
 
         // "Wellness-Tag": nur sinnvoll, wenn tatsächlich Schaden vorliegt -

@@ -12,6 +12,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 glam = { workspace = true }
 
+sim-core = { workspace = true }
 bevy = { version = "0.19", default-features = false, features = ["std"] }
 
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "signal"] }

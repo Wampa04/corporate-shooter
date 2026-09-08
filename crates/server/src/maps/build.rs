@@ -175,11 +175,6 @@ impl Build {
         );
     }
 
-    /// Der aktuelle Rahmen, für Bauteile, die ihre Weltlage kennen müssen.
-    pub fn frame(&self) -> At {
-        self.frame
-    }
-
     pub fn finish(self) -> Vec<Brush> {
         self.out
     }
