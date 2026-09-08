@@ -13,6 +13,7 @@ import { Effects } from "./effects.js";
 import { InputController } from "./input.js";
 import { ViewModel } from "./viewmodel.js";
 import { Hud } from "./hud.js";
+import { Audio } from "./audio.js";
 
 /**
  * Wie schnell die Kamera der autoritativen Position folgt (1/s).
@@ -104,7 +105,8 @@ function start(connection, welcome) {
   // `?grafik=einfach` schaltet den Schattenwurf von vornherein ab,
   // `?grafik=schoen` laesst ihn an, egal wie langsam es laeuft. Ohne Angabe
   // entscheidet die Messung weiter unten.
-  const wunsch = new URLSearchParams(location.search).get("grafik");
+  const params = new URLSearchParams(location.search);
+  const wunsch = params.get("grafik");
   const shadows = wunsch !== "einfach";
   renderer.shadowMap.enabled = shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -123,6 +125,11 @@ function start(connection, welcome) {
   const viewmodel = new ViewModel(camera);
   const hud = new Hud(config, selfId);
   hud.show();
+
+  // `?ton=aus` schaltet den Ton von vornherein ab, sonst gilt die gespeicherte
+  // Lautstaerke. M schaltet stumm, Komma und Punkt regeln.
+  const audio = new Audio(params.get("ton") === "aus" ? 0 : null);
+  audio.onStatus = (text) => hud.notify(text);
 
   const cameraPos = new THREE.Vector3();
   const targetPos = new THREE.Vector3();
@@ -152,6 +159,9 @@ function start(connection, welcome) {
 
   const resumeGame = () => {
     if (!running) return;
+    // Der Klick ist die Nutzergeste, auf die der Browser wartet, bevor er Ton
+    // zulaesst - auch der Klick zurueck aus der Pause.
+    audio.resume();
     // Ein laufender Wiederholversuch bleibt bewusst stehen. Ihn hier zu
     // loeschen hiesse: wer ungeduldig weiterklickt, setzt die Wartezeit
     // staendig zurueck - und der Versuch kaeme nie zum Zug.
@@ -181,6 +191,8 @@ function start(connection, welcome) {
     }, LOCK_RETRY_MS);
   };
 
+  // Der Klick auf "Beitreten" zaehlt als Nutzergeste, der Ton darf also sofort.
+  audio.resume();
   input.requestLock();
 
   connection.onSnapshot = (snapshot) => {
@@ -209,6 +221,8 @@ function start(connection, welcome) {
     }
 
     if (self) viewmodel.setWeapon(self.weapon);
+    audio.handleEvents(snapshot.events, selfId);
+    audio.setReloading(snapshot.local?.reloading ?? false);
     hud.handleEvents(snapshot.events, byId);
     hud.update(self, snapshot.local);
   };
@@ -285,6 +299,12 @@ function start(connection, welcome) {
     camera.rotation.y = input.yaw;
     camera.rotation.x = input.pitch;
 
+    // Der Hoerer sitzt an der Kamera, muss also nach ihrer Drehung gesetzt
+    // werden. Die Schritte der Mitspieler kommen aus deren interpolierten
+    // Positionen, die `players.update` weiter oben schon gesetzt hat.
+    audio.update(dt, camera, self ? { x: self.pos[0], z: self.pos[2] } : null,
+      local?.on_ground ?? false, players.avatars);
+
     renderer.render(scene, camera);
   }
   frame = requestAnimationFrame(render);
@@ -301,5 +321,6 @@ function start(connection, welcome) {
     players.dispose();
     effects.dispose();
     viewmodel.dispose();
+    audio.dispose();
   }
 }

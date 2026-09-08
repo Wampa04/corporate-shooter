@@ -150,6 +150,15 @@ export class Hud {
     }
   }
 
+  /**
+   * Kurze Meldung an den Nutzer, im selben Band wie das Killfeed.
+   *
+   * Fuer Dinge, die der Client selbst entscheidet - etwa die Lautstaerke.
+   */
+  notify(text) {
+    this._addEntry(`<span class="verb">${escapeHtml(text)}</span>`);
+  }
+
   _addEntry(html, team) {
     const node = document.createElement("div");
     node.className = "kill-entry";
