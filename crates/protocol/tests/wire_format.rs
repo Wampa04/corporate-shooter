@@ -59,3 +59,40 @@ fn default_config_beschreibt_jede_waffe() {
     slots.dedup();
     assert_eq!(slots.len(), config.weapons.len());
 }
+
+#[test]
+fn localstate_traegt_die_grundlage_der_vorhersage() {
+    // Der Client liest diese Felder ueber ihre Namen. Wird eines umbenannt,
+    // faellt das nirgends auf: `undefined` rechnet sich zu `NaN`, und die
+    // Vorhersage laeuft still auseinander, statt zu scheitern.
+    let json = serde_json::to_value(LocalState {
+        ammo: 30,
+        mag_size: 30,
+        reloading: false,
+        reload_remaining: 0.0,
+        dash_cooldown_remaining: 1.5,
+        heal_cooldown_remaining: 0.0,
+        respawn_remaining: 0.0,
+        on_ground: true,
+        vel_y: -2.5,
+        dash_timer: 0.12,
+        dash_dir_x: 1.0,
+        dash_dir_z: -1.0,
+    })
+    .expect("LocalState serialisiert");
+
+    for feld in [
+        "on_ground",
+        "vel_y",
+        "dash_timer",
+        "dash_dir_x",
+        "dash_dir_z",
+    ] {
+        assert!(json.get(feld).is_some(), "Feld {feld} fehlt im JSON");
+    }
+    // Mit Toleranz: f32 nach f64 verbreitert liefert 0.11999999731779099,
+    // und ein exakter Vergleich pruefte hier nur die Gleitkommadarstellung.
+    let nah = |wert: f64, soll: f64| (wert - soll).abs() < 1e-6;
+    assert!(nah(json["vel_y"].as_f64().unwrap(), -2.5));
+    assert!(nah(json["dash_timer"].as_f64().unwrap(), 0.12));
+}

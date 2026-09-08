@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/server", "crates/sim-core"]
+members = ["crates/predict", "crates/protocol", "crates/server", "crates/sim-core"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,3 +14,15 @@ sim-core = { path = "crates/sim-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 glam = { version = "0.32", features = ["serde"] }
+
+# Eigenes Profil fuer das WASM-Modul: dort zaehlt die Groesse, nicht die
+# letzte Handbreit Rechenzeit. Als eigenes Profil und nicht in `release`,
+# damit der Server davon unberuehrt bleibt - `panic = "abort"` waere dort eine
+# Verhaltensaenderung, die niemand bestellt hat.
+[profile.wasm]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

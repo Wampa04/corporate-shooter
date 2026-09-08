@@ -117,6 +117,20 @@ pub struct LocalState {
     pub heal_cooldown_remaining: f32,
     pub respawn_remaining: f32,
     pub on_ground: bool,
+
+    // --- Grundlage der Vorhersage ------------------------------------------
+    // Der Client setzt seinen vorhergesagten Zustand auf diese Werte zurueck
+    // und spielt darauf alle Eingaben ab `ack_seq` erneut. Ohne sie kann er
+    // nicht dasselbe ausrechnen wie der Server.
+    /// Senkrechte Geschwindigkeit. Waagerecht wird je Tick neu aus der Eingabe
+    /// gesetzt und muss deshalb nicht uebertragen werden.
+    pub vel_y: f32,
+    /// Restlaufzeit des "Agile Sprint" und seine Richtung. Waehrend eines
+    /// Sprints kommt die waagerechte Geschwindigkeit von hier statt aus der
+    /// Eingabe.
+    pub dash_timer: f32,
+    pub dash_dir_x: f32,
+    pub dash_dir_z: f32,
 }
 
 /// Einmalige Ereignisse eines Ticks. Rein darstellend: der Client leitet daraus

@@ -234,6 +234,10 @@ fn broadcast(
                     vitals.respawn_timer
                 },
                 on_ground: body.on_ground,
+                vel_y: body.vel.y,
+                dash_timer: skills.dash_timer,
+                dash_dir_x: skills.dash_dir.x,
+                dash_dir_z: skills.dash_dir.z,
             },
             events: events.clone(),
         };

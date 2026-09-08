@@ -80,6 +80,13 @@ struct Args {
     #[arg(long, env = "CORPSHOOT_MAX_PLAYERS", default_value_t = 16)]
     max_players: usize,
 
+    /// Karte und Konfiguration als JSON ausgeben und beenden.
+    ///
+    /// Fuer Werkzeuge, die den Grundriss brauchen, ohne den Server zu starten -
+    /// etwa die Gleichlaufpruefung zwischen Rust und WebAssembly.
+    #[arg(long, value_name = "VERZEICHNIS")]
+    dump_map: Option<PathBuf>,
+
     /// Fester Startwert fuer den Zufallsgenerator. Macht Waffenstreuung und
     /// Spawnauswahl reproduzierbar - fuer Tests, nicht fuer den Spielbetrieb.
     #[arg(long, env = "CORPSHOOT_SEED")]
@@ -133,8 +140,21 @@ fn main() -> anyhow::Result<()> {
         "--tick-rate muss zwischen 1 und 120 liegen"
     );
 
-    let client_dir = find_client_dir(args.client_dir)?;
     let map = maps::grossraumbuero();
+
+    if let Some(dir) = &args.dump_map {
+        let config = GameConfig {
+            tick_rate: args.tick_rate,
+            ..GameConfig::default()
+        };
+        std::fs::create_dir_all(dir)?;
+        std::fs::write(dir.join("map.json"), serde_json::to_string(&map)?)?;
+        std::fs::write(dir.join("config.json"), serde_json::to_string(&config)?)?;
+        println!("Karte und Konfiguration nach {} geschrieben", dir.display());
+        return Ok(());
+    }
+
+    let client_dir = find_client_dir(args.client_dir)?;
     let config = GameConfig {
         tick_rate: args.tick_rate,
         ..GameConfig::default()
