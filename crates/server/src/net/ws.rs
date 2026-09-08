@@ -7,7 +7,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -20,6 +20,7 @@ use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMessage, PlayerId, ServerMessage};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tower::ServiceBuilder;
+use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{debug, info, warn};
@@ -33,10 +34,22 @@ const MAX_NAME_LEN: usize = 24;
 /// Ersatzname für leere oder unbrauchbare Eingaben.
 const FALLBACK_NAME: &str = "Praktikant:in";
 
+/// Grösste zulässige WebSocket-Nachricht.
+///
+/// Ein `InputFrame` als JSON liegt bei gut hundert Byte; vier Kilobyte sind
+/// also reichlich. Die Vorgabe der Bibliothek liegt bei 64 MiB - auf einem
+/// öffentlich erreichbaren Server ist das eine Einladung, den Arbeitsspeicher
+/// mit einer einzigen Nachricht zu füllen.
+const MAX_MESSAGE_BYTES: usize = 4 * 1024;
+
 #[derive(Clone)]
 struct AppState {
     events: Sender<NetEvent>,
     next_id: Arc<AtomicU32>,
+    /// Aktuell verbundene Spieler. Zählt beim Verbinden hoch und beim Trennen
+    /// wieder herunter, auch wenn die Verbindung abbricht.
+    live: Arc<AtomicUsize>,
+    max_players: usize,
 }
 
 /// Startet HTTP- und WebSocket-Server in einem eigenen Thread.
@@ -46,6 +59,7 @@ struct AppState {
 pub fn spawn(
     bind: SocketAddr,
     client_dir: PathBuf,
+    max_players: usize,
 ) -> anyhow::Result<(crossbeam_channel::Receiver<NetEvent>, SocketAddr)> {
     let (tx, rx) = crossbeam_channel::unbounded();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
@@ -85,11 +99,19 @@ pub fn spawn(
                 let state = AppState {
                     events: tx,
                     next_id: Arc::new(AtomicU32::new(1)),
+                    live: Arc::new(AtomicUsize::new(0)),
+                    max_players,
                 };
                 let app = Router::new()
                     .route("/ws", any(upgrade))
                     .fallback_service(
                         ServiceBuilder::new()
+                            // Der Client wiegt unkomprimiert gut 800 KiB, davon
+                            // 365 KiB allein Three.js. Im LAN ist das eine
+                            // Zehntelsekunde; über eine Leitung mit ein paar
+                            // Megabit ist es der Unterschied zwischen "laedt"
+                            // und "haengt". Gezippt bleibt rund ein Viertel.
+                            .layer(CompressionLayer::new())
                             // Ohne diesen Kopfzeileneintrag greift heuristisches
                             // Caching: der Browser haelt Dateien fuer etwa ein
                             // Zehntel ihres Alters fuer frisch und fragt in der
@@ -132,7 +154,9 @@ async fn upgrade(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle(socket, state, peer))
+    ws.max_message_size(MAX_MESSAGE_BYTES)
+        .max_frame_size(MAX_MESSAGE_BYTES)
+        .on_upgrade(move |socket| handle(socket, state, peer))
 }
 
 /// Bereinigt einen selbstgewählten Namen.
@@ -155,8 +179,50 @@ fn sanitize_name(raw: &str) -> String {
     }
 }
 
+/// Zählt einen belegten Platz, solange er lebt.
+///
+/// Als eigener Typ und nicht als zwei Zeilen am Anfang und Ende: die
+/// Verbindungsbehandlung hat mehrere Ausstiege, und einer davon wurde sonst
+/// unweigerlich vergessen - der Platz bliebe für immer belegt.
+struct Platz(Arc<AtomicUsize>);
+
+impl Drop for Platz {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl Platz {
+    /// Belegt einen Platz, sofern noch einer frei ist.
+    fn belegen(live: &Arc<AtomicUsize>, max: usize) -> Option<Platz> {
+        // Vergleichen und Setzen in einem Zug: zwei gleichzeitige Verbindungen
+        // dürfen nicht beide denselben letzten Platz sehen.
+        let belegt = live
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < max).then_some(n + 1)
+            })
+            .is_ok();
+        belegt.then(|| Platz(Arc::clone(live)))
+    }
+}
+
 async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
     let (mut sink, mut stream) = socket.split();
+
+    let Some(_platz) = Platz::belegen(&state.live, state.max_players) else {
+        info!(%peer, max = state.max_players, "Verbindung abgewiesen: Server voll");
+        let _ = send_json(
+            &mut sink,
+            &ServerMessage::Rejected {
+                reason: format!(
+                    "Das Büro ist voll ({} Plätze). Später noch einmal versuchen.",
+                    state.max_players
+                ),
+            },
+        )
+        .await;
+        return;
+    };
 
     // Erste Nachricht muss `Join` sein. Alles andere wird abgewiesen, damit
     // niemand ohne Namen in der Welt landet.

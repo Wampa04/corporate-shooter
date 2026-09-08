@@ -1,6 +1,6 @@
 # Corporate Shooter
 
-Ein LAN-Shooter im Großraumbüro. Internes Spaßprojekt, kein Produkt.
+Ein Browser-Shooter im Großraumbüro. Internes Spaßprojekt, kein Produkt.
 
 Marketing gegen Engineering, drei Etagenabschnitte, Textmarker und Locher.
 Der Server hält den gesamten Spielzustand, die Kolleg:innen öffnen eine URL.
@@ -22,8 +22,11 @@ Corporate Shooter laeuft.
   im LAN:  http://192.168.1.42:4200
 ```
 
-Die LAN-Adresse weitergeben, fertig. Es gibt keinen Build-Schritt für den
-Client und kein npm.
+Adresse weitergeben, fertig. Es gibt keinen Build-Schritt für den Client und
+kein npm.
+
+Die Zeile „im LAN" erscheint nur, wenn mDNS eingeschaltet ist; für einen
+gehosteten Server ist sie ohne Belang.
 
 ### Optionen
 
@@ -31,10 +34,11 @@ Client und kein npm.
 | --- | --- |
 | `--port <n>` | Port für HTTP und WebSocket (Standard 4200, `0` wählt einen freien) |
 | `--bind <ip>` | Adresse, an die gebunden wird (Standard `0.0.0.0`) |
-| `--name <text>` | Name, unter dem der Server im LAN erscheint |
+| `--name <text>` | Name, unter dem der Server erscheint |
 | `--tick-rate <hz>` | Simulationsschritte pro Sekunde (Standard 30) |
 | `--client-dir <pfad>` | Verzeichnis mit dem Browser-Client, falls es nicht gefunden wird |
-| `--no-mdns` | mDNS-Bekanntmachung abschalten |
+| `--no-mdns` | mDNS-Bekanntmachung abschalten (beim Hosten sinnvoll) |
+| `--max-players <n>` | Höchstzahl gleichzeitiger Spieler (Standard 16) |
 | `--seed <n>` | Fester Startwert für Streuung und Spawnauswahl (für Tests) |
 
 ### Mit Docker Compose
@@ -47,10 +51,34 @@ docker compose up -d
 docker compose logs     # gibt die Adresse aus, die weiterzugeben ist
 ```
 
-`compose.yaml` benutzt `network_mode: host`, weil mDNS Multicast braucht und
-im NAT der bridge nichts davon im LAN ankommt. Das setzt Linux voraus; unter
-Docker Desktop stattdessen die im `compose.yaml` vermerkte Alternative mit
-`ports:` verwenden und `CORPSHOOT_NO_MDNS=true` setzen.
+Vorgabe ist der Serverbetrieb: gewöhnliches Bridge-Netz, ein veröffentlichter
+Port, mDNS aus. Wer im eigenen Netz spielt, nimmt das Profil `lan` — es
+benutzt `network_mode: host`, weil mDNS Multicast braucht und im NAT der
+Bridge nichts davon im LAN ankommt:
+
+```sh
+docker compose --profile lan up -d server-lan
+```
+
+### Auf einem öffentlich erreichbaren Server
+
+Davor gehört ein Reverse Proxy, der TLS beendet (Caddy, nginx, Traefik) und
+das Upgrade auf WebSocket durchreicht. Am Client ist dafür nichts zu tun: er
+wählt `wss` von selbst, sobald die Seite über `https` ausgeliefert wird. Der
+Server bindet dann sinnvollerweise nur an `127.0.0.1`.
+
+Was dabei zu beachten ist:
+
+* `--max-players` ist keine Formalie mehr. Ohne Grenze hält ein einzelner
+  Gegenüber beliebig viele Verbindungen offen, und jede kostet einen Platz in
+  jedem Snapshot.
+* Eine WebSocket-Nachricht ist auf 4 KiB begrenzt. Ein `InputFrame` wiegt gut
+  hundert Byte; die Vorgabe der Bibliothek läge bei 64 MiB.
+* Der Client wird gzip-komprimiert ausgeliefert — statt 800 KiB gehen rund
+  200 KiB über die Leitung, der Löwenanteil davon Three.js.
+* Die Kartenbeschreibung wiegt beim Beitreten rund 109 KiB und geht
+  unkomprimiert über die WebSocket-Verbindung. Einmal je Beitritt, also
+  vertretbar; ein Kandidat für später.
 
 Alles ist über Umgebungsvariablen einstellbar, `.env.example` listet sie mit
 Erklärung auf:
@@ -59,7 +87,7 @@ Erklärung auf:
 | --- | --- |
 | `CORPSHOOT_PORT` | Port für HTTP und WebSocket |
 | `CORPSHOOT_BIND` | Adresse, an die gebunden wird |
-| `CORPSHOOT_NAME` | Name, unter dem der Server im LAN erscheint |
+| `CORPSHOOT_NAME` | Name, unter dem der Server erscheint |
 | `CORPSHOOT_TICK_RATE` | Simulationsschritte pro Sekunde |
 | `CORPSHOOT_NO_MDNS` | mDNS-Bekanntmachung abschalten |
 | `CORPSHOOT_CLIENT_DIR` | Verzeichnis mit dem Browser-Client |
@@ -162,9 +190,17 @@ Aus dem ursprünglichen Entwurf ist bewusst noch nicht umgesetzt:
   (schrumpfendes Feld). Es gibt bisher nur Team Deathmatch, und zwar ohne
   Rundenende und ohne Punktegrenze.
 * **Ultimate:** der teambasierte „Synergie-Boost“.
-* **Client-seitige Vorhersage.** Im LAN (unter 1 ms Laufzeit) fällt die
-  fehlende Vorhersage kaum auf; über das Internet wäre sie nötig.
+* **Client-seitige Vorhersage.** Bis eine Taste sichtbar wirkt, vergehen ein
+  halber Tick, die Umlaufzeit und die Zeitkonstante der Kameraglättung. Im LAN
+  sind das rund 60 ms, über das Internet eher 100 bis 150 ms — dort ist die
+  Vorhersage keine Politur mehr, sondern Voraussetzung.
   `InputFrame::seq` und `Snapshot::ack_seq` sind dafür bereits vorgesehen.
+  Nachgebaut wird die Bewegung dabei **nicht** in JavaScript: die vorhandene
+  Rust-Funktion soll nach WASM übersetzt und im Browser dieselbe bleiben.
+* **Lag-Kompensation der Schüsse.** Solange nur im LAN gespielt wurde, war sie
+  entbehrlich. Über das Internet muss man ohne sie um die eigene Umlaufzeit
+  vorhalten — bei 80 ms und 5,4 m/s sind das gut 40 cm, und Hitscan fühlt sich
+  kaputt an.
 
 ## Aufbau
 
@@ -202,7 +238,10 @@ Die Alternativen waren:
   mehr, und jede:r müsste eine Binärdatei starten.
 * **WebSocket** über TCP hat Head-of-Line-Blocking. Bei 30 Hz in einem LAN
   mit unter 1 ms Laufzeit und praktisch ohne Paketverlust ist das nicht
-  messbar.
+  messbar. Über das Internet wird es das: ein verlorenes Paket hält alle
+  nachfolgenden Snapshots auf, bis es erneut angekommen ist. Bei spürbarem
+  Paketverlust ist WebTransport der nächste Schritt — die Transportschicht
+  liegt dafür gekapselt.
 
 Gewählt wurde WebSocket, weil der Nachteil hier theoretisch bleibt und der
 Aufwand aller anderen Wege real ist. Die Transportschicht ist auf

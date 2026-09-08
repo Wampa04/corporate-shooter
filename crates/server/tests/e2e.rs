@@ -78,6 +78,31 @@ impl TestServer {
         server
     }
 
+    /// Startet den Server mit einer eigenen Spielerobergrenze.
+    async fn start_with_max(max_players: usize) -> TestServer {
+        let port = free_port();
+        let child = Command::new(env!("CARGO_BIN_EXE_server"))
+            .args([
+                "--bind",
+                "127.0.0.1",
+                "--port",
+                &port.to_string(),
+                "--no-mdns",
+                "--max-players",
+                &max_players.to_string(),
+                "--client-dir",
+                CLIENT_DIR,
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Server liess sich nicht starten");
+
+        let server = TestServer { child, port };
+        server.await_ready().await;
+        server
+    }
+
     /// Startet den Server ohne ein einziges Argument, nur ueber die Umgebung.
     ///
     /// Das ist der Weg, den `compose.yaml` mit der durchgereichten `.env`
@@ -486,4 +511,105 @@ async fn reqwest_get(port: u16, path: &str) -> String {
     let mut body = Vec::new();
     stream.read_to_end(&mut body).await.unwrap();
     String::from_utf8_lossy(&body).into_owned()
+}
+
+/// Auf einem oeffentlich erreichbaren Server ist die Obergrenze kein Schmuck:
+/// ohne sie haelt ein einzelner Gegenueber beliebig viele Verbindungen offen,
+/// und jede kostet einen Platz in jedem Snapshot.
+#[tokio::test(flavor = "multi_thread")]
+async fn server_weist_ueberzaehlige_spieler_ab() {
+    let server = TestServer::start_with_max(2).await;
+
+    let a = Client::join(server.port, "Erste").await;
+    let b = Client::join(server.port, "Zweiter").await;
+
+    // Der dritte Versuch muss abgewiesen werden - und zwar mit Begruendung,
+    // nicht durch stilles Zumachen.
+    let (mut socket, _) =
+        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/ws", server.port))
+            .await
+            .expect("WebSocket-Verbindung fehlgeschlagen");
+    match expect_message(&mut socket).await {
+        ServerMessage::Rejected { reason } => {
+            assert!(
+                reason.contains("voll"),
+                "unerwartete Begruendung: {reason}"
+            );
+        }
+        andere => panic!("dritter Spieler wurde nicht abgewiesen: {andere:?}"),
+    }
+    drop(socket);
+
+    // Wird ein Platz frei, muss er auch wieder vergeben werden. Zaehlt der
+    // Server nur hoch, ist der Server nach ein paar Stunden dauerhaft "voll".
+    drop(a);
+    // Genau ein Versuch je Durchgang: ein zweiter offener Socket wuerde den
+    // Platz belegen, den der Test gerade nachzuweisen versucht.
+    let mut frei = false;
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let Ok((mut s, _)) =
+            tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/ws", server.port)).await
+        else {
+            continue;
+        };
+        send(
+            &mut s,
+            &ClientMessage::Join {
+                name: "Nachrueckerin".into(),
+            },
+        )
+        .await;
+        if matches!(expect_message(&mut s).await, ServerMessage::Welcome { .. }) {
+            frei = true;
+            break;
+        }
+    }
+    assert!(frei, "freigewordener Platz wurde nicht wieder vergeben");
+    drop(b);
+}
+
+/// Der Client wiegt unkomprimiert gut 800 KiB, davon 365 KiB Three.js.
+///
+/// Im LAN faellt das nicht auf, ueber eine Leitung mit ein paar Megabit sehr
+/// wohl. Der Test haelt fest, dass die Kompression eingeschaltet bleibt - sie
+/// zu verlieren wuerde niemandem auffallen, weil der Server dabei voellig
+/// gesund aussieht.
+#[tokio::test(flavor = "multi_thread")]
+async fn grosse_clientdateien_werden_komprimiert_ausgeliefert() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let server = TestServer::start().await;
+
+    let hole = |gzip: bool| async move {
+        let mut stream = TcpStream::connect(("127.0.0.1", server.port))
+            .await
+            .unwrap();
+        let kopf = if gzip {
+            "GET /vendor/three.module.min.js HTTP/1.0\r\nHost: localhost\r\n\
+             Accept-Encoding: gzip\r\n\r\n"
+        } else {
+            "GET /vendor/three.module.min.js HTTP/1.0\r\nHost: localhost\r\n\r\n"
+        };
+        stream.write_all(kopf.as_bytes()).await.unwrap();
+        let mut body = Vec::new();
+        stream.read_to_end(&mut body).await.unwrap();
+        body
+    };
+
+    let roh = hole(false).await;
+    let gezippt = hole(true).await;
+
+    let kopfzeilen = String::from_utf8_lossy(&gezippt[..gezippt.len().min(400)]).to_lowercase();
+    assert!(
+        kopfzeilen.contains("content-encoding: gzip"),
+        "Antwort ohne content-encoding: {kopfzeilen}"
+    );
+    // Ein Viertel ist noch grosszuegig; gemessen bleibt knapp ein Viertel.
+    assert!(
+        gezippt.len() * 2 < roh.len(),
+        "Kompression bringt kaum etwas: {} statt {} Byte",
+        gezippt.len(),
+        roh.len()
+    );
 }

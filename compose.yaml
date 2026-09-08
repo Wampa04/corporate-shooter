@@ -1,9 +1,16 @@
-# Corporate Shooter im LAN starten.
+# Corporate Shooter betreiben.
 #
 #     cp .env.example .env      # optional, alles hat Vorgaben
 #     docker compose up -d
 #
-# Danach gibt `docker compose logs` die Adresse aus, die weiterzugeben ist.
+# Vorgabe ist der Serverbetrieb: Port 4200 wird veroeffentlicht, mDNS ist aus.
+# Wer stattdessen im eigenen LAN spielt, nimmt das Profil weiter unten.
+#
+# Fuer einen oeffentlich erreichbaren Server gehoert ein Reverse Proxy davor,
+# der TLS beendet (Caddy, nginx, Traefik). Der Client waehlt von selbst `wss`,
+# sobald die Seite ueber `https` ausgeliefert wird - eine Anpassung ist dafuer
+# nicht noetig. Der Proxy muss lediglich das Upgrade auf WebSocket
+# durchreichen.
 
 name: corporate-shooter
 
@@ -16,20 +23,18 @@ services:
     build:
       context: .
 
-    # Host-Netz statt bridge, und zwar mit Absicht:
-    #
-    #   * mDNS braucht Multicast. Hinter dem NAT der bridge kommt davon
-    #     nichts im LAN an.
-    #   * Die beim Start ausgegebene Adresse ist im bridge-Modus die des
-    #     Containers (172.17.x.x) und damit fuer Kolleg:innen unbrauchbar.
-    #
-    # Das setzt Linux voraus. Unter Docker Desktop (macOS, Windows) verhaelt
-    # sich das Host-Netz anders; dort stattdessen die beiden folgenden Zeilen
-    # verwenden und CORPSHOOT_NO_MDNS=true in der .env setzen:
+    # Serverbetrieb: gewoehnliches Bridge-Netz, ein veroeffentlichter Port.
+    # Hinter einem Reverse Proxy stattdessen an 127.0.0.1 binden:
     #
     #   ports:
-    #     - "4200:4200"
-    network_mode: host
+    #     - "127.0.0.1:4200:4200"
+    ports:
+      - "${CORPSHOOT_PORT:-4200}:${CORPSHOOT_PORT:-4200}"
+
+    environment:
+      # mDNS traegt nur im lokalen Netzsegment und wuerde hinter der Bridge
+      # ohnehin die Containeradresse verkuenden.
+      CORPSHOOT_NO_MDNS: "true"
 
     # Fehlt die Datei, startet der Container trotzdem - mit den Vorgaben des
     # Servers. Braucht Compose v2.24 oder neuer.
@@ -56,3 +61,22 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  # Variante fuers eigene Netz: mDNS soll wirken, also Host-Netz.
+  #
+  #     docker compose --profile lan up -d server-lan
+  #
+  # Multicast kommt hinter dem NAT der Bridge nicht im LAN an, und die beim
+  # Start ausgegebene Adresse waere die des Containers. Setzt Linux voraus;
+  # unter Docker Desktop verhaelt sich das Host-Netz anders.
+  server-lan:
+    profiles: ["lan"]
+    image: ghcr.io/wampa04/corporate-shooter:latest
+    build:
+      context: .
+    network_mode: host
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    stop_grace_period: 5s

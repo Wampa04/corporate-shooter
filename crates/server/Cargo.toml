@@ -17,7 +17,7 @@ bevy = { version = "0.19", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "signal"] }
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
-tower-http = { version = "0.7", features = ["fs", "set-header", "trace"] }
+tower-http = { version = "0.7", features = ["fs", "set-header", "trace", "compression-gzip", "compression-br"] }
 futures-util = "0.3"
 
 crossbeam-channel = "0.5"

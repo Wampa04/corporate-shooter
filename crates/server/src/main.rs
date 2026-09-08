@@ -29,7 +29,7 @@ use tracing_subscriber::EnvFilter;
 #[derive(Parser, Debug)]
 #[command(
     name = "corporate-shooter",
-    about = "Autoritativer Server fuer den Buero-Shooter im LAN"
+    about = "Autoritativer Server fuer den Buero-Shooter"
 )]
 struct Args {
     /// Port fuer HTTP und WebSocket. 0 waehlt einen freien Port.
@@ -71,6 +71,14 @@ struct Args {
         default_missing_value = "true"
     )]
     no_mdns: bool,
+
+    /// Hoechstzahl gleichzeitiger Spieler.
+    ///
+    /// Im LAN eine Formalie, auf einem oeffentlich erreichbaren Server nicht:
+    /// ohne Grenze kann jeder beliebig viele Verbindungen halten, und jede
+    /// kostet einen Platz in jedem Snapshot.
+    #[arg(long, env = "CORPSHOOT_MAX_PLAYERS", default_value_t = 16)]
+    max_players: usize,
 
     /// Fester Startwert fuer den Zufallsgenerator. Macht Waffenstreuung und
     /// Spawnauswahl reproduzierbar - fuer Tests, nicht fuer den Spielbetrieb.
@@ -132,7 +140,11 @@ fn main() -> anyhow::Result<()> {
         ..GameConfig::default()
     };
 
-    let (inbox, bound) = net::ws::spawn(SocketAddr::new(args.bind, args.port), client_dir.clone())?;
+    let (inbox, bound) = net::ws::spawn(
+        SocketAddr::new(args.bind, args.port),
+        client_dir.clone(),
+        args.max_players,
+    )?;
 
     // Der Daemon muss bis zum Programmende leben, sonst verschwindet der
     // Eintrag sofort wieder.
