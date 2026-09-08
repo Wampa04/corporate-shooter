@@ -146,16 +146,47 @@ console.log("Zurueckhaltung beim Aufsteigen");
     "ein einziges gutes Fenster genuegt laut Konstante - der Test oben misst nichts");
 }
 
+console.log("Bildschirm mit 60 Hz");
+{
+  // Der Browser wartet auf den Bildwechsel. Auf einem 60-Hz-Bildschirm ist
+  // 16,7 ms deshalb die untere Grenze - schneller *kann* kein Bild fertig
+  // werden, auch wenn die Grafikeinheit langweilt.
+  //
+  // Liegt die Komfortschwelle darunter, faellt der Regler zwar, kommt aber nie
+  // wieder hoch. Genau so stand es hier zuerst, und aufgefallen ist es erst,
+  // als jemand seine Bildrate genannt hat. Ein Regler, der nur in eine
+  // Richtung regelt, ist keiner.
+  const HZ60 = 1000 / 60;
+  const r = new Grafikregler(3);
+  fuettern(r, gleich(WARMLAUF_BILDER + 400, 100));
+  const gefallen = r.stufe;
+  const wechsel = fuettern(r, gleich(WARMLAUF_BILDER + FENSTER_BILDER * 40, HZ60));
+  pruefe("war vorher unten", gefallen === 2, `stand auf ${gefallen}`);
+  pruefe("perfekte 60 Bilder je Sekunde holen die volle Stufe zurueck",
+    r.stufe === 0, `steht auf ${r.stufe} nach ${wechsel.length} Aufstiegen`);
+  pruefe("die Schwelle ist auf 60 Hz ueberhaupt erreichbar", KOMFORT_MS >= HZ60,
+    `${KOMFORT_MS} ms liegen unter den ${HZ60.toFixed(1)} ms, die ein ` +
+    "60-Hz-Bildschirm bestenfalls zulaesst - der Weg nach oben ist dort tot");
+
+  // Gegenprobe: fuenfzig Bilder je Sekunde bedeuten, dass jedes sechste Bild
+  // ausfaellt. Das ist nicht mehr "schnell genug".
+  const s50 = new Grafikregler(3);
+  fuettern(s50, gleich(WARMLAUF_BILDER + 400, 100));
+  const bei50 = fuettern(s50, gleich(WARMLAUF_BILDER + FENSTER_BILDER * 40, 20));
+  pruefe("50 Bilder je Sekunde genuegen dafuer nicht", bei50.length === 0,
+    `${bei50.length} Aufstiege - die Schwelle sitzt zu locker`);
+}
+
 console.log("Hysterese");
 {
-  // Zwanzig Millisekunden sind fuenfzig Bilder je Sekunde: fluessig genug, um
-  // nichts abzuschalten, aber nicht so gut, dass man riskieren wollte, wieder
-  // aufzudrehen. Hier darf gar nichts passieren.
+  // Dreiundzwanzig Millisekunden sind gut vierzig Bilder je Sekunde: fluessig
+  // genug, um nichts abzuschalten, aber nicht so gut, dass man riskieren
+  // wollte, wieder aufzudrehen. Hier darf gar nichts passieren.
   //
   // Feste Zahl, nicht die Mitte zwischen den Schwellen: eine mitwandernde
   // Mitte liegt per Konstruktion immer im toten Bereich, egal wie schmal der
   // ist. Der Test bestuende noch bei einer Hysterese von einer Millisekunde.
-  const TOT_MS = 20;
+  const TOT_MS = 23;
   const r = new Grafikregler(3, 1);
   const wechsel = fuettern(r, gleich(WARMLAUF_BILDER + FENSTER_BILDER * 40, TOT_MS));
   pruefe(`${TOT_MS} ms loest nichts aus`, wechsel.length === 0,

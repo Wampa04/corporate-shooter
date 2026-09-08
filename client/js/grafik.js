@@ -43,12 +43,21 @@ export const BUDGET_MS = 28;
 /**
  * Ab dieser Bildzeit darf wieder hochgeschaltet werden.
  *
- * Vierzehn Millisekunden sind gut siebzig Bilder je Sekunde. Der Abstand zum
- * Budget ist die Hysterese: laege die Schwelle knapp unter 28, schaltete eine
- * Maschine, die genau dazwischen liegt, im Sekundentakt hin und her - und ein
- * flackerndes Bild ist schlimmer als jede feste Stufe.
+ * Der Abstand zum Budget ist die Hysterese: laege die Schwelle knapp unter 28,
+ * schaltete eine Maschine, die genau dazwischen liegt, im Sekundentakt hin und
+ * her - und ein flackerndes Bild ist schlimmer als jede feste Stufe.
+ *
+ * Nach oben ist der Wert aber ebenso gedeckelt, und zwar durch den Bildschirm:
+ * bei 60 Hz kann kein Bild schneller als 16,7 ms fertig werden, weil der
+ * Browser auf den Bildwechsel wartet. Eine Schwelle darunter waere unerreichbar
+ * - der Regler koennte fallen, aber nie wieder steigen, und das auf der
+ * verbreitetsten Hardware ueberhaupt. Genau so stand es hier zuerst.
+ *
+ * Achtzehn Millisekunden liegen knapp darueber: wer den Bildwechsel trifft,
+ * gilt als schnell genug; wer bei 50 Bildern je Sekunde (20 ms) haengt, laesst
+ * Bilder aus und gilt es nicht.
  */
-export const KOMFORT_MS = 14;
+export const KOMFORT_MS = 18;
 
 /**
  * Wie viele gute Fenster hintereinander eine Stufe zurueckholen.

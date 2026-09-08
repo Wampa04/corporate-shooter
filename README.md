@@ -145,7 +145,12 @@ Server läuft als unprivilegierter Nutzer.
 Der Client misst laufend seine eigene Bildzeit und regelt danach die
 Grafikstufe. Bleibt der Median eines Messfensters über 28 ms - also unter gut
 35 Bildern je Sekunde -, fällt er eine Stufe; bleibt er über mehrere Fenster
-unter 14 ms, steigt er wieder. Die Bildrate steht im HUD neben dem Ping.
+unter 18 ms, steigt er wieder. Die Bildrate steht im HUD neben dem Ping.
+
+Die 18 ms sind kein runder Wert, sondern ein Deckel: bei 60 Hz wartet der
+Browser auf den Bildwechsel, kein Bild kann schneller als 16,7 ms fertig
+werden. Eine Schwelle darunter wäre unerreichbar — der Regler könnte fallen,
+aber nie wieder steigen.
 
 Die Stufen, von schön nach schnell: voller Schattenwurf, ohne Schattenwurf,
 dann in zwei Schritten weniger Bildpunkte. Der Schattenwurf fällt zuerst, weil
