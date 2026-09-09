@@ -79,6 +79,12 @@ jobs:
       - name: Regler fuer die Grafikstufe
         run: node scripts/grafikregler.mjs
 
+      # Ob eine Figur beim Stehen die Beine zusammennimmt und ob Arme und
+      # Beine gegengleich schwingen, sieht man im Prueflauf bei zehn Bildern je
+      # Sekunde nicht. Der Laufzyklus rechnet deshalb ohne Three und ohne DOM.
+      - name: Laufzyklus der Spielerfiguren
+        run: node scripts/laufanimation.mjs
+
   image:
     name: Bauen, pruefen, veroeffentlichen
     needs: test

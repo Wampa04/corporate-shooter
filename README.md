@@ -209,6 +209,8 @@ Erzwingen lässt sich das über die Adresse:
   Endstand, kurze Pause und ein sauberer Neustart
 * Tod, Wartezeit und Wiedereinstieg an einem gegnerfernen Spawnpunkt
 * Rangliste, Killfeed, Trefferanzeige
+* Mitspieler als Figuren mit Laufanimation: Arme und Beine schwingen
+  gegengleich, der Ausschlag hängt am Tempo, Gefallene bleiben liegen
 
 ## Was noch fehlt
 
@@ -220,7 +222,6 @@ Aus dem ursprünglichen Entwurf ist bewusst noch nicht umgesetzt:
 * **Spielmodi:** „Deadline“ (Capture the Flag) und „Layoff Royale“
   (schrumpfendes Feld). Es gibt bisher nur Team Deathmatch.
 * **Ultimate:** der teambasierte „Synergie-Boost“.
-* **Spielfiguren:** Mitspieler sind noch vier Kisten statt einer Figur.
 
 
 ## Aufbau

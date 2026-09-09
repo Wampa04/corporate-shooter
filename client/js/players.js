@@ -7,7 +7,8 @@
 // statt in die Zukunft raten zu muessen.
 
 import * as THREE from "../vendor/three.module.min.js";
-import { MAT, part } from "./parts.js";
+import { baueFigur, legeFigurHin, stelleFigur } from "./figur.js";
+import { ruhe, schritt } from "./laufzyklus.js";
 
 export const TEAM_COLOR = {
   Marketing:   0xe8559b,
@@ -91,20 +92,13 @@ function makeNameTag(name, color) {
   return sprite;
 }
 
-/** Ein Buerokoerper: Rumpf, Kopf und ein Sichtschild als Blickrichtung. */
+/** Eine Figur samt Namensschild. */
 function makeAvatar(state) {
   const color = TEAM_COLOR[state.team] ?? 0xffffff;
-  const group = new THREE.Group();
-
-  part(group, { w: 0.68, h: 1.2, d: 0.44, color, y: 1.0 });
-  part(group, { w: 0.56, h: 0.82, d: 0.4, color: 0x2b3038, y: 0.41 });
-  part(group, { w: 0.34, h: 0.34, d: 0.34, color: MAT.skin, y: 1.79 });
-  // Kleiner Vorsprung nach vorn: sonst ist auf Distanz nicht zu erkennen,
-  // wohin jemand schaut.
-  part(group, { w: 0.3, h: 0.1, d: 0.06, color: MAT.black, y: 1.82, z: -0.19 });
-
-  group.add(makeNameTag(state.name, color));
-  return group;
+  const figur = baueFigur(color);
+  figur.schild = makeNameTag(state.name, color);
+  figur.wurzel.add(figur.schild);
+  return figur;
 }
 
 export class PlayerViews {
@@ -117,7 +111,13 @@ export class PlayerViews {
     this.scene = scene;
     this.selfId = selfId;
     this.delayMs = Math.max(INTERPOLATION_MS, (2 * 1000) / tickRate);
-    /** @type {Map<number, {group: THREE.Group, team: string}>} */
+    /**
+     * @type {Map<number, {group: THREE.Group, figur: object, team: string,
+     *                     lauf: {phase: number, ausschlag: number}}>}
+     *
+     * `audio.js` liest diese Karte fuer die Schritte der Mitspieler und
+     * verlaesst sich auf `group.position` und `group.visible`.
+     */
     this.avatars = new Map();
 
   }
@@ -130,6 +130,13 @@ export class PlayerViews {
    */
   update(snapshots, now) {
     if (snapshots.length === 0) return;
+
+    // Der Zeitschritt wird hier gebildet und nicht durchgereicht: `update`
+    // haengt ohnehin schon an `now`, und ein zweiter Parameter waere eine
+    // zweite Gelegenheit, ihn falsch zu uebergeben. Gedeckelt gegen den
+    // Sprung nach einem Tabwechsel.
+    const dt = this._zuletzt === undefined ? 0 : Math.min((now - this._zuletzt) / 1000, 0.1);
+    this._zuletzt = now;
 
     const target = now - this.delayMs;
     const [older, newer, t] = bracket(snapshots, target);
@@ -146,14 +153,47 @@ export class PlayerViews {
         entry = undefined;
       }
       if (!entry) {
-        entry = { group: makeAvatar(state), team: state.team };
+        const figur = makeAvatar(state);
+        entry = {
+          group: figur.wurzel,
+          figur,
+          team: state.team,
+          lauf: ruhe(),
+        };
         this.scene.add(entry.group);
         this.avatars.set(id, entry);
       }
 
-      entry.group.visible = state.alive;
+      // Die waagerechte Strecke seit dem letzten Bild treibt den Laufzyklus.
+      // Sie kommt aus der Position, die die Interpolation ohnehin liefert -
+      // eine zweite Messung waere eine zweite Quelle fuer dasselbe.
+      const vorher = entry.group.position;
+      let strecke = entry.gesehen
+        ? Math.hypot(state.pos[0] - vorher.x, state.pos[2] - vorher.z)
+        : 0;
+      // Ein Sprung ist kein Weg. Beim Wiedereinstieg liegen dreissig Meter
+      // zwischen zwei Bildern; ungedeckelt drehte die Figur dabei zwanzig
+      // Schrittzyklen in einem einzigen Bild. Dieselbe Grenze, mit der die
+      // Interpolation weiter unten einen Sprung von einer Bewegung
+      // unterscheidet.
+      if (strecke > TELEPORT_DISTANCE) strecke = 0;
+      entry.gesehen = true;
+
       entry.group.position.set(state.pos[0], state.pos[1], state.pos[2]);
       entry.group.rotation.y = state.yaw;
+
+      if (state.alive) {
+        entry.lauf = schritt(entry.lauf, strecke, dt);
+        stelleFigur(entry.figur.glieder, entry.figur.koerper, entry.lauf, state.pitch ?? 0);
+      } else {
+        // Tote bleiben liegen, wo sie gefallen sind, statt zu verschwinden:
+        // wer um die Ecke kommt, soll sehen, dass hier gerade jemand
+        // freigestellt wurde. Das Namensschild geht weg - es haengt an der
+        // Wurzel und stuende sonst zwei Meter ueber einer Leiche in der Luft.
+        entry.lauf = ruhe();
+        legeFigurHin(entry.figur.glieder, entry.figur.koerper);
+      }
+      entry.figur.schild.visible = state.alive;
     }
 
     // Wer nicht mehr im Snapshot steht, hat das Unternehmen verlassen.
