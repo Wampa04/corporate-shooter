@@ -32,7 +32,7 @@
       <dt>Umschalt</dt><dd>Agile Sprint</dd>
       <dt>E</dt><dd>Wellness-Tag</dd>
       <dt>R</dt><dd>Nachladen</dd>
-      <dt>1 / 2</dt><dd>Textmarker-Pistole / Locher-Schrotflinte</dd>
+      <dt>1 &hellip; 5</dt><dd>Textmarker &middot; Locher &middot; E-Mail &middot; Kaffeevollautomat &middot; Whiteboard</dd>
       <dt>Tab</dt><dd>Rangliste</dd>
       <dt>Esc</dt><dd>Maus freigeben</dd>
     </dl>
@@ -67,6 +67,11 @@
   <div id="hud-bottom-right">
     <div id="weapon-name">Textmarker-Pistole</div>
     <div id="ammo"><b id="ammo-current">30</b> / <span id="ammo-max">30</span></div>
+    <!-- Statt Munition bei Waffen, die ueberhitzen. -->
+    <div id="heat" class="hidden">
+      <div class="heat-bar"><i id="heat-fill"></i></div>
+      <span id="heat-label">Betriebstemperatur</span>
+    </div>
     <div id="reloading" class="hidden">Nachladen&hellip;</div>
   </div>
 

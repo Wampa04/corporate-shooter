@@ -227,7 +227,7 @@ fn broadcast(
             players: players.clone(),
             local: LocalState {
                 ammo: loadout.ammo[loadout.index],
-                mag_size: weapon.mag_size,
+                mag_size: weapon.mag_size(),
                 reloading: loadout.reload_timer > 0.0,
                 reload_remaining: loadout.reload_timer,
                 dash_cooldown_remaining: skills.dash_cooldown,
@@ -238,6 +238,8 @@ fn broadcast(
                     vitals.respawn_timer
                 },
                 on_ground: body.on_ground,
+                heat: loadout.heat[loadout.index],
+                heat_lock: loadout.heat_lock[loadout.index],
                 vel_y: body.vel.y,
                 dash_timer: skills.dash_timer,
                 dash_dir_x: skills.dash_dir.x,

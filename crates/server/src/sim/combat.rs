@@ -1,14 +1,20 @@
 //! Waffen, Trefferauswertung und Tod.
 //!
-//! Beide Waffen sind Hitscan: der Schuss trifft im selben Tick, in dem er
-//! ausgelöst wird. Der Unterschied zwischen Textmarker-Pistole und
-//! Locher-Schrotflinte liegt allein in den Werten aus [`protocol::GameConfig`]
-//! (Projektilzahl, Streuung, Schadensabfall), nicht im Code.
+//! Eine Waffe hat zwei unabhängige Achsen: *wie* sie wirkt
+//! ([`WeaponKind`]) und *woran* sie sich verbraucht ([`Ammo`]). Hitscan trifft
+//! im selben Tick, ein Projektil fliegt (siehe `projectiles.rs`), ein Schild
+//! schießt gar nicht; ein Magazin will nachgeladen werden, Hitze will
+//! abkühlen. Der Unterschied zwischen zwei Waffen liegt in den Werten aus
+//! [`protocol::GameConfig`], nicht im Code - deshalb sind fünf Waffen kaum
+//! mehr Code als zwei.
 
 use bevy::ecs::prelude::*;
-use protocol::{Aabb, GameEvent, PlayerId, Team, Tracer, Vec3, WeaponDesc, WeaponId, buttons};
+use protocol::{
+    Aabb, Ammo, GameEvent, PlayerId, Team, Tracer, Vec3, WeaponId, WeaponKind, buttons,
+};
 
 use super::history::History;
+use super::projectiles;
 use super::movement::{look_direction, player_aabb, player_half_extents};
 use super::{
     Body, Config, DamageEvent, EventLog, Inputs, Level, Loadout, PendingDamage, Player, Rand,
@@ -96,17 +102,22 @@ fn spread_direction(dir: Vec3, spread_deg: f32, rng: &mut Rng) -> Vec3 {
 
 /// Schaden nach Entfernung. Bis `falloff_start` voll, danach linear bis auf
 /// `falloff_min_factor` auf maximaler Reichweite.
-fn damage_at(weapon: &WeaponDesc, distance: f32) -> u16 {
-    let factor = if distance <= weapon.falloff_start || weapon.range <= weapon.falloff_start {
+pub fn damage_at(
+    damage: u16,
+    distance: f32,
+    range: f32,
+    falloff_start: f32,
+    falloff_min_factor: f32,
+) -> u16 {
+    let factor = if distance <= falloff_start || range <= falloff_start {
         1.0
     } else {
-        let t = ((distance - weapon.falloff_start) / (weapon.range - weapon.falloff_start))
-            .clamp(0.0, 1.0);
-        1.0 - t * (1.0 - weapon.falloff_min_factor)
+        let t = ((distance - falloff_start) / (range - falloff_start)).clamp(0.0, 1.0);
+        1.0 - t * (1.0 - falloff_min_factor)
     };
     // Mindestens 1 Schaden, damit ein Treffer auf maximale Distanz nicht
     // wirkungslos ist und der Client trotzdem eine Rückmeldung bekommt.
-    ((weapon.damage as f32 * factor).round() as u16).max(1)
+    ((damage as f32 * factor).round() as u16).max(1)
 }
 
 pub fn fire_weapons(
@@ -118,6 +129,8 @@ pub fn fire_weapons(
     mut rand: ResMut<Rand>,
     mut events: ResMut<EventLog>,
     mut pending: ResMut<PendingDamage>,
+    mut commands: Commands,
+    mut naechste: ResMut<projectiles::NaechsteId>,
     all: Query<(Entity, &Player, &Body, &Vitals)>,
     mut shooters: Query<(Entity, &Player, &Body, &Vitals, &Inputs, &mut Loadout)>,
 ) {
@@ -157,6 +170,16 @@ pub fn fire_weapons(
 
         loadout.fire_timer = (loadout.fire_timer - dt).max(0.0);
 
+        // Alle Waffen kühlen ab, auch die eingesteckten. Wer die Minigun
+        // wegsteckt, um Luft zu holen, soll das dürfen - genau dafür gibt es
+        // fünf Slots.
+        for (i, w) in config.weapons.iter().enumerate() {
+            if let Ammo::Heat { cool, .. } = w.ammo {
+                loadout.heat[i] = (loadout.heat[i] - cool * dt).max(0.0);
+            }
+            loadout.heat_lock[i] = (loadout.heat_lock[i] - dt).max(0.0);
+        }
+
         if !vitals.alive {
             continue;
         }
@@ -164,11 +187,17 @@ pub fn fire_weapons(
         let index = loadout.index;
         let weapon = config.weapons[index].clone();
 
+        // Das Whiteboard schiesst nicht. Es wirkt, indem man es haelt - der
+        // Schaden wird in `resolve_deaths` abgehalten.
+        if !weapon.schiesst() {
+            continue;
+        }
+
         if loadout.reload_timer > 0.0 {
             loadout.reload_timer -= dt;
             if loadout.reload_timer <= 0.0 {
                 loadout.reload_timer = 0.0;
-                loadout.ammo[index] = weapon.mag_size;
+                loadout.ammo[index] = weapon.mag_size();
             }
             continue;
         }
@@ -179,23 +208,40 @@ pub fn fire_weapons(
             inputs.just_pressed(buttons::FIRE)
         };
 
-        if (wants_reload || (wants_fire && loadout.ammo[index] == 0))
-            && loadout.ammo[index] < weapon.mag_size
-        {
-            loadout.reload_timer = weapon.reload_time;
-            continue;
+        // Ob geschossen werden darf, haengt an der Munitionsart. Beide Zweige
+        // enden gleich: entweder es faellt ein Schuss, oder der Tick ist fuer
+        // diesen Spieler vorbei.
+        match weapon.ammo {
+            Ammo::Magazine { mag_size, reload_time } => {
+                if (wants_reload || (wants_fire && loadout.ammo[index] == 0))
+                    && loadout.ammo[index] < mag_size
+                {
+                    loadout.reload_timer = reload_time;
+                    continue;
+                }
+                if !wants_fire || loadout.fire_timer > 0.0 || loadout.ammo[index] == 0 {
+                    continue;
+                }
+                loadout.ammo[index] -= 1;
+            }
+            Ammo::Heat { per_shot, lock, .. } => {
+                // Gesperrt heisst gesperrt: das ist die ganze Waffe. Ohne die
+                // Zwangspause waere die Minigun schlicht die beste.
+                if !wants_fire || loadout.fire_timer > 0.0 || loadout.heat_lock[index] > 0.0 {
+                    continue;
+                }
+                loadout.heat[index] += per_shot;
+                if loadout.heat[index] >= 1.0 {
+                    loadout.heat[index] = 1.0;
+                    loadout.heat_lock[index] = lock;
+                }
+            }
+            Ammo::None => continue,
         }
-
-        if !wants_fire || loadout.fire_timer > 0.0 || loadout.ammo[index] == 0 {
-            continue;
-        }
-
-        loadout.ammo[index] -= 1;
         loadout.fire_timer = weapon.fire_interval;
 
         let origin = body.pos + Vec3::Y * config.eye_height;
         let aim = look_direction(body.yaw, body.pitch);
-        let mut tracers = Vec::with_capacity(weapon.pellets as usize);
 
         // Lag-Kompensation: die Gegner dorthin zurücksetzen, wo der Schütze
         // sie gesehen hat. Nur die Gegner - die eigene Position ist aktuell
@@ -216,39 +262,76 @@ pub fn fire_weapons(
             });
         let ziele: &[Target] = zurueckgespult.as_deref().unwrap_or(&targets);
 
-        for _ in 0..weapon.pellets.max(1) {
-            let dir = spread_direction(aim, weapon.spread_deg, &mut rand.0);
-            let impact = trace(
-                origin,
-                dir,
-                weapon.range,
-                &level.opaque,
-                ziele,
-                player.id,
-                player.team,
-            );
-            tracers.push(Tracer {
-                from: origin,
-                to: impact.point,
-                hit_player: impact.victim.is_some(),
-            });
-            if let Some((entity, _)) = impact.victim {
-                pending.0.push(DamageEvent {
-                    attacker: player.id,
-                    attacker_entity: shooter_entity,
-                    target: entity,
-                    amount: damage_at(&weapon, impact.distance),
-                    pos: impact.point,
+        match weapon.kind {
+            WeaponKind::Hitscan {
+                pellets,
+                spread_deg,
+                range,
+                falloff_start,
+                falloff_min_factor,
+            } => {
+                let mut tracers = Vec::with_capacity(pellets as usize);
+                for _ in 0..pellets.max(1) {
+                    let dir = spread_direction(aim, spread_deg, &mut rand.0);
+                    let impact = trace(
+                        origin,
+                        dir,
+                        range,
+                        &level.opaque,
+                        ziele,
+                        player.id,
+                        player.team,
+                    );
+                    tracers.push(Tracer {
+                        from: origin,
+                        to: impact.point,
+                        hit_player: impact.victim.is_some(),
+                    });
+                    if let Some((entity, _)) = impact.victim {
+                        pending.0.push(DamageEvent {
+                            attacker: player.id,
+                            attacker_entity: shooter_entity,
+                            target: entity,
+                            amount: damage_at(
+                                weapon.damage,
+                                impact.distance,
+                                range,
+                                falloff_start,
+                                falloff_min_factor,
+                            ),
+                            pos: impact.point,
+                            weapon: weapon.id,
+                        });
+                    }
+                }
+                events.push(GameEvent::Shot {
+                    shooter: player.id,
                     weapon: weapon.id,
+                    tracers,
                 });
             }
-        }
 
-        events.push(GameEvent::Shot {
-            shooter: player.id,
-            weapon: weapon.id,
-            tracers,
-        });
+            WeaponKind::Projectile { speed, .. } => {
+                // Ein Projektil wird nicht zurueckgespult: es fliegt vorwaerts
+                // und trifft, wo es ankommt. Lag-Kompensation gaebe es nichts
+                // zu kompensieren - der Schuetze hat ohnehin vorgehalten.
+                projectiles::spawn(
+                    &mut commands,
+                    &mut naechste,
+                    &mut events,
+                    projectiles::Neu {
+                        owner: player.id,
+                        owner_entity: shooter_entity,
+                        team: player.team,
+                        weapon: weapon.id,
+                        pos: origin + aim * 0.4,
+                        vel: aim * speed,
+                    },
+                );
+            }
+
+            WeaponKind::Shield { .. } => unreachable!("Schilde schiessen nicht"),
+        }
     }
 }
 
@@ -262,25 +345,26 @@ pub fn resolve_deaths(
     mut pending: ResMut<PendingDamage>,
     mut events: ResMut<EventLog>,
     mut runde: ResMut<super::matchstate::Match>,
-    mut q: Query<(&Player, &mut Vitals)>,
+    mut q: Query<(&Player, &Body, &Loadout, &mut Vitals)>,
 ) {
     let mut deaths: Vec<(Entity, PlayerId, WeaponId)> = Vec::new();
 
     for hit in pending.0.drain(..) {
-        let Ok((victim, mut vitals)) = q.get_mut(hit.target) else {
+        let Ok((victim, body, loadout, mut vitals)) = q.get_mut(hit.target) else {
             continue; // Ziel hat die Verbindung im selben Tick verloren.
         };
         if !vitals.alive {
             continue; // Bereits durch ein früheres Projektil desselben Ticks erledigt.
         }
 
-        vitals.health = vitals.health.saturating_sub(hit.amount);
+        let amount = nach_schild(&config, body, loadout, hit.pos, hit.amount);
+        vitals.health = vitals.health.saturating_sub(amount);
         let victim_id = victim.id;
         events.push(GameEvent::Hit {
             attacker: hit.attacker,
             target: victim_id,
             pos: hit.pos,
-            damage: hit.amount,
+            damage: amount,
         });
 
         if vitals.health == 0 {
@@ -299,7 +383,7 @@ pub fn resolve_deaths(
     // Punkte des Schützen erst nach dem Abarbeiten gutschreiben: währenddessen
     // ist dessen `Vitals` als Ziel womöglich schon ausgeliehen.
     for (killer, _, _) in deaths {
-        if let Ok((player, mut vitals)) = q.get_mut(killer) {
+        if let Ok((player, _, _, mut vitals)) = q.get_mut(killer) {
             vitals.kills += 1;
             // Der Teampunkt wird hier gebucht und nicht spaeter aus den
             // Spielern summiert: verlaesst jemand das Spiel, verschwaende
@@ -314,4 +398,43 @@ pub fn resolve_deaths(
             }
         }
     }
+}
+
+/// Zieht ab, was das Whiteboard abhält.
+///
+/// Der Sektor wird aus dem Einschlagpunkt bestimmt, nicht aus der Position des
+/// Schützen: der Punkt liegt auf der Hülle des Getroffenen, und die Richtung
+/// von seiner Mitte dorthin sagt genau, welche Seite getroffen wurde. Das
+/// funktioniert für Hitscan und für eine Explosion gleichermaßen, und es
+/// braucht kein zusätzliches Feld im [`DamageEvent`].
+fn nach_schild(
+    config: &Config,
+    body: &Body,
+    loadout: &Loadout,
+    einschlag: Vec3,
+    schaden: u16,
+) -> u16 {
+    let WeaponKind::Shield { block, arc_deg } = config.weapons[loadout.index].kind else {
+        return schaden;
+    };
+
+    let mitte = body.pos + Vec3::Y * (config.player_height * 0.5);
+    let Some(zum_treffer) = (einschlag - mitte).try_normalize() else {
+        // Einschlag genau in der Koerpermitte - keine Richtung, kein Schutz.
+        return schaden;
+    };
+
+    // Nur waagerecht: ein Schild schuetzt zur Seite, nicht nach oben.
+    let vorn = look_direction(body.yaw, 0.0);
+    let waagerecht = Vec3::new(zum_treffer.x, 0.0, zum_treffer.z);
+    let Some(waagerecht) = waagerecht.try_normalize() else {
+        return schaden;
+    };
+
+    if vorn.dot(waagerecht) < arc_deg.to_radians().cos() {
+        return schaden;
+    }
+    let uebrig = (schaden as f32 * (1.0 - block)).round() as u16;
+    // Mindestens 1: ein Schild soll schuetzen, nicht unverwundbar machen.
+    uebrig.max(1)
 }

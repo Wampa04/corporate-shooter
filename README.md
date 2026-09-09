@@ -191,7 +191,7 @@ Erzwingen lässt sich das über die Adresse:
 | Umschalt | **Agile Sprint** (Dash) |
 | E | **Wellness-Tag** (Heilung, langer Cooldown) |
 | R | Nachladen |
-| 1 / 2 | Textmarker-Pistole / Locher-Schrotflinte |
+| 1 … 5 | Textmarker · Locher · E-Mail · Kaffeevollautomat · Whiteboard |
 | Tab | Rangliste |
 | Esc | Maus freigeben |
 
@@ -202,7 +202,10 @@ Erzwingen lässt sich das über die Adresse:
 * Karte „Großraumbüro, 3. OG“ mit Kaffeeküche, verglastem Serverraum,
   erhöhter Chef-Etage und einem Ostflügel aus Besprechungsraum und zwei
   verschieden eingerichteten Einzelbüros
-* Textmarker-Pistole und Locher-Schrotflinte
+* Fünf Waffen: Textmarker-Pistole und Locher-Schrotflinte (Hitscan),
+  passiv-aggressive E-Mail (fliegt, zerplatzt im Umkreis),
+  Kaffeevollautomat-Minigun (überhitzt statt nachzuladen) und das Whiteboard
+  (schießt nicht, hält Schaden von vorn ab)
 * Agile Sprint und Wellness-Tag
 * Team Deathmatch: Marketing gegen Engineering, kein Friendly Fire
 * Runden mit Punktegrenze: das erste Team mit 30 Abschlüssen gewinnt, danach
@@ -216,9 +219,6 @@ Erzwingen lässt sich das über die Adresse:
 
 Aus dem ursprünglichen Entwurf ist bewusst noch nicht umgesetzt:
 
-* **Waffen:** Passiv-aggressive E-Mail (Wurfgeschoss mit Verzögerung),
-  Kaffeevollautomat-Minigun (Überhitzung), Whiteboard als tragbares Schild.
-  Das Whiteboard steht bisher nur als feste Deckung im Level.
 * **Spielmodi:** „Deadline“ (Capture the Flag) und „Layoff Royale“
   (schrumpfendes Feld). Es gibt bisher nur Team Deathmatch.
 * **Ultimate:** der teambasierte „Synergie-Boost“.

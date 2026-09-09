@@ -14,6 +14,7 @@ mod tests;
 pub mod combat;
 pub mod history;
 pub mod matchstate;
+pub mod projectiles;
 pub mod movement;
 pub mod skills;
 pub mod spawn;
@@ -75,6 +76,10 @@ pub struct Loadout {
     pub index: usize,
     /// Munition je Waffe, gleiche Reihenfolge wie [`GameConfig::weapons`].
     pub ammo: Vec<u16>,
+    /// Hitze je Waffe, 0.0 bis 1.0. Nur Waffen mit [`Ammo::Heat`] benutzen sie.
+    pub heat: Vec<f32>,
+    /// Restliche Zwangspause nach dem Überhitzen, je Waffe.
+    pub heat_lock: Vec<f32>,
     /// Restzeit bis zum nächsten möglichen Schuss.
     pub fire_timer: f32,
     /// Restzeit des laufenden Nachladens, 0 wenn nicht nachgeladen wird.
@@ -85,7 +90,9 @@ impl Loadout {
     pub fn fresh(config: &GameConfig) -> Self {
         Self {
             index: 0,
-            ammo: config.weapons.iter().map(|w| w.mag_size).collect(),
+            ammo: config.weapons.iter().map(|w| w.mag_size()).collect(),
+            heat: vec![0.0; config.weapons.len()],
+            heat_lock: vec![0.0; config.weapons.len()],
             fire_timer: 0.0,
             reload_timer: 0.0,
         }
@@ -351,6 +358,7 @@ impl Plugin for SimPlugin {
             .init_resource::<EventLog>()
             .init_resource::<Lobby>()
             .insert_resource(matchstate::Match::neu())
+            .init_resource::<projectiles::NaechsteId>()
             .add_systems(
                 Update,
                 (
@@ -362,6 +370,9 @@ impl Plugin for SimPlugin {
                     skills::apply_skills,
                     history::record,
                     combat::fire_weapons,
+                    // Nach dem Schuss, vor der Schadensauswertung: was in
+                    // diesem Tick einschlaegt, wirkt auch in diesem Tick.
+                    projectiles::advance,
                     combat::resolve_deaths,
                     // Nach der Todesauswertung, vor dem Wiedereinstieg: der
                     // Neustart der Runde setzt alle auf tot, und

@@ -120,6 +120,112 @@ function buildLocher() {
 }
 
 /**
+ * Passiv-aggressive E-Mail.
+ *
+ * Ein Briefumschlag auf einem Klemmbrett, das man wie einen Wurfarm haelt.
+ * Der Umschlag sitzt vorn und fliegt beim Schuss davon - deshalb ist er ein
+ * eigenes Teil, das der Rueckstoss mitnimmt.
+ */
+function buildEmail() {
+  const g = new THREE.Group();
+
+  // Klemmbrett als Griffplatte.
+  part(g, { w: 0.13, h: 0.012, d: 0.2, color: MAT.polymer, y: -0.03, z: -0.03 });
+  part(g, { w: 0.135, h: 0.008, d: 0.03, color: MAT.steel, y: -0.021, z: -0.115 });
+  // Klemme.
+  part(g, { w: 0.06, h: 0.014, d: 0.022, color: MAT.chrome, y: -0.014, z: -0.115 });
+  grip(g, { y: -0.1, z: 0.03, tilt: 0.24 });
+
+  // Der Umschlag, aufgerichtet, mit angedeuteter Lasche.
+  part(g, { w: 0.11, h: 0.075, d: 0.006, color: MAT.paper, y: 0.012, z: -0.15, rx: 0.3 });
+  part(g, { w: 0.098, h: 0.03, d: 0.004, color: 0xe4e0d4, y: 0.028, z: -0.152, rx: 0.3 });
+  // Rote Dringlichkeitsmarke - der ganze Witz der Waffe.
+  part(g, { w: 0.024, h: 0.016, d: 0.004, color: MAT.punchRed, x: 0.036, y: 0.031, z: -0.153, rx: 0.3 });
+
+  // Stapel Blaetter unter der Klemme: die Waffe hat vier Schuss.
+  ribs(g, { n: 3, from: -0.035, pitch: 0.006, w: 0.105, h: 0.004, d: 0.14, color: MAT.paper, z: -0.04, axis: "y" });
+  return g;
+}
+
+/**
+ * Kaffeevollautomat-Minigun.
+ *
+ * Ein Bruehkopf mit rotierendem Buendel Auslaufduesen, Wassertank obendrauf
+ * und einem Manometer, das die Hitze anzeigt. Die Duesen sitzen in einer
+ * eigenen Gruppe, damit sie sich beim Feuern drehen koennen.
+ */
+function buildKaffee() {
+  const g = new THREE.Group();
+
+  // Gehaeuse. Kurz genug, dass das Duesenbuendel davor sichtbar bleibt - in
+  // der ersten Fassung war es zweihundert Millimeter lang und verdeckte die
+  // Duesen vollstaendig, sodass die Waffe von hinten wie eine Kiste aussah.
+  part(g, { w: 0.1, h: 0.1, d: 0.15, color: MAT.gunmetal, y: -0.01, z: 0.01 });
+  part(g, { w: 0.105, h: 0.024, d: 0.15, color: MAT.chrome, y: 0.045, z: 0.01 });
+  // Wassertank hinten oben, halbdurchsichtig gemeint, hier hell.
+  part(g, { w: 0.07, h: 0.07, d: 0.065, color: 0x7fa8c9, y: 0.075, z: 0.055 });
+  part(g, { w: 0.075, h: 0.01, d: 0.07, color: MAT.steel, y: 0.113, z: 0.055 });
+  // Manometer an der Seite.
+  part(g, { w: 0.01, h: 0.034, d: 0.034, color: MAT.chrome, x: 0.055, y: 0.0, z: -0.02 });
+  part(g, { w: 0.004, h: 0.024, d: 0.024, color: MAT.punchRed, x: 0.061, y: 0.0, z: -0.02 });
+
+  grip(g, { y: -0.1, z: 0.06, tilt: 0.2, h: 0.15 });
+  triggerGroup(g, { y: -0.045, z: 0.03 });
+
+  // Duesenbuendel: sechs Rohre im Kreis.
+  const duesen = new THREE.Group();
+  duesen.position.set(0, -0.005, -0.155);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    part(duesen, {
+      w: 0.015, h: 0.015, d: 0.16, color: MAT.steel,
+      x: Math.cos(a) * 0.029, y: Math.sin(a) * 0.029,
+    });
+  }
+  part(duesen, { w: 0.028, h: 0.028, d: 0.02, color: MAT.gunmetal, z: 0.075 });
+  g.add(duesen);
+  g.userData.duesen = duesen;
+  return g;
+}
+
+/**
+ * Whiteboard.
+ *
+ * Keine Waffe, sondern eine Platte am Griff. Sie steht quer vor dem Gesicht -
+ * das ist der Punkt: wer sie traegt, sieht schlechter und ist besser geschuetzt.
+ */
+function buildWhiteboard() {
+  const g = new THREE.Group();
+
+  // Die Platte, quer und schraeg, damit sie nicht das halbe Bild fuellt.
+  const platte = new THREE.Group();
+  platte.position.set(-0.02, 0.04, -0.16);
+  platte.rotation.set(0.12, -0.34, 0.05);
+  part(platte, { w: 0.46, h: 0.34, d: 0.012, color: MAT.felt });
+  // Rahmen ringsum.
+  part(platte, { w: 0.48, h: 0.022, d: 0.02, color: MAT.steel, y: 0.176 });
+  part(platte, { w: 0.48, h: 0.022, d: 0.02, color: MAT.steel, y: -0.176 });
+  part(platte, { w: 0.022, h: 0.36, d: 0.02, color: MAT.steel, x: 0.235 });
+  part(platte, { w: 0.022, h: 0.36, d: 0.02, color: MAT.steel, x: -0.235 });
+  // Stiftablage mit einem Marker darauf.
+  part(platte, { w: 0.16, h: 0.014, d: 0.03, color: MAT.steel, y: -0.184, z: 0.016 });
+  part(platte, { w: 0.09, h: 0.014, d: 0.014, color: MAT.marker, y: -0.17, z: 0.022 });
+  // Ein Rest vom letzten Meeting.
+  part(platte, { w: 0.16, h: 0.008, d: 0.002, color: 0x3f7fd0, x: -0.06, y: 0.06, z: -0.008 });
+  part(platte, { w: 0.1, h: 0.008, d: 0.002, color: 0x3f7fd0, x: -0.09, y: 0.03, z: -0.008 });
+  g.add(platte);
+
+  // Zwei Haltegriffe, an der Unterkante statt mitten auf der Flaeche: von der
+  // Kamera aus liegen sie vor der Tafel, und auf halber Hoehe sahen sie aus
+  // wie zwei aufgemalte Balken.
+  part(g, { w: 0.024, h: 0.075, d: 0.024, color: MAT.polymer, x: 0.075, y: -0.145, z: -0.09, rx: 0.35 });
+  part(g, { w: 0.024, h: 0.075, d: 0.024, color: MAT.polymer, x: -0.115, y: -0.115, z: -0.13, rx: 0.35 });
+  // Unterarm, der die Tafel haelt.
+  part(g, { w: 0.055, h: 0.05, d: 0.13, color: MAT.skin, x: -0.02, y: -0.185, z: -0.02, rx: 0.2 });
+  return g;
+}
+
+/**
  * Was der Server als Waffe meldet, und wie sie sich anfuehlt.
  *
  * Vorher standen Modell und Rueckstoss in zwei getrennten Tabellen - eine
@@ -129,6 +235,18 @@ function buildLocher() {
 const WEAPONS = {
   Textmarker: { build: buildTextmarker, recoil: 0.035 },
   Locher: { build: buildLocher, recoil: 0.12 },
+  // `offset` ruecht sperrige Modelle ins Bild. Die Ruhelage ist auf eine
+  // Pistole ausgelegt; ein Klemmbrett, ein Bruehkopf und eine halbe
+  // Wandtafel haben ihre Masse woanders und ragen sonst unten aus dem Bild.
+  // Bewusst als Zahl in der Tabelle und nicht im Modell versteckt: so steht
+  // die Lage aller Waffen an einer Stelle nebeneinander.
+  Email: { build: buildEmail, recoil: 0.06, offset: [-0.03, 0.07, 0.0] },
+  // Wenig Rueckstoss je Schuss, aber sechzehn Schuss je Sekunde - in der
+  // Summe zittert die Waffe dauernd.
+  Kaffeevollautomat: { build: buildKaffee, recoil: 0.022, offset: [-0.05, 0.05, -0.02] },
+  // Weit nach links und oben: das Whiteboard soll die Sicht wirklich
+  // einschraenken, sonst waere es ein Schild ohne Preis.
+  Whiteboard: { build: buildWhiteboard, recoil: 0, offset: [-0.19, 0.16, -0.02] },
 };
 
 export class ViewModel {
@@ -162,7 +280,11 @@ export class ViewModel {
     }
     const weapon = WEAPONS[weaponId];
     this.current = weapon ? weapon.build() : null;
-    if (this.current) this.root.add(this.current);
+    if (this.current) {
+      const [x, y, z] = weapon.offset ?? [0, 0, 0];
+      this.current.position.set(x, y, z);
+      this.root.add(this.current);
+    }
   }
 
   /** Ein eigener Schuss ist bestaetigt worden. */

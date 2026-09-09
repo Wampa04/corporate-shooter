@@ -38,7 +38,7 @@ fn arena() -> MapDesc {
 fn precise_config() -> GameConfig {
     let mut config = GameConfig::default();
     for weapon in &mut config.weapons {
-        weapon.spread_deg = 0.0;
+        weapon.set_spread(0.0);
     }
     config
 }
@@ -661,7 +661,7 @@ fn schuss_nach_hinten_trifft_nicht() {
 #[test]
 fn magazin_leert_sich_und_laedt_automatisch_nach() {
     let config = precise_config();
-    let mag = config.weapon(protocol::WeaponId::Textmarker).mag_size;
+    let mag = config.weapon(protocol::WeaponId::Textmarker).mag_size();
     let mut app = app_with(config, arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
 
@@ -690,7 +690,7 @@ fn magazin_leert_sich_und_laedt_automatisch_nach() {
 fn locher_schrotflinte_feuert_nicht_automatisch() {
     let mut config = precise_config();
     for weapon in &mut config.weapons {
-        weapon.spread_deg = 0.0;
+        weapon.set_spread(0.0);
     }
     let slot = config.weapon(protocol::WeaponId::Locher).slot;
     let mut app = app_with(config, arena());
@@ -730,7 +730,7 @@ fn locher_verschiesst_alle_schrotkugeln() {
     let mut config = precise_config();
     let desc = config.weapon(protocol::WeaponId::Locher).clone();
     for weapon in &mut config.weapons {
-        weapon.spread_deg = 0.0;
+        weapon.set_spread(0.0);
     }
     let mut app = app_with(config, arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
@@ -761,7 +761,7 @@ fn locher_verschiesst_alle_schrotkugeln() {
             _ => None,
         })
         .expect("kein Schuss");
-    assert_eq!(tracers, desc.pellets as usize);
+    assert_eq!(tracers, desc.pellets() as usize);
 }
 
 #[test]
@@ -1034,6 +1034,319 @@ fn ostfluegel_ist_begehbar() {
         pos.x > 21.5,
         "Durchgang zum Ostflügel ist versperrt: x = {:.1}",
         pos.x
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Waffen jenseits von Hitscan
+// ---------------------------------------------------------------------------
+
+/// Ein einzelner Schuss, dann `ticks` Ticks weiter.
+///
+/// Fuer Waffen, bei denen es auf den Zeitpunkt ankommt: `halte_feuer` haelt
+/// die Taste, und bei einer Waffe mit Einzelschuss faellt der zweite Schuss
+/// dann nie - die Flankenerkennung sieht nur den ersten.
+fn ein_schuss(app: &mut App, shooter: Entity, ticks: u32) -> Vec<GameEvent> {
+    set_input(
+        app,
+        shooter,
+        InputFrame {
+            buttons: buttons::FIRE,
+            ..Default::default()
+        },
+    );
+    let events = run(app, ticks);
+    set_input(app, shooter, InputFrame::default());
+    events
+}
+
+/// Setzt einen Spieler auf eine Waffe, ohne den Umweg ueber die Zifferntaste.
+fn nimm_waffe(app: &mut App, entity: Entity, id: protocol::WeaponId) {
+    let index = app
+        .world()
+        .resource::<Config>()
+        .weapons
+        .iter()
+        .position(|w| w.id == id)
+        .expect("Waffe steht nicht in der Konfiguration");
+    app.world_mut().get_mut::<Loadout>(entity).unwrap().index = index;
+}
+
+#[test]
+fn die_email_braucht_zeit_bis_zum_ziel() {
+    // Der Unterschied zu allem bisherigen: der Schaden faellt nicht im Tick des
+    // Abschusses an. Genau das macht die Waffe aus - wer sie benutzt, muss
+    // vorhalten, und wer getroffen wird, kann ausweichen.
+    let mut app = app_with(precise_config(), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -12.0), 0.0);
+    nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
+
+    let sofort = ein_schuss(&mut app, shooter, 1);
+    assert!(
+        sofort.iter().any(|e| matches!(e, GameEvent::Launched { .. })),
+        "kein Abschuss gemeldet"
+    );
+    assert!(
+        !sofort.iter().any(|e| matches!(e, GameEvent::Hit { .. })),
+        "die E-Mail trifft im Tick des Abschusses - dann ist sie Hitscan mit Umweg"
+    );
+    assert_eq!(
+        vitals(&app, target).health,
+        app.world().resource::<Config>().max_health,
+        "Schaden ohne Flugzeit"
+    );
+
+    // Zwoelf Meter bei 22 m/s sind gut eine halbe Sekunde.
+    let spaeter = run_s(&mut app, 1.2);
+    assert!(
+        spaeter.iter().any(|e| matches!(e, GameEvent::Burst { .. })),
+        "die E-Mail ist nie zerplatzt"
+    );
+    assert!(
+        vitals(&app, target).health < app.world().resource::<Config>().max_health,
+        "die E-Mail ist angekommen, hat aber nichts bewirkt"
+    );
+}
+
+#[test]
+fn der_umkreisschaden_faellt_mit_dem_abstand() {
+    // Zwei Ziele, beide **neben** der Flugbahn, in verschiedenem Abstand zum
+    // Einschlag. Beide neben der Bahn ist der Punkt: die erste Fassung stellte
+    // eines direkt in den Weg, und dann bekam es Aufschlag *plus* Umkreis. Der
+    // Test bestand damit auch, wenn der Umkreis ueberall gleich weh tat - der
+    // Unterschied kam allein vom Direkttreffer.
+    let mut app = app_with(precise_config(), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let nah = add_player(&mut app, 2, Team::Marketing, Vec3::new(1.0, 0.0, -13.0), 0.0);
+    let fern = add_player(&mut app, 3, Team::Marketing, Vec3::new(2.9, 0.0, -13.0), 0.0);
+    nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
+
+    let mut events = ein_schuss(&mut app, shooter, 1);
+    events.extend(run_s(&mut app, 2.0));
+
+    // Wo es zerplatzt ist, entscheidet die Flugbahn - der Test rechnet sie
+    // nicht nach, sondern liest den Ort aus dem Ereignis.
+    let einschlag = events
+        .iter()
+        .find_map(|e| match e {
+            GameEvent::Burst { pos, .. } => Some(*pos),
+            _ => None,
+        })
+        .expect("die E-Mail ist nie zerplatzt");
+
+    let abstand = |e: Entity| {
+        let p = body(&app, e).pos + Vec3::Y * (GameConfig::default().player_height * 0.5);
+        (p - einschlag).length()
+    };
+    let max = app.world().resource::<Config>().max_health;
+    let schaden_nah = max - vitals(&app, nah).health;
+    let schaden_fern = max - vitals(&app, fern).health;
+
+    // Ein Direkttreffer erzeugt *zwei* Treffermeldungen: Aufschlag und Umkreis.
+    // Genau eine je Ziel heisst also: beide standen daneben.
+    //
+    // Am Schadenswert laesst sich das nicht ablesen - naher Umkreisschaden ist
+    // groesser als der Aufschlag, und die erste Fassung dieser Pruefung hat
+    // deshalb faelschlich Alarm geschlagen.
+    for (name, id) in [("nah", 2u32), ("fern", 3)] {
+        let treffer = events
+            .iter()
+            .filter(|e| matches!(e, GameEvent::Hit { target, .. } if target.0 == id))
+            .count();
+        assert_eq!(
+            treffer, 1,
+            "{name} hat {treffer} Treffermeldungen - bei zwei war es ein Direkttreffer, \
+             und dann misst der Test nicht den Umkreis"
+        );
+    }
+    assert!(
+        abstand(nah) < abstand(fern),
+        "die Ziele stehen nicht wie gedacht: {:.2} m gegen {:.2} m",
+        abstand(nah),
+        abstand(fern)
+    );
+    assert!(schaden_nah > 0 && schaden_fern > 0, "nicht beide im Umkreis");
+    assert!(
+        schaden_fern < schaden_nah,
+        "gleicher Schaden nah und fern ({schaden_nah} auf {:.2} m / {schaden_fern} auf {:.2} m) \
+         - das ist kein Umkreis",
+        abstand(nah),
+        abstand(fern)
+    );
+}
+
+#[test]
+fn die_email_verschont_das_eigene_team() {
+    let mut app = app_with(precise_config(), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let kollege = add_player(&mut app, 2, Team::Engineering, Vec3::new(0.0, 0.0, -12.0), 0.0);
+    nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
+
+    ein_schuss(&mut app, shooter, 1);
+    run_s(&mut app, 2.0);
+
+    assert_eq!(
+        vitals(&app, kollege).health,
+        app.world().resource::<Config>().max_health,
+        "die E-Mail ging an die eigene Abteilung"
+    );
+}
+
+#[test]
+fn die_minigun_ueberhitzt_und_kuehlt_wieder_ab() {
+    let mut app = app_with(precise_config(), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -8.0), 0.0);
+    nimm_waffe(&mut app, shooter, protocol::WeaponId::Kaffeevollautomat);
+    let index = app.world().get::<Loadout>(shooter).unwrap().index;
+
+    // Dauerfeuer, bis die Sperre greift. Gemessen wird die **Sperre**, nicht
+    // der Hitzewert: die Waffe kuehlt waehrend der Sperre weiter, und wer eine
+    // Sekunde nach dem Ueberhitzen nachsieht, findet die Hitze laengst wieder
+    // unter eins. Genau daran ist die erste Fassung dieses Tests gescheitert -
+    // sie hat den Mechanismus fuer kaputt erklaert, obwohl er stimmte.
+    let mut schuesse = 0usize;
+    let mut zeit = 0.0f32;
+    let scheibe = 0.25;
+    while zeit < 4.0 {
+        let ev = halte_feuer(&mut app, shooter, scheibe);
+        schuesse += ev.iter().filter(|e| matches!(e, GameEvent::Shot { .. })).count();
+        zeit += scheibe;
+        if app.world().get::<Loadout>(shooter).unwrap().heat_lock[index] > 0.0 {
+            break;
+        }
+    }
+
+    assert!(zeit < 4.0, "in vier Sekunden Dauerfeuer nicht ueberhitzt");
+    // Feste Grenzen, nicht aus den Konstanten abgeleitet: sie sind die
+    // eigentliche Aussage. Ueberhitzt die Waffe nach fuenf Schuss, ist sie
+    // unbrauchbar; ueberhitzt sie nach hundert, ist die Ueberhitzung ein
+    // Geruecht. Der erste Ansatz lag bei einundfuenfzig.
+    assert!(
+        (15..=45).contains(&schuesse),
+        "{schuesse} Schuss bis zur Ueberhitzung - das ist keine Minigun mit Zwangspause"
+    );
+    assert!(
+        (1.0..=2.5).contains(&zeit),
+        "nach {zeit:.2} s ueberhitzt - zu frueh oder zu spaet"
+    );
+
+    // Waehrend der Sperre faellt kein Schuss. Das Beobachtungsfenster kommt
+    // aus der tatsaechlich verbleibenden Sperre: waere sie kuerzer als ein
+    // festes Fenster, praefte der Test ihr Ende statt sie selbst.
+    let rest = app.world().get::<Loadout>(shooter).unwrap().heat_lock[index];
+    assert!(rest > 0.3, "die Sperre ist mit {rest} s zu kurz, um sie zu beobachten");
+    let gesperrt = halte_feuer(&mut app, shooter, rest * 0.6);
+    assert!(
+        !gesperrt.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
+        "die Sperre haelt nicht"
+    );
+
+    // Danach geht es weiter.
+    set_input(&mut app, shooter, InputFrame::default());
+    run_s(&mut app, 4.0);
+    let kalt = app.world().get::<Loadout>(shooter).unwrap().clone();
+    assert_eq!(kalt.heat_lock[index], 0.0, "die Sperre laeuft nicht ab");
+    assert!(kalt.heat[index] < 0.05, "kuehlt nicht ab: {}", kalt.heat[index]);
+
+    let wieder = halte_feuer(&mut app, shooter, 0.5);
+    assert!(
+        wieder.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
+        "nach dem Abkuehlen faellt kein Schuss mehr"
+    );
+}
+
+#[test]
+fn kurze_feuerstoesse_ueberhitzen_nicht() {
+    // Die Gegenprobe zur Ueberhitzung: waere sie zu streng, waere die Waffe
+    // unbenutzbar - und ein Test, der nur "ueberhitzt irgendwann" prueft,
+    // bestuende auch dann.
+    let mut app = app_with(precise_config(), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -8.0), 0.0);
+    nimm_waffe(&mut app, shooter, protocol::WeaponId::Kaffeevollautomat);
+    let index = app.world().get::<Loadout>(shooter).unwrap().index;
+
+    for _ in 0..6 {
+        halte_feuer(&mut app, shooter, 0.5);
+        set_input(&mut app, shooter, InputFrame::default());
+        run_s(&mut app, 1.0);
+    }
+
+    let stand = app.world().get::<Loadout>(shooter).unwrap().clone();
+    assert_eq!(
+        stand.heat_lock[index], 0.0,
+        "halbe Sekunde Feuer und eine Sekunde Pause ueberhitzen - so ist die Waffe unbrauchbar"
+    );
+}
+
+#[test]
+fn das_whiteboard_haelt_von_vorn_auf_und_von_hinten_nicht() {
+    let max = GameConfig::default().max_health;
+
+    // Der Schuetze steht im Ursprung und blickt nach -Z, das Ziel 5 m davor.
+    // Blickt das Ziel zurueck (yaw = PI), haelt das Whiteboard; blickt es weg
+    // (yaw = 0), trifft es ungebremst.
+    let messe = |ziel_yaw: f32, mit_schild: bool| {
+        let mut app = app_with(precise_config(), arena());
+        let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+        let target = add_player(
+            &mut app,
+            2,
+            Team::Marketing,
+            Vec3::new(0.0, 0.0, -5.0),
+            ziel_yaw,
+        );
+        if mit_schild {
+            nimm_waffe(&mut app, target, protocol::WeaponId::Whiteboard);
+        }
+        // Das Ziel haelt seine Blickrichtung, sonst dreht es die Bewegung weg.
+        set_input(
+            &mut app,
+            target,
+            InputFrame {
+                yaw: ziel_yaw,
+                ..Default::default()
+            },
+        );
+        halte_feuer(&mut app, shooter, 0.35);
+        max - vitals(&app, target).health
+    };
+
+    let ohne = messe(std::f32::consts::PI, false);
+    let von_vorn = messe(std::f32::consts::PI, true);
+    let von_hinten = messe(0.0, true);
+
+    assert!(ohne > 0, "ohne Schild kam gar kein Schaden an - der Test misst nichts");
+    assert!(
+        von_vorn < ohne,
+        "das Whiteboard haelt nichts ab: {von_vorn} statt weniger als {ohne}"
+    );
+    assert!(von_vorn > 0, "das Whiteboard macht unverwundbar");
+    assert!(
+        von_hinten >= ohne,
+        "das Whiteboard schuetzt auch den Ruecken: {von_hinten} gegen {ohne} ohne Schild"
+    );
+}
+
+#[test]
+fn das_whiteboard_schiesst_nicht() {
+    let mut app = app_with(precise_config(), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+    nimm_waffe(&mut app, shooter, protocol::WeaponId::Whiteboard);
+
+    let events = halte_feuer(&mut app, shooter, 1.5);
+
+    assert!(
+        !events.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
+        "das Whiteboard hat geschossen"
+    );
+    assert_eq!(
+        vitals(&app, target).health,
+        app.world().resource::<Config>().max_health,
+        "das Whiteboard hat Schaden gemacht"
     );
 }
 
@@ -1675,3 +1988,4 @@ fn oefter_senden_macht_nicht_schneller() {
         "Vielsender kam {strecke_f:.2} m weit, ehrlicher Sender nur {strecke_e:.2} m"
     );
 }
+

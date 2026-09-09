@@ -47,11 +47,67 @@ fn aabb_hat_min_und_max_als_arrays() {
 #[test]
 fn default_config_beschreibt_jede_waffe() {
     let config = GameConfig::default();
-    for id in [WeaponId::Textmarker, WeaponId::Locher] {
+    for id in [
+        WeaponId::Textmarker,
+        WeaponId::Locher,
+        WeaponId::Email,
+        WeaponId::Kaffeevollautomat,
+        WeaponId::Whiteboard,
+    ] {
         let weapon = config.weapon(id);
-        assert!(weapon.pellets >= 1);
-        assert!(weapon.mag_size > 0);
-        assert!(weapon.falloff_start <= weapon.range);
+        assert!(!weapon.name.is_empty(), "{id:?} hat keinen Namen");
+
+        match weapon.kind {
+            WeaponKind::Hitscan {
+                pellets,
+                range,
+                falloff_start,
+                falloff_min_factor,
+                ..
+            } => {
+                assert!(pellets >= 1, "{id:?}: kein Projektil je Schuss");
+                assert!(falloff_start <= range, "{id:?}: Abfall beginnt hinter der Reichweite");
+                assert!(
+                    (0.0..=1.0).contains(&falloff_min_factor),
+                    "{id:?}: Abfallfaktor ausserhalb 0..1"
+                );
+                assert!(weapon.damage > 0, "{id:?}: Hitscan ohne Schaden");
+            }
+            WeaponKind::Projectile {
+                speed,
+                fuse,
+                splash_radius,
+                splash_damage,
+                ..
+            } => {
+                assert!(speed > 0.0, "{id:?}: Geschoss ohne Geschwindigkeit");
+                assert!(fuse > 0.0, "{id:?}: Geschoss ohne Zuendzeit - flieg ewig");
+                assert!(splash_radius > 0.0 && splash_damage > 0, "{id:?}: Umkreis wirkungslos");
+            }
+            WeaponKind::Shield { block, arc_deg } => {
+                assert!((0.0..1.0).contains(&block), "{id:?}: ein Schild darf nicht alles abhalten");
+                assert!(arc_deg > 0.0 && arc_deg < 180.0, "{id:?}: Sektor unsinnig");
+            }
+        }
+
+        match weapon.ammo {
+            Ammo::Magazine { mag_size, reload_time } => {
+                assert!(mag_size > 0, "{id:?}: leeres Magazin");
+                assert!(reload_time > 0.0, "{id:?}: Nachladen ohne Zeit");
+                assert!(weapon.mag_size() == mag_size);
+            }
+            Ammo::Heat { per_shot, cool, lock } => {
+                assert!(per_shot > 0.0 && per_shot <= 1.0, "{id:?}: Hitze je Schuss unsinnig");
+                assert!(cool > 0.0, "{id:?}: kuehlt nie ab");
+                assert!(lock > 0.0, "{id:?}: Ueberhitzen ohne Folgen");
+                // Erst nach mehreren Schuessen ueberhitzen, sonst ist es kein
+                // Dauerfeuer, sondern ein Einzelschuss mit Zwangspause.
+                assert!(per_shot <= 0.2, "{id:?}: nach fuenf Schuss ueberhitzt");
+            }
+            Ammo::None => {
+                assert!(!weapon.schiesst(), "{id:?}: schiesst, hat aber keine Munition");
+            }
+        }
     }
     // Slots müssen eindeutig sein, sonst wählt die Zifferntaste zufällig.
     let mut slots: Vec<u8> = config.weapons.iter().map(|w| w.slot).collect();
@@ -74,6 +130,8 @@ fn localstate_traegt_die_grundlage_der_vorhersage() {
         heal_cooldown_remaining: 0.0,
         respawn_remaining: 0.0,
         on_ground: true,
+        heat: 0.4,
+        heat_lock: 0.0,
         vel_y: -2.5,
         dash_timer: 0.12,
         dash_dir_x: 1.0,
@@ -87,6 +145,8 @@ fn localstate_traegt_die_grundlage_der_vorhersage() {
         "dash_timer",
         "dash_dir_x",
         "dash_dir_z",
+        "heat",
+        "heat_lock",
     ] {
         assert!(json.get(feld).is_some(), "Feld {feld} fehlt im JSON");
     }

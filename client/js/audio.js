@@ -134,9 +134,16 @@ export class Audio {
           // Kamera, und ein Klang, der im Kopf herumwandert, wirkt falsch.
           const pos = d.shooter === selfId ? null : d.tracers[0]?.from;
           if (d.weapon === "Locher") this._shotLocher(pos);
+          else if (d.weapon === "Kaffeevollautomat") this._shotKaffee(pos);
           else this._shotTextmarker(pos);
           break;
         }
+        case "Launched":
+          this._wurf(d.shooter === selfId ? null : d.pos);
+          break;
+        case "Burst":
+          this._burst(d.pos);
+          break;
         case "Hit":
           if (d.attacker === selfId) this._hitmarker();
           if (d.target === selfId) this._tookDamage();
@@ -298,6 +305,33 @@ export class Audio {
     this._noise({ dur: 0.09, peak: 0.34, type: "bandpass", freq: 1600, q: 1.1, dest });
     this._tone({ type: "sine", from: 120, to: 55, dur: 0.16, peak: 0.4, dest });
     this._tone({ type: "triangle", from: 2400, to: 1800, dur: 0.05, peak: 0.06, dest });
+  }
+
+  /**
+   * Kaffeevollautomat: Dampf und Rattern.
+   *
+   * Leiser als die anderen Schuesse, und das ist Absicht: bei sechzehn Schuss
+   * je Sekunde summiert sich alles, was einzeln passend klingt, zu Krach.
+   */
+  _shotKaffee(pos) {
+    const dest = this._dest(pos, 0.25);
+    this._noise({ dur: 0.05, peak: 0.09, type: "highpass", freq: 3200, dest });
+    this._tone({ type: "sawtooth", from: 190, to: 130, dur: 0.045, peak: 0.055, dest });
+  }
+
+  /** E-Mail unterwegs: Papier, das durch die Luft geht. */
+  _wurf(pos) {
+    const dest = this._dest(pos, 0.35);
+    this._noise({ dur: 0.22, peak: 0.1, type: "bandpass", freq: 1400, q: 0.6, dest });
+    this._tone({ type: "sine", from: 300, to: 480, dur: 0.18, peak: 0.05, dest });
+  }
+
+  /** E-Mail angekommen: dumpfer Schlag mit Papierrascheln hinterher. */
+  _burst(pos) {
+    const dest = this._dest(pos, 0.8);
+    this._tone({ type: "sine", from: 150, to: 42, dur: 0.42, peak: 0.5, dest });
+    this._noise({ dur: 0.3, peak: 0.28, type: "lowpass", freq: 900, dest });
+    this._noise({ dur: 0.35, peak: 0.12, type: "highpass", freq: 2600, dest, delay: 0.05 });
   }
 
   /** Einschlag in der Einrichtung. */

@@ -201,6 +201,11 @@ pub struct LocalState {
     pub respawn_remaining: f32,
     pub on_ground: bool,
 
+    /// Hitze der gehaltenen Waffe, 0.0 bis 1.0. Bei Waffen mit Magazin immer 0.
+    pub heat: f32,
+    /// Restliche Zwangspause nach dem Überhitzen, in Sekunden.
+    pub heat_lock: f32,
+
     // --- Grundlage der Vorhersage ------------------------------------------
     // Der Client setzt seinen vorhergesagten Zustand auf diese Werte zurueck
     // und spielt darauf alle Eingaben ab `ack_seq` erneut. Ohne sie kann er
@@ -267,6 +272,26 @@ pub enum GameEvent {
     },
     /// Die nächste Runde hat begonnen; alle stehen frisch auf Spawnpunkten.
     MatchStarted,
+
+    /// Ein Geschoss ist unterwegs.
+    ///
+    /// Der Client fliegt es selbst weiter: Ort, Geschwindigkeit und die
+    /// Fallbeschleunigung aus der Waffenbeschreibung genügen dafür. Die Bahn
+    /// je Tick zu verschicken wäre dreißigmal je Sekunde eine Position für
+    /// etwas, das sich vollkommen vorhersagbar bewegt.
+    Launched {
+        projectile: u32,
+        shooter: PlayerId,
+        weapon: WeaponId,
+        pos: Vec3,
+        vel: Vec3,
+    },
+    /// Ein Geschoss ist zerplatzt. Beendet den Flug im Client.
+    Burst {
+        projectile: u32,
+        pos: Vec3,
+        radius: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

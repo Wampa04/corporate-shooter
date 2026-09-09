@@ -24,6 +24,11 @@ export class Hud {
     this.healthFill = el("health-fill");
     this.healthValue = el("health-value");
     this.ammoBox = el("ammo");
+    this.heatBox = el("heat");
+    this.heatFill = el("heat-fill");
+    this.heatLabel = el("heat-label");
+    /** Waffenbeschreibung je Id - fuer die Frage, welche Anzeige gilt. */
+    this.weaponById = new Map(config.weapons.map((w) => [w.id, w]));
     this.ammoCurrent = el("ammo-current");
     this.ammoMax = el("ammo-max");
     this.weaponName = el("weapon-name");
@@ -70,10 +75,32 @@ export class Hud {
       this.weaponName.textContent = this.weaponNames.get(self.weapon) ?? "–";
     }
 
-    this.ammoCurrent.textContent = String(local.ammo);
-    this.ammoMax.textContent = String(local.mag_size);
-    this.ammoBox.classList.toggle("empty", local.ammo === 0);
-    this.reloading.classList.toggle("hidden", !local.reloading);
+    // Welche Anzeige gilt, haengt an der Waffe: Magazin zeigt Zahlen,
+    // Ueberhitzung zeigt einen Balken, ein Schild zeigt gar nichts. Die
+    // Entscheidung faellt an der Waffenbeschreibung und nicht daran, ob
+    // `mag_size` zufaellig null ist - das waere dieselbe Aussage aus zweiter
+    // Hand.
+    const weapon = self ? this.weaponById.get(self.weapon) : null;
+    const art = weapon?.ammo?.t ?? "Magazine";
+
+    this.ammoBox.classList.toggle("hidden", art !== "Magazine");
+    this.heatBox.classList.toggle("hidden", art !== "Heat");
+
+    if (art === "Magazine") {
+      this.ammoCurrent.textContent = String(local.ammo);
+      this.ammoMax.textContent = String(local.mag_size);
+      this.ammoBox.classList.toggle("empty", local.ammo === 0);
+    } else if (art === "Heat") {
+      const heiss = local.heat_lock > 0;
+      this.heatFill.style.width = `${Math.min(1, local.heat) * 100}%`;
+      this.heatBox.classList.toggle("warm", !heiss && local.heat > 0.6);
+      this.heatBox.classList.toggle("ueberhitzt", heiss);
+      this.heatLabel.textContent = heiss
+        ? `Abkühlen ${local.heat_lock.toFixed(1)} s`
+        : "Betriebstemperatur";
+    }
+
+    this.reloading.classList.toggle("hidden", !local.reloading || art !== "Magazine");
 
     this._cooldown(this.dash, local.dash_cooldown_remaining, this.config.dash_cooldown);
     this._cooldown(this.heal, local.heal_cooldown_remaining, this.config.heal_cooldown);

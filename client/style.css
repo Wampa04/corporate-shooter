@@ -392,3 +392,40 @@ button:disabled { background: var(--line); color: var(--muted); cursor: progress
 #match-end table { margin-bottom: 14px; }
 #match-end .status { text-align: center; margin: 0; }
 #match-end .status b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* --- Hitze ------------------------------------------------------------- */
+
+/* Waffen mit Ueberhitzung zeigen keinen Munitionsstand, sondern wie weit es
+   noch ist. Die Zahl waere hier nutzlos: entscheidend ist der Abstand zur
+   Zwangspause, nicht ein Zaehler. */
+#heat { margin-top: 4px; text-align: right; }
+
+#heat .heat-bar {
+  width: 132px;
+  height: 9px;
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+#heat .heat-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ok);
+  transition: width 60ms linear, background-color 160ms linear;
+}
+
+#heat.warm .heat-bar i { background: #e0a33c; }
+#heat.ueberhitzt .heat-bar i { background: var(--danger); }
+
+#heat #heat-label {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+}
+
+#heat.ueberhitzt #heat-label { color: var(--danger); }

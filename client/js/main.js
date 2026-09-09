@@ -129,6 +129,12 @@ function start(connection, welcome, prediction) {
   // haengende Waffenmodell nicht gezeichnet.
   scene.add(camera);
 
+  /** Fallbeschleunigung eines Wurfgeschosses, aus der Waffenbeschreibung. */
+  const wurfGravitation = (weaponId) => {
+    const w = config.weapons.find((x) => x.id === weaponId);
+    return w?.kind?.t === "Projectile" ? w.kind.d.gravity : 0;
+  };
+
   const players = new PlayerViews(scene, selfId, config.tick_rate);
   const effects = new Effects(scene);
   const input = new InputController(canvas, config.weapons);
@@ -227,6 +233,13 @@ function start(connection, welcome, prediction) {
         if (event.d.shooter === selfId) viewmodel.kick(event.d.weapon);
       } else if (event.t === "Hit") {
         effects.addHit(event.d);
+      } else if (event.t === "Launched") {
+        // Die Fallbeschleunigung steht in der Waffenbeschreibung, nicht im
+        // Ereignis: sie aendert sich nie, und der Client hat die
+        // Konfiguration seit dem Beitritt.
+        effects.addLaunch(event.d, wurfGravitation(event.d.weapon));
+      } else if (event.t === "Burst") {
+        effects.addBurst(event.d);
       } else if (event.t === "Spawned" && event.d.id === selfId && self) {
         // Nach dem Wiedereinstieg dorthin blicken, wohin der Spawnpunkt zeigt.
         input.setLook(self.yaw, 0);
