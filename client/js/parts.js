@@ -54,14 +54,21 @@ export function part(group, { w, h, d, color, x = 0, y = 0, z = 0, rx = 0, ry = 
   return mesh;
 }
 
-/** Eine Reihe schmaler Rippen: Griffriffelung, Pumpvorderschaft, Feder. */
-export function ribs(group, { n, from, pitch, w, h, d, color, x = 0, y = 0, axis = "z" }) {
+/**
+ * Eine Reihe schmaler Rippen: Griffriffelung, Pumpvorderschaft, Feder.
+ *
+ * Entlang `axis` verteilt; auf den beiden anderen Achsen gilt die angegebene
+ * Lage. Frueher fehlte `z` in der Liste und wurde still verworfen - der
+ * Papierstapel der E-Mail sass deshalb vier Zentimeter neben der Klemme.
+ */
+export function ribs(group, { n, from, pitch, w, h, d, color, x = 0, y = 0, z = 0, axis = "z" }) {
   for (let i = 0; i < n; i++) {
     const at = from + i * pitch;
     part(group, {
-      w, h, d, color, x: axis === "x" ? at : x,
+      w, h, d, color,
+      x: axis === "x" ? at : x,
       y: axis === "y" ? at : y,
-      z: axis === "z" ? at : 0,
+      z: axis === "z" ? at : z,
     });
   }
 }
