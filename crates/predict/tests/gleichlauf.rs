@@ -56,7 +56,11 @@ fn treppe(i: u32) -> (f32, f32, f32, u8) {
 /// und die Spielfeldgrenze.
 fn wand(i: u32) -> (f32, f32, f32, u8) {
     let b = if i % 80 == 0 { buttons::JUMP } else { 0 };
-    if i % 200 < 100 { (-1.0, 0.0, 0.0, b) } else { (0.0, 1.0, 0.0, b) }
+    if i % 200 < 100 {
+        (-1.0, 0.0, 0.0, b)
+    } else {
+        (0.0, 1.0, 0.0, b)
+    }
 }
 
 /// Durch den Durchgang in den Ostflügel und dort in die Räume.
@@ -68,10 +72,26 @@ fn fluegel(i: u32) -> (f32, f32, f32, u8) {
 
 pub fn laeufe() -> Vec<Lauf> {
     vec![
-        Lauf { name: "wandern", start: [-7.0, 0.0, -3.0], muster: wandern },
-        Lauf { name: "treppe", start: [9.8, 0.0, 0.5], muster: treppe },
-        Lauf { name: "wand", start: [-18.0, 0.0, -4.3], muster: wand },
-        Lauf { name: "fluegel", start: [17.0, 0.0, -2.5], muster: fluegel },
+        Lauf {
+            name: "wandern",
+            start: [-7.0, 0.0, -3.0],
+            muster: wandern,
+        },
+        Lauf {
+            name: "treppe",
+            start: [9.8, 0.0, 0.5],
+            muster: treppe,
+        },
+        Lauf {
+            name: "wand",
+            start: [-18.0, 0.0, -4.3],
+            muster: wand,
+        },
+        Lauf {
+            name: "fluegel",
+            start: [17.0, 0.0, -2.5],
+            muster: fluegel,
+        },
     ]
 }
 
@@ -80,11 +100,19 @@ pub const TICKS: u32 = 400;
 /// Der volle Zustand als Bitmuster - verlustfrei über die Sprachgrenze.
 fn zustand_bits(s: &MoveState) -> Vec<String> {
     [
-        s.pos.x, s.pos.y, s.pos.z,
-        s.vel.x, s.vel.y, s.vel.z,
-        s.yaw, s.pitch,
+        s.pos.x,
+        s.pos.y,
+        s.pos.z,
+        s.vel.x,
+        s.vel.y,
+        s.vel.z,
+        s.yaw,
+        s.pitch,
         if s.on_ground { 1.0 } else { 0.0 },
-        s.dash_timer, s.dash_dir.x, s.dash_dir.z, s.dash_cooldown,
+        s.dash_timer,
+        s.dash_dir.x,
+        s.dash_dir.z,
+        s.dash_cooldown,
     ]
     .iter()
     .map(|v| v.to_bits().to_string())
@@ -139,18 +167,18 @@ fn rust_bahn_aufzeichnen() {
 
             // Den vollen Zustand mitschreiben: das Node-Skript setzt darauf
             // auf, statt die ganze Bahn am Stück nachzurechnen.
-            bahn.push(format!(
-                "{} {}",
-                lauf.name,
-                zustand_bits(&state).join(" ")
-            ));
+            bahn.push(format!("{} {}", lauf.name, zustand_bits(&state).join(" ")));
             // Als Bitmuster: JavaScript rechnet `Math.sin` in f64, Rust in f32.
             // Berechnete man die Folge doppelt, vergliche man am Ende die
             // Sinusimplementierungen statt der Bewegung - genau daran ist der
             // erste Versuch gescheitert.
             eingaben.push(format!(
                 "{} {} {} {} {}",
-                lauf.start.iter().map(|v| v.to_bits().to_string()).collect::<Vec<_>>().join(","),
+                lauf.start
+                    .iter()
+                    .map(|v| v.to_bits().to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
                 move_x.to_bits(),
                 move_z.to_bits(),
                 yaw.to_bits(),

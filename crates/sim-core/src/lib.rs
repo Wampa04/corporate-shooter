@@ -13,7 +13,6 @@
 
 use protocol::{Aabb, GameConfig, InputFrame, Vec3, buttons};
 
-
 /// Maximale Blickneigung. Knapp unter 90 Grad, damit die Blickrichtung nie
 /// exakt senkrecht wird und die Yaw-Komponente verschwindet.
 const MAX_PITCH: f32 = 1.55;
@@ -227,7 +226,6 @@ pub fn move_with_steps(
         direct
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Ein Simulationsschritt

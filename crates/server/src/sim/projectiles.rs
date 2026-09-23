@@ -51,12 +51,7 @@ pub struct Neu {
     pub vel: Vec3,
 }
 
-pub fn spawn(
-    commands: &mut Commands,
-    naechste: &mut NaechsteId,
-    events: &mut EventLog,
-    neu: Neu,
-) {
+pub fn spawn(commands: &mut Commands, naechste: &mut NaechsteId, events: &mut EventLog, neu: Neu) {
     naechste.0 = naechste.0.wrapping_add(1);
     let id = naechste.0;
 
@@ -156,7 +151,11 @@ pub fn advance(
         }
 
         let zerplatzt = getroffen.is_some() || treffer < laenge || p.fuse <= 0.0;
-        p.pos = if treffer < laenge { von + richtung * treffer } else { nach };
+        p.pos = if treffer < laenge {
+            von + richtung * treffer
+        } else {
+            nach
+        };
         if !zerplatzt {
             continue;
         }

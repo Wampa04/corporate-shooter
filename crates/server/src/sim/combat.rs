@@ -14,11 +14,11 @@ use protocol::{
 };
 
 use super::history::History;
-use super::projectiles;
 use super::movement::{look_direction, player_aabb, player_half_extents};
+use super::projectiles;
 use super::{
-    Body, Config, DamageEvent, EventLog, Inputs, Level, Loadout, PendingDamage, Player, Rand,
-    Tick, Vitals,
+    Body, Config, DamageEvent, EventLog, Inputs, Level, Loadout, PendingDamage, Player, Rand, Tick,
+    Vitals,
 };
 use crate::rng::Rng;
 
@@ -212,7 +212,10 @@ pub fn fire_weapons(
         // enden gleich: entweder es faellt ein Schuss, oder der Tick ist fuer
         // diesen Spieler vorbei.
         match weapon.ammo {
-            Ammo::Magazine { mag_size, reload_time } => {
+            Ammo::Magazine {
+                mag_size,
+                reload_time,
+            } => {
                 if (wants_reload || (wants_fire && loadout.ammo[index] == 0))
                     && loadout.ammo[index] < mag_size
                 {
@@ -246,20 +249,18 @@ pub fn fire_weapons(
         // Lag-Kompensation: die Gegner dorthin zurücksetzen, wo der Schütze
         // sie gesehen hat. Nur die Gegner - die eigene Position ist aktuell
         // und bleibt es, und Geometrie bewegt sich ohnehin nicht.
-        let zurueckgespult = history
-            .at(tick.0, inputs.current.view_tick)
-            .map(|damals| {
-                let mut kopie = targets.clone();
-                for ziel in &mut kopie {
-                    if let Some((_, pos)) = damals.iter().find(|(id, _)| *id == ziel.id) {
-                        ziel.aabb = player_aabb(*pos, half);
-                    }
-                    // Wer damals noch nicht dabei war, bleibt an seinem
-                    // aktuellen Platz - das ist der einzige Stand, den es von
-                    // ihm gibt.
+        let zurueckgespult = history.at(tick.0, inputs.current.view_tick).map(|damals| {
+            let mut kopie = targets.clone();
+            for ziel in &mut kopie {
+                if let Some((_, pos)) = damals.iter().find(|(id, _)| *id == ziel.id) {
+                    ziel.aabb = player_aabb(*pos, half);
                 }
-                kopie
-            });
+                // Wer damals noch nicht dabei war, bleibt an seinem
+                // aktuellen Platz - das ist der einzige Stand, den es von
+                // ihm gibt.
+            }
+            kopie
+        });
         let ziele: &[Target] = zurueckgespult.as_deref().unwrap_or(&targets);
 
         match weapon.kind {

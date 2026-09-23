@@ -14,8 +14,8 @@ mod tests;
 pub mod combat;
 pub mod history;
 pub mod matchstate;
-pub mod projectiles;
 pub mod movement;
+pub mod projectiles;
 pub mod skills;
 pub mod spawn;
 

@@ -594,10 +594,7 @@ async fn server_weist_ueberzaehlige_spieler_ab() {
             .expect("WebSocket-Verbindung fehlgeschlagen");
     match expect_message(&mut socket).await {
         ServerMessage::Rejected { reason } => {
-            assert!(
-                reason.contains("voll"),
-                "unerwartete Begruendung: {reason}"
-            );
+            assert!(reason.contains("voll"), "unerwartete Begruendung: {reason}");
         }
         andere => panic!("dritter Spieler wurde nicht abgewiesen: {andere:?}"),
     }
@@ -758,6 +755,11 @@ async fn runde_zu_ende() {
     // Alle stehen wieder frisch auf dem Feld.
     for p in &hunter.players {
         assert!(p.alive, "{} lebt nach dem Neustart nicht", p.name);
-        assert_eq!((p.kills, p.deaths), (0, 0), "{}: Statistik nicht genullt", p.name);
+        assert_eq!(
+            (p.kills, p.deaths),
+            (0, 0),
+            "{}: Statistik nicht genullt",
+            p.name
+        );
     }
 }

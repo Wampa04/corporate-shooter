@@ -111,11 +111,7 @@ impl History {
 /// Läuft nach der Bewegung und vor der Trefferauswertung: aufgezeichnet wird
 /// genau das, was auch im Snapshot dieses Ticks steht - und nur darauf kann
 /// sich der Client später berufen.
-pub fn record(
-    tick: Res<Tick>,
-    mut history: ResMut<History>,
-    q: Query<(&Player, &Body, &Vitals)>,
-) {
+pub fn record(tick: Res<Tick>, mut history: ResMut<History>, q: Query<(&Player, &Body, &Vitals)>) {
     let positions = q
         .iter()
         .filter(|(_, _, vitals)| vitals.alive)

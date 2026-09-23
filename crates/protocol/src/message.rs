@@ -88,7 +88,6 @@ impl Default for MatchState {
 }
 
 impl MatchState {
-
     pub fn score(&self, team: Team) -> u32 {
         match team {
             Team::Marketing => self.score_marketing,

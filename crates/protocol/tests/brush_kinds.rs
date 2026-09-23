@@ -104,7 +104,10 @@ fn dekoration_haelt_weder_weg_noch_schuss_auf() {
                 assert!(kind.blocks_movement() && !kind.blocks_bullets(), "{kind:?}");
             }
             Solidity::Decor => {
-                assert!(!kind.blocks_movement() && !kind.blocks_bullets(), "{kind:?}");
+                assert!(
+                    !kind.blocks_movement() && !kind.blocks_bullets(),
+                    "{kind:?}"
+                );
             }
         }
     }

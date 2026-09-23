@@ -66,7 +66,10 @@ fn default_config_beschreibt_jede_waffe() {
                 ..
             } => {
                 assert!(pellets >= 1, "{id:?}: kein Projektil je Schuss");
-                assert!(falloff_start <= range, "{id:?}: Abfall beginnt hinter der Reichweite");
+                assert!(
+                    falloff_start <= range,
+                    "{id:?}: Abfall beginnt hinter der Reichweite"
+                );
                 assert!(
                     (0.0..=1.0).contains(&falloff_min_factor),
                     "{id:?}: Abfallfaktor ausserhalb 0..1"
@@ -82,22 +85,38 @@ fn default_config_beschreibt_jede_waffe() {
             } => {
                 assert!(speed > 0.0, "{id:?}: Geschoss ohne Geschwindigkeit");
                 assert!(fuse > 0.0, "{id:?}: Geschoss ohne Zuendzeit - flieg ewig");
-                assert!(splash_radius > 0.0 && splash_damage > 0, "{id:?}: Umkreis wirkungslos");
+                assert!(
+                    splash_radius > 0.0 && splash_damage > 0,
+                    "{id:?}: Umkreis wirkungslos"
+                );
             }
             WeaponKind::Shield { block, arc_deg } => {
-                assert!((0.0..1.0).contains(&block), "{id:?}: ein Schild darf nicht alles abhalten");
+                assert!(
+                    (0.0..1.0).contains(&block),
+                    "{id:?}: ein Schild darf nicht alles abhalten"
+                );
                 assert!(arc_deg > 0.0 && arc_deg < 180.0, "{id:?}: Sektor unsinnig");
             }
         }
 
         match weapon.ammo {
-            Ammo::Magazine { mag_size, reload_time } => {
+            Ammo::Magazine {
+                mag_size,
+                reload_time,
+            } => {
                 assert!(mag_size > 0, "{id:?}: leeres Magazin");
                 assert!(reload_time > 0.0, "{id:?}: Nachladen ohne Zeit");
                 assert!(weapon.mag_size() == mag_size);
             }
-            Ammo::Heat { per_shot, cool, lock } => {
-                assert!(per_shot > 0.0 && per_shot <= 1.0, "{id:?}: Hitze je Schuss unsinnig");
+            Ammo::Heat {
+                per_shot,
+                cool,
+                lock,
+            } => {
+                assert!(
+                    per_shot > 0.0 && per_shot <= 1.0,
+                    "{id:?}: Hitze je Schuss unsinnig"
+                );
                 assert!(cool > 0.0, "{id:?}: kuehlt nie ab");
                 assert!(lock > 0.0, "{id:?}: Ueberhitzen ohne Folgen");
                 // Erst nach mehreren Schuessen ueberhitzen, sonst ist es kein
@@ -105,7 +124,10 @@ fn default_config_beschreibt_jede_waffe() {
                 assert!(per_shot <= 0.2, "{id:?}: nach fuenf Schuss ueberhitzt");
             }
             Ammo::None => {
-                assert!(!weapon.schiesst(), "{id:?}: schiesst, hat aber keine Munition");
+                assert!(
+                    !weapon.schiesst(),
+                    "{id:?}: schiesst, hat aber keine Munition"
+                );
             }
         }
     }
@@ -188,7 +210,10 @@ fn snapshot_traegt_den_rundenstand_unter_match() {
     assert_eq!(stand["score_marketing"], 12);
     // Die Punktegrenze steht bewusst *nicht* im Snapshot - sie kommt beim
     // Beitritt mit der Konfiguration und aendert sich nie.
-    assert!(stand.get("score_limit").is_none(), "Punktegrenze doppelt uebertragen");
+    assert!(
+        stand.get("score_limit").is_none(),
+        "Punktegrenze doppelt uebertragen"
+    );
 }
 
 #[test]

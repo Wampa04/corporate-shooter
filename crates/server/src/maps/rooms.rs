@@ -16,7 +16,15 @@ use protocol::BrushKind;
 /// Aussenwand, Boden und Decke des Altbaus.
 pub fn shell(b: &mut Build) {
     let t = WALL_THICKNESS;
-    b.cuboid(BrushKind::Floor, -HALF_X, -HALF_Z, HALF_X, HALF_Z, -0.5, 0.0);
+    b.cuboid(
+        BrushKind::Floor,
+        -HALF_X,
+        -HALF_Z,
+        HALF_X,
+        HALF_Z,
+        -0.5,
+        0.0,
+    );
     b.cuboid(
         BrushKind::Ceiling,
         -HALF_X,
@@ -70,7 +78,15 @@ pub fn shell(b: &mut Build) {
         CEILING,
     );
     for z in [OPENING_Z0, OPENING_Z1] {
-        b.cuboid(BrushKind::Trim, HALF_X - 0.02, z - 0.08, HALF_X + t + 0.02, z + 0.08, 0.0, 2.6);
+        b.cuboid(
+            BrushKind::Trim,
+            HALF_X - 0.02,
+            z - 0.08,
+            HALF_X + t + 0.02,
+            z + 0.08,
+            0.0,
+            2.6,
+        );
     }
 }
 
@@ -152,7 +168,15 @@ pub fn open_plan(b: &mut Build) {
 fn paper_stack(b: &mut Build, cx: f32, cz: f32, h: f32) {
     for k in 0..3 {
         let x = cx - 0.9 + k as f32 * 0.9;
-        b.cuboid(BrushKind::Paper, x, cz - 0.16, x + 0.32, cz + 0.16, h, h + 0.09);
+        b.cuboid(
+            BrushKind::Paper,
+            x,
+            cz - 0.16,
+            x + 0.32,
+            cz + 0.16,
+            h,
+            h + 0.09,
+        );
     }
 }
 
@@ -445,7 +469,15 @@ pub fn single_office(b: &mut Build, w: f32, d: f32, style: OfficeStyle) {
 pub fn meeting_room(b: &mut Build, w: f32, d: f32) {
     let (cx, cz) = (w * 0.5 + 0.3, 0.0);
 
-    b.cuboid(BrushKind::Desk, cx - 1.8, cz - 0.7, cx + 1.8, cz + 0.7, 0.0, DESK_TOP);
+    b.cuboid(
+        BrushKind::Desk,
+        cx - 1.8,
+        cz - 0.7,
+        cx + 1.8,
+        cz + 0.7,
+        0.0,
+        DESK_TOP,
+    );
     worktop(b, cx - 1.8, cz - 0.7, cx + 1.8, cz + 0.7, DESK_TOP);
 
     // Acht Stühle ringsum, jeder zum Tisch gedreht. Genau dafür gibt es die
@@ -461,11 +493,7 @@ pub fn meeting_room(b: &mut Build, w: f32, d: f32) {
         (-2.35, 0.0, Dir::East),
         (2.35, 0.0, Dir::West),
     ] {
-        chair_at(
-            b,
-            At::at(cx + dx, cz + dz).facing(dir),
-            ChairStyle::Visitor,
-        );
+        chair_at(b, At::at(cx + dx, cz + dz).facing(dir), ChairStyle::Visitor);
     }
 
     // Unterlagen und Tassen auf dem Tisch.
@@ -593,11 +621,24 @@ pub fn east_wing(b: &mut Build) {
     );
     b.place(
         At::at(CORRIDOR_EAST, (OFFICE_B_Z0 + OFFICE_B_Z1) * 0.5),
-        |b| single_office(b, tiefe, OFFICE_B_Z1 - OFFICE_B_Z0, OfficeStyle::Besprechung),
+        |b| {
+            single_office(
+                b,
+                tiefe,
+                OFFICE_B_Z1 - OFFICE_B_Z0,
+                OfficeStyle::Besprechung,
+            )
+        },
     );
 
     // Flur: Leitstreifen, Leuchten, Sockelleisten, Beschilderung.
-    floor_stripe(b, HALF_X + 1.2, WING_SOUTH + 0.4, HALF_X + 1.5, WING_NORTH - 0.4);
+    floor_stripe(
+        b,
+        HALF_X + 1.2,
+        WING_SOUTH + 0.4,
+        HALF_X + 1.5,
+        WING_NORTH - 0.4,
+    );
     let mut z = WING_SOUTH + 2.0;
     while z < WING_NORTH {
         light_panel(b, HALF_X + 1.3, z);
@@ -626,7 +667,11 @@ pub fn east_wing(b: &mut Build) {
     // genau im Durchgang und hat den Anbau unbetretbar gemacht.
     cabinet(b, HALF_X + 0.3, OPENING_Z1 + 1.7, 2.4, false, 1.2);
     cabinet(b, HALF_X + 0.3, WING_SOUTH + 1.2, 2.4, false, 1.9);
-    plant_at(b, At::at(WING_EAST - 0.6, WING_SOUTH + 0.7), PlantSize::Yucca);
+    plant_at(
+        b,
+        At::at(WING_EAST - 0.6, WING_SOUTH + 0.7),
+        PlantSize::Yucca,
+    );
 
     // Hausfarbe an der Aussenwand des Flügels.
     accent_panel(b, WING_EAST - 0.05, 0.0, 8.0, false, 1.15, 1.75);

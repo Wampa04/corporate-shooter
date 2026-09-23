@@ -182,7 +182,10 @@ fn main() -> anyhow::Result<()> {
         (1..=120).contains(&args.tick_rate),
         "--tick-rate muss zwischen 1 und 120 liegen"
     );
-    anyhow::ensure!(args.score_limit >= 1, "--score-limit muss mindestens 1 sein");
+    anyhow::ensure!(
+        args.score_limit >= 1,
+        "--score-limit muss mindestens 1 sein"
+    );
     anyhow::ensure!(
         args.intermission >= 0.0 && args.intermission.is_finite(),
         "--intermission muss eine nicht-negative Zahl sein"

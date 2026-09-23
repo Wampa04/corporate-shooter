@@ -980,7 +980,8 @@ fn spawnpunkte_stecken_nicht_in_der_geometrie() {
     // steckt.
     let config = GameConfig::default();
     let map = crate::maps::grossraumbuero();
-    let half = crate::sim::movement::player_half_extents(config.player_radius, config.player_height);
+    let half =
+        crate::sim::movement::player_half_extents(config.player_radius, config.player_height);
 
     for (i, spawn) in map.spawns.iter().enumerate() {
         // Einen Millimeter kleiner: wer exakt auf einer Kante steht - etwa mit
@@ -1079,12 +1080,20 @@ fn die_email_braucht_zeit_bis_zum_ziel() {
     // vorhalten, und wer getroffen wird, kann ausweichen.
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
-    let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -12.0), 0.0);
+    let target = add_player(
+        &mut app,
+        2,
+        Team::Marketing,
+        Vec3::new(0.0, 0.0, -12.0),
+        0.0,
+    );
     nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
 
     let sofort = ein_schuss(&mut app, shooter, 1);
     assert!(
-        sofort.iter().any(|e| matches!(e, GameEvent::Launched { .. })),
+        sofort
+            .iter()
+            .any(|e| matches!(e, GameEvent::Launched { .. })),
         "kein Abschuss gemeldet"
     );
     assert!(
@@ -1118,8 +1127,20 @@ fn der_umkreisschaden_faellt_mit_dem_abstand() {
     // Unterschied kam allein vom Direkttreffer.
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
-    let nah = add_player(&mut app, 2, Team::Marketing, Vec3::new(1.0, 0.0, -13.0), 0.0);
-    let fern = add_player(&mut app, 3, Team::Marketing, Vec3::new(2.9, 0.0, -13.0), 0.0);
+    let nah = add_player(
+        &mut app,
+        2,
+        Team::Marketing,
+        Vec3::new(1.0, 0.0, -13.0),
+        0.0,
+    );
+    let fern = add_player(
+        &mut app,
+        3,
+        Team::Marketing,
+        Vec3::new(2.9, 0.0, -13.0),
+        0.0,
+    );
     nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
 
     let mut events = ein_schuss(&mut app, shooter, 1);
@@ -1166,7 +1187,10 @@ fn der_umkreisschaden_faellt_mit_dem_abstand() {
         abstand(nah),
         abstand(fern)
     );
-    assert!(schaden_nah > 0 && schaden_fern > 0, "nicht beide im Umkreis");
+    assert!(
+        schaden_nah > 0 && schaden_fern > 0,
+        "nicht beide im Umkreis"
+    );
     assert!(
         schaden_fern < schaden_nah,
         "gleicher Schaden nah und fern ({schaden_nah} auf {:.2} m / {schaden_fern} auf {:.2} m) \
@@ -1180,7 +1204,13 @@ fn der_umkreisschaden_faellt_mit_dem_abstand() {
 fn die_email_verschont_das_eigene_team() {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
-    let kollege = add_player(&mut app, 2, Team::Engineering, Vec3::new(0.0, 0.0, -12.0), 0.0);
+    let kollege = add_player(
+        &mut app,
+        2,
+        Team::Engineering,
+        Vec3::new(0.0, 0.0, -12.0),
+        0.0,
+    );
     nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
 
     ein_schuss(&mut app, shooter, 1);
@@ -1211,7 +1241,10 @@ fn die_minigun_ueberhitzt_und_kuehlt_wieder_ab() {
     let scheibe = 0.25;
     while zeit < 4.0 {
         let ev = halte_feuer(&mut app, shooter, scheibe);
-        schuesse += ev.iter().filter(|e| matches!(e, GameEvent::Shot { .. })).count();
+        schuesse += ev
+            .iter()
+            .filter(|e| matches!(e, GameEvent::Shot { .. }))
+            .count();
         zeit += scheibe;
         if app.world().get::<Loadout>(shooter).unwrap().heat_lock[index] > 0.0 {
             break;
@@ -1236,7 +1269,10 @@ fn die_minigun_ueberhitzt_und_kuehlt_wieder_ab() {
     // aus der tatsaechlich verbleibenden Sperre: waere sie kuerzer als ein
     // festes Fenster, praefte der Test ihr Ende statt sie selbst.
     let rest = app.world().get::<Loadout>(shooter).unwrap().heat_lock[index];
-    assert!(rest > 0.3, "die Sperre ist mit {rest} s zu kurz, um sie zu beobachten");
+    assert!(
+        rest > 0.3,
+        "die Sperre ist mit {rest} s zu kurz, um sie zu beobachten"
+    );
     let gesperrt = halte_feuer(&mut app, shooter, rest * 0.6);
     assert!(
         !gesperrt.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
@@ -1248,7 +1284,11 @@ fn die_minigun_ueberhitzt_und_kuehlt_wieder_ab() {
     run_s(&mut app, 4.0);
     let kalt = app.world().get::<Loadout>(shooter).unwrap().clone();
     assert_eq!(kalt.heat_lock[index], 0.0, "die Sperre laeuft nicht ab");
-    assert!(kalt.heat[index] < 0.05, "kuehlt nicht ab: {}", kalt.heat[index]);
+    assert!(
+        kalt.heat[index] < 0.05,
+        "kuehlt nicht ab: {}",
+        kalt.heat[index]
+    );
 
     let wieder = halte_feuer(&mut app, shooter, 0.5);
     assert!(
@@ -1318,7 +1358,10 @@ fn das_whiteboard_haelt_von_vorn_auf_und_von_hinten_nicht() {
     let von_vorn = messe(std::f32::consts::PI, true);
     let von_hinten = messe(0.0, true);
 
-    assert!(ohne > 0, "ohne Schild kam gar kein Schaden an - der Test misst nichts");
+    assert!(
+        ohne > 0,
+        "ohne Schild kam gar kein Schaden an - der Test misst nichts"
+    );
     assert!(
         von_vorn < ohne,
         "das Whiteboard haelt nichts ab: {von_vorn} statt weniger als {ohne}"
@@ -1420,7 +1463,9 @@ fn punktegrenze_beendet_die_runde() {
         stand.remaining
     );
     assert!(
-        events.iter().any(|e| matches!(e, GameEvent::MatchOver { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, GameEvent::MatchOver { .. })),
         "kein MatchOver gemeldet"
     );
 }
@@ -1437,7 +1482,10 @@ fn ein_punkt_unter_der_grenze_laeuft_die_runde_weiter() {
     ein_abschuss(&mut app, shooter);
 
     let stand = runde(&app);
-    assert_eq!(stand.score_engineering, 1, "Punkt nicht oder doppelt gebucht");
+    assert_eq!(
+        stand.score_engineering, 1,
+        "Punkt nicht oder doppelt gebucht"
+    );
     assert_eq!(
         stand.phase,
         protocol::Phase::Running,
@@ -1470,7 +1518,11 @@ fn nach_der_pause_faengt_alles_von_vorn_an() {
         let v = vitals(&app, e);
         assert!(v.alive, "{name} lebt nach dem Neustart nicht");
         assert_eq!(v.health, app.world().resource::<Config>().max_health);
-        assert_eq!((v.kills, v.deaths), (0, 0), "{name}: Statistik nicht genullt");
+        assert_eq!(
+            (v.kills, v.deaths),
+            (0, 0),
+            "{name}: Statistik nicht genullt"
+        );
     }
 }
 
@@ -1563,7 +1615,11 @@ fn gleichzeitiger_wiedereinstieg_belegt_verschiedene_punkte() {
     let mut map = arena();
     map.spawns = (0..8)
         .map(|i| SpawnPoint {
-            pos: Vec3::new(-14.0 + i as f32 * 4.0, 0.0, if i % 2 == 0 { -8.0 } else { 8.0 }),
+            pos: Vec3::new(
+                -14.0 + i as f32 * 4.0,
+                0.0,
+                if i % 2 == 0 { -8.0 } else { 8.0 },
+            ),
             yaw: 0.0,
         })
         .collect();
@@ -1574,7 +1630,11 @@ fn gleichzeitiger_wiedereinstieg_belegt_verschiedene_punkte() {
             add_player(
                 &mut app,
                 i + 1,
-                if i % 2 == 0 { Team::Engineering } else { Team::Marketing },
+                if i % 2 == 0 {
+                    Team::Engineering
+                } else {
+                    Team::Marketing
+                },
                 Vec3::new(i as f32, 0.0, 0.0),
                 0.0,
             )
@@ -1677,7 +1737,10 @@ fn die_beiden_einzelbueros_sind_verschieden_eingerichtet() {
     let besprechung = inventar(2.0, 6.2);
 
     assert!(!akten.is_empty(), "im Aktenbüro steht gar nichts");
-    assert!(!besprechung.is_empty(), "in der Besprechungsecke steht gar nichts");
+    assert!(
+        !besprechung.is_empty(),
+        "in der Besprechungsecke steht gar nichts"
+    );
     assert_ne!(
         akten, besprechung,
         "beide Einzelbüros enthalten genau dasselbe - sie spielen sich gleich"
@@ -1760,13 +1823,7 @@ fn fluegeltreppe_fuehrt_auf_die_chef_etage() {
 fn nachlaufendes_ziel(verzoegerung_ticks: u64) -> (App, Entity, Entity, f32, f32) {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
-    let target = add_player(
-        &mut app,
-        2,
-        Team::Marketing,
-        Vec3::new(0.0, 0.0, -6.0),
-        0.0,
-    );
+    let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -6.0), 0.0);
 
     // Das Ziel laeuft nach rechts (+X), quer zur Schussbahn.
     set_input(
@@ -1952,7 +2009,10 @@ fn bestaetigt_wird_nur_was_simuliert_wurde() {
         inputs.ack_seq,
         super::MAX_BURST
     );
-    assert!(inputs.pending_len() > 0, "der Rest muss in der Warteschlange bleiben");
+    assert!(
+        inputs.pending_len() > 0,
+        "der Rest muss in der Warteschlange bleiben"
+    );
 }
 
 #[test]
@@ -1960,7 +2020,13 @@ fn oefter_senden_macht_nicht_schneller() {
     // Ohne Grenze bewegte sich schneller, wer oefter sendet - der einfachste
     // Cheat ueberhaupt.
     let mut app = app_with(GameConfig::default(), arena());
-    let ehrlich = add_player(&mut app, 1, Team::Engineering, Vec3::new(-5.0, 0.0, 0.0), 0.0);
+    let ehrlich = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(-5.0, 0.0, 0.0),
+        0.0,
+    );
     let flink = add_player(&mut app, 2, Team::Marketing, Vec3::new(5.0, 0.0, 0.0), 0.0);
     app.world_mut().entity_mut(ehrlich).remove::<Held>();
     app.world_mut().entity_mut(flink).remove::<Held>();
@@ -1988,4 +2054,3 @@ fn oefter_senden_macht_nicht_schneller() {
         "Vielsender kam {strecke_f:.2} m weit, ehrlicher Sender nur {strecke_e:.2} m"
     );
 }
-
