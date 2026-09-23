@@ -17,7 +17,7 @@
 
 /** Reihenfolge der Felder im geteilten Speicher, siehe `crates/predict`. */
 const POS_X = 0, POS_Y = 1, POS_Z = 2;
-const VEL_Y = 4;
+const VEL_X = 3, VEL_Y = 4, VEL_Z = 5;
 const YAW = 6, PITCH = 7, ON_GROUND = 8;
 const DASH_TIMER = 9, DASH_DIR_X = 10, DASH_DIR_Z = 11, DASH_COOLDOWN = 12;
 const STATE_FLOATS = 13;
@@ -55,10 +55,8 @@ export class Prediction {
     this.x = instance.exports;
     this._pending = [];
     this._ready = false;
-    // Sicht auf den Zustand erst nach dem Laden anlegen: das Parsen der Karte
-    // belegt Speicher, und waechst der WASM-Speicher, wird jede aeltere Sicht
-    // entkoppelt.
-    this._state = null;
+    /** Zwischengespeicherte Sicht auf den Zustand, siehe `_state`. */
+    this._view = null;
     /** Sichtbarer Rest einer Korrektur, klingt ab. */
     this._fehler = [0, 0, 0];
     /** Vorheriger und aktueller Schritt, zum Zwischenbild-Ausgleich. */
@@ -104,11 +102,6 @@ export class Prediction {
       console.warn("Vorhersage: Karte oder Konfiguration abgelehnt");
       return false;
     }
-    this._state = new Float32Array(
-      this.x.memory.buffer,
-      this.x.state_ptr(),
-      STATE_FLOATS,
-    );
     this._tickDt = 1 / config.tick_rate;
     this._ready = true;
     return true;
@@ -124,8 +117,20 @@ export class Prediction {
     return fn(bytes.length) === 1;
   }
 
-  get ready() {
-    return this._ready;
+  /**
+   * Sicht auf den Zustand im WASM-Speicher.
+   *
+   * Waechst der Speicher, entkoppelt der Browser jede vorher angelegte Sicht:
+   * sie hat dann die Laenge null, Lesen liefert `undefined`, Schreiben geht
+   * still ins Leere. Das Parsen der Karte laesst ihn sicher wachsen, ein
+   * Schritt nach heutigem Stand nicht - aber darauf verlassen muss sich hier
+   * niemand. Die Pruefung kostet einen Vergleich.
+   */
+  get _state() {
+    if (this._view?.buffer !== this.x.memory.buffer) {
+      this._view = new Float32Array(this.x.memory.buffer, this.x.state_ptr(), STATE_FLOATS);
+    }
+    return this._view;
   }
 
   /** Merkt sich eine gesendete Eingabe, bis der Server sie bestaetigt. */
@@ -161,9 +166,9 @@ export class Prediction {
     s[POS_Z] = self.pos[2];
     // Waagerecht wird je Tick neu aus der Eingabe gesetzt, senkrecht
     // integriert - deshalb schickt der Server nur `vel_y`.
-    s[3] = 0;
+    s[VEL_X] = 0;
     s[VEL_Y] = local.vel_y ?? 0;
-    s[5] = 0;
+    s[VEL_Z] = 0;
     s[YAW] = self.yaw;
     s[PITCH] = self.pitch;
     s[ON_GROUND] = local.on_ground ? 1 : 0;
@@ -244,8 +249,7 @@ export class Prediction {
    * noch nicht ausgeblendet ist. Gespielt wird auf der vorhergesagten,
    * gezeigt wird die geglaettete - der Unterschied betraegt hoechstens ein
    * paar Zentimeter und ist nach achtzig Millisekunden weg.
-   */
-  /**
+   *
    * @param {number} dt Zeitschritt dieses Bildes, fuer das Abklingen
    * @param {number} mischung 0..1 - wie weit der naechste Schritt faellig ist
    */
