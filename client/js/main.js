@@ -120,7 +120,16 @@ function start(connection, welcome, prediction) {
 
   renderer.setPixelRatio(stufen[stufe].pixel);
   renderer.shadowMap.enabled = stufen[stufe].schatten;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // Weiche PCF-Schatten gibt es in Three nicht mehr; es nimmt ohnehin diese.
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  // Schatten wirft nur die Karte, und die steht still. Spieler, Waffe und
+  // Effekte werfen keinen. Die Schattenkarte muss deshalb nicht in jedem Bild
+  // neu gerechnet werden - das war der teuerste Einzelposten beim Zeichnen
+  // und der Grund, warum der Grafikregler auf schwachen Rechnern die Schatten
+  // abschaltete. Neu gerechnet wird nur, wenn `needsUpdate` gesetzt ist:
+  // einmal nach dem Aufbau und nach jedem Einschalten.
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
 
   // `buildScene` vermerkt an jedem Netz, ob es werfen *darf*; ob es das
   // gerade tut, entscheidet `setShadowsEnabled`. Deshalb laesst sich jede

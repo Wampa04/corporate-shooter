@@ -193,6 +193,25 @@ const middle = (aabb, axis) => (aabb.min[axis] + aabb.max[axis]) / 2;
  *
  * `shadows` schaltet den Schattenwurf ab - fuer Rechner, denen er zu viel ist.
  */
+/**
+ * Lichtstaerken mit und ohne Schattenwurf.
+ *
+ * An einer Stelle, weil sie zweimal gebraucht werden - beim Aufbau und beim
+ * Umschalten zur Laufzeit. Vorher standen dieselben Zahlen an beiden Stellen,
+ * und eine Anpassung an nur einer haette die Szene nach dem ersten
+ * Umschalten anders aussehen lassen als davor.
+ */
+const LIGHT_INTENSITY = {
+  ambient: { shadows: 0.9, flat: 1.3 },
+  hemisphere: { shadows: 1.0, flat: 1.2 },
+  key: { shadows: 1.5, flat: 0.85 },
+};
+
+function lightIntensity(light, shadows) {
+  const entry = LIGHT_INTENSITY[light];
+  return shadows ? entry.shadows : entry.flat;
+}
+
 export function buildScene(map, { shadows = true } = {}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xaeb7c2);
@@ -209,10 +228,12 @@ export function buildScene(map, { shadows = true } = {}) {
   // dafuer staerker: sonst waescht die Grundhelligkeit genau die Schatten weg,
   // fuer die gerechnet wird. Zu weit herunter darf es aber nicht, sonst
   // erscheint die Hausfarbe auf abgewandten Flaechen dunkelgruen statt hell.
-  scene.add(new THREE.AmbientLight(0xffffff, shadows ? 0.9 : 1.3));
-  scene.add(new THREE.HemisphereLight(0xf4f8ff, 0x8d959f, shadows ? 1.0 : 1.2));
+  scene.add(new THREE.AmbientLight(0xffffff, lightIntensity("ambient", shadows)));
+  scene.add(
+    new THREE.HemisphereLight(0xf4f8ff, 0x8d959f, lightIntensity("hemisphere", shadows)),
+  );
 
-  const key = new THREE.DirectionalLight(0xffffff, shadows ? 1.5 : 0.85);
+  const key = new THREE.DirectionalLight(0xffffff, lightIntensity("key", shadows));
   // Licht und Ziel wandern mit der Mitte des Grundrisses. Der Anbau im Osten
   // reicht bis x = 29; bliebe das Ziel im Ursprung, fiele er aus der
   // Schattenkamera und waere als einziger Raum schattenlos.
@@ -312,15 +333,19 @@ export function buildScene(map, { shadows = true } = {}) {
  */
 export function setShadowsEnabled(scene, renderer, on) {
   renderer.shadowMap.enabled = on;
+  // Die Schattenkarte wird nur auf Anforderung neu gerechnet (siehe
+  // `renderer.shadowMap.autoUpdate` in main.js). Nach dem Einschalten ist sie
+  // leer oder veraltet.
+  renderer.shadowMap.needsUpdate = on;
 
   scene.traverse((object) => {
     if (object.isDirectionalLight && object.shadow) {
       // Nur das Hauptlicht wirft; das Aufhelllicht hat nie geworfen.
       object.castShadow = on && object.userData.isKeyLight === true;
     }
-    if (object.isAmbientLight) object.intensity = on ? 0.9 : 1.3;
-    if (object.isHemisphereLight) object.intensity = on ? 1.0 : 1.2;
-    if (object.userData.isKeyLight) object.intensity = on ? 1.5 : 0.85;
+    if (object.isAmbientLight) object.intensity = lightIntensity("ambient", on);
+    if (object.isHemisphereLight) object.intensity = lightIntensity("hemisphere", on);
+    if (object.userData.isKeyLight) object.intensity = lightIntensity("key", on);
 
     if (object.userData.mayCastShadow !== undefined) {
       object.castShadow = on && object.userData.mayCastShadow;
