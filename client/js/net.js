@@ -138,6 +138,9 @@ export class Connection {
         this._local = null;
         if (!snapshot) break;
         snapshot.recvTime = performance.now();
+        // Einmal je Snapshot statt in jedem Bild: Kamera, HUD, Interpolation
+        // und Vorhersage fragen alle "welcher Spieler ist das?".
+        snapshot.byId = new Map(snapshot.players.map((p) => [p.id, p]));
         this.snapshots.push(snapshot);
         if (this.snapshots.length > SNAPSHOT_HISTORY) this.snapshots.shift();
         this.onSnapshot(snapshot);

@@ -161,8 +161,7 @@ function start(connection, welcome, prediction) {
   audio.onStatus = (text) => hud.notify(text);
 
   /** Eigener Spielerzustand aus dem neuesten Snapshot, falls vorhanden. */
-  const latestSelf = () =>
-    connection.latest?.players.find((p) => p.id === selfId);
+  const latestSelf = () => connection.latest?.byId.get(selfId);
 
   const cameraPos = new THREE.Vector3();
   const targetPos = new THREE.Vector3();
@@ -229,7 +228,7 @@ function start(connection, welcome, prediction) {
   input.requestLock();
 
   connection.onSnapshot = (snapshot) => {
-    const byId = new Map(snapshot.players.map((p) => [p.id, p]));
+    const byId = snapshot.byId;
     const self = byId.get(selfId);
     local = snapshot.local;
 
@@ -369,7 +368,7 @@ function start(connection, welcome, prediction) {
     hud.setFrameTime(dt);
 
     const latest = connection.latest;
-    const self = latest?.players.find((p) => p.id === selfId);
+    const self = latest?.byId.get(selfId);
     if (self) {
       // Die Vorhersage liefert bereits die Position dieses Bildes; die
       // Glaettung ist dann nicht nur ueberfluessig, sondern schaedlich - sie

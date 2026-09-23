@@ -113,12 +113,14 @@ export class PlayerViews {
     this.delayMs = Math.max(INTERPOLATION_MS, (2 * 1000) / tickRate);
     /**
      * @type {Map<number, {group: THREE.Group, figur: object, team: string,
-     *                     lauf: {phase: number, ausschlag: number}}>}
+     *                     name: string, lauf: {phase: number, ausschlag: number}}>}
      *
      * `audio.js` liest diese Karte fuer die Schritte der Mitspieler und
      * verlaesst sich auf `group.position` und `group.visible`.
      */
     this.avatars = new Map();
+    /** Zwischenstand der Interpolation, von Bild zu Bild wiederverwendet. */
+    this._states = new Map();
 
   }
 
@@ -140,7 +142,7 @@ export class PlayerViews {
 
     const target = now - this.delayMs;
     const [older, newer, t] = bracket(snapshots, target);
-    const states = interpolateStates(older, newer, t);
+    const states = interpolateStates(older, newer, t, this._states);
 
     for (const [id, state] of states) {
       if (id === this.selfId) continue;
@@ -148,7 +150,7 @@ export class PlayerViews {
       let entry = this.avatars.get(id);
       // Beim Teamwechsel oder nach einer Namensaenderung neu aufbauen, damit
       // Farbe und Schild stimmen.
-      if (entry && entry.team !== state.team) {
+      if (entry && (entry.team !== state.team || entry.name !== state.name)) {
         this._remove(id);
         entry = undefined;
       }
@@ -158,6 +160,7 @@ export class PlayerViews {
           group: figur.wurzel,
           figur,
           team: state.team,
+          name: state.name,
           lauf: ruhe(),
         };
         this.scene.add(entry.group);
@@ -197,7 +200,9 @@ export class PlayerViews {
     }
 
     // Wer nicht mehr im Snapshot steht, hat das Unternehmen verlassen.
-    for (const id of [...this.avatars.keys()]) {
+    // Loeschen waehrend des Durchlaufs ist bei einer Map erlaubt; die Kopie
+    // der Schluessel je Bild braucht es dafuer nicht.
+    for (const id of this.avatars.keys()) {
       if (!states.has(id)) this._remove(id);
     }
   }
@@ -264,10 +269,14 @@ function bracket(snapshots, target) {
   return [newest, newest, 0];
 }
 
-/** Mischt die Spielerzustaende zweier Snapshots. */
-function interpolateStates(older, newer, t) {
-  const previous = new Map(older.players.map((p) => [p.id, p]));
-  const result = new Map();
+/**
+ * Mischt die Spielerzustaende zweier Snapshots.
+ *
+ * Schreibt in `result`, das der Aufrufer von Bild zu Bild wiederverwendet.
+ */
+function interpolateStates(older, newer, t, result) {
+  const previous = older.byId;
+  result.clear();
 
   for (const state of newer.players) {
     const before = previous.get(state.id);
