@@ -15,6 +15,8 @@
 # Die Rust-Version ist bewusst festgenagelt, damit der Build reproduzierbar
 # bleibt und nicht stillschweigend mit dem naechsten Compiler kippt. Bevy 0.19
 # verlangt mindestens 1.95; beim Anheben von Bevy ist hier nachzuziehen.
+#
+# Muss mit `rust-toolchain.toml` uebereinstimmen - die CI prueft das.
 ARG RUST_VERSION=1.98
 ARG DEBIAN_RELEASE=bookworm
 
@@ -52,12 +54,12 @@ FROM chef AS builder
 # Erst nur die Abhaengigkeiten. Diese Schicht bleibt gueltig, solange sich
 # keine Abhaengigkeit aendert - unabhaengig davon, was am eigenen Code passiert.
 COPY --from=planner /build/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json
 
 # Dann der eigene Code.
 COPY . .
 RUN rm -f rust-toolchain.toml \
- && cargo build --release --bin server \
+ && cargo build --release --locked --bin server \
  && strip target/release/server
 
 # Das Vorhersagemodul frisch uebersetzen und ueber die eingecheckte Fassung
@@ -65,7 +67,7 @@ RUN rm -f rust-toolchain.toml \
 # WASM-Werkzeugkette funktioniert; im Bild soll aber garantiert der Stand
 # stecken, der zu diesem Server gehoert.
 RUN rustup target add wasm32-unknown-unknown \
- && cargo build -p predict --target wasm32-unknown-unknown --profile wasm \
+ && cargo build --locked -p predict --target wasm32-unknown-unknown --profile wasm \
  && cp target/wasm32-unknown-unknown/wasm/predict.wasm client/vendor/predict.wasm
 
 # ---------------------------------------------------------------------------

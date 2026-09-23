@@ -28,7 +28,61 @@ concurrency:
 env:
   IMAGE: ghcr.io/${{ github.repository }}
 
+# Standardmaessig darf der Token nur lesen. Wer mehr braucht (das Image in die
+# Registry schieben), sagt es in seinem Job selbst.
+permissions:
+  contents: read
+
 jobs:
+  lint:
+    name: Format und Lints
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Quelltext auschecken
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Cargo-Verzeichnisse zwischenspeichern
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-clippy-
+
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+      # Warnungen sind Fehler: eine Warnung, die niemand behebt, gewoehnt nur
+      # daran, Warnungen zu ueberlesen.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Clippy fuer das WASM-Modul
+        run: cargo clippy -p predict --target wasm32-unknown-unknown --locked -- -D warnings
+
+      # Entwicklung und CI nehmen die Fassung aus rust-toolchain.toml, das
+      # Dockerfile hat seine eigene. Laufen die beiden auseinander, baut das
+      # Image mit einem anderen Compiler als der, mit dem getestet wurde.
+      - name: Rust-Version in Dockerfile und rust-toolchain.toml gleich
+        run: |
+          toolchain=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          docker=$(sed -n 's/^ARG RUST_VERSION=//p' Dockerfile)
+          echo "rust-toolchain.toml: $toolchain, Dockerfile: $docker"
+          if [ "$toolchain" != "$docker" ]; then
+            echo "::error::Rust-Version weicht ab: rust-toolchain.toml $toolchain, Dockerfile $docker"
+            exit 1
+          fi
+
+      - name: Pruefsummen der mitgelieferten Bibliotheken
+        working-directory: client/vendor
+        run: sha256sum --check --strict SHA256SUMS
+
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -36,19 +90,19 @@ jobs:
 
     steps:
       - name: Quelltext auschecken
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Der groesste Posten sind die Abhaengigkeiten: solange sich Cargo.lock
       # nicht aendert, muss Bevy nicht neu uebersetzt werden.
       - name: Cargo-Verzeichnisse zwischenspeichern
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -57,6 +111,11 @@ jobs:
       # der Arbeitsplatz - und als das Image, das gleich daraus entsteht.
       - name: Tests
         run: cargo test --workspace --locked
+
+      - name: Node einrichten
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
 
       # Der ganze Sinn des WASM-Umwegs ist, dass es nur *eine* Bewegung gibt.
       # Laufen Rust und WebAssembly auseinander, faellt das sonst niemandem
@@ -87,7 +146,7 @@ jobs:
 
   image:
     name: Bauen, pruefen, veroeffentlichen
-    needs: test
+    needs: [lint, test]
     runs-on: ubuntu-latest
 
     # Reissleine: der Build braucht regulaer wenige Minuten. Bleibt er haengen,
@@ -105,14 +164,14 @@ jobs:
 
     steps:
       - name: Quelltext auschecken
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Buildx einrichten
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Namen und Tags bestimmen
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.IMAGE }}
           tags: |
@@ -128,19 +187,22 @@ jobs:
           # nicht gesetzt, landen leere Beschriftungen im Image.
           labels: |
             org.opencontainers.image.title=Corporate Shooter
-            org.opencontainers.image.description=LAN-Shooter im Grossraumbuero: autoritativer Rust-Server samt Browser-Client
+            org.opencontainers.image.description=Browser-Shooter im Grossraumbuero: autoritativer Rust-Server samt Browser-Client
             org.opencontainers.image.licenses=MIT
 
       # Erst lokal bauen und starten. Ein Image, das sich nicht starten laesst,
       # hat in der Registry nichts verloren.
       - name: Image bauen
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           load: true
           tags: corporate-shooter:pruefling
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Geschrieben wird der Cache nur von Laeufen, die auch
+          # veroeffentlichen. Alle anderen lesen ihn; so fuellen Zwischenstaende
+          # von Branches und Pull Requests nicht den begrenzten Speicher.
+          cache-to: ${{ env.PUBLISH == 'true' && 'type=gha,mode=max' || '' }}
 
       - name: Image starten und ausliefern lassen
         run: |
@@ -176,7 +238,7 @@ jobs:
 
       - name: An der Registry anmelden
         if: env.PUBLISH == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -186,7 +248,7 @@ jobs:
       # nichts neu uebersetzt.
       - name: Image veroeffentlichen
         if: env.PUBLISH == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
@@ -195,7 +257,11 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
 
+      # Die Tags kommen ueber die Umgebung ins Skript und nicht als
+      # Ausdruck in den Text: was im Skript steht, wird als Shell gelesen.
       - name: Ergebnis zusammenfassen
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           {
             echo "### Container-Image"
@@ -204,7 +270,7 @@ jobs:
               echo "Veroeffentlicht unter:"
               echo
               echo '```'
-              echo "${{ steps.meta.outputs.tags }}"
+              echo "$TAGS"
               echo '```'
             else
               echo "Gebaut und gestartet, aber nicht veroeffentlicht."

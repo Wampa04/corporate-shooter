@@ -1,0 +1,29 @@
+# Haelt die Abhaengigkeiten aktuell, die sich sonst niemand ansieht.
+#
+# Die Actions im Workflow sind auf Commit-SHAs festgenagelt; ohne Dependabot
+# wuerden sie auf diesem Stand einfrieren, samt allem, was spaeter an
+# Sicherheitskorrekturen kommt.
+#
+# Die Basis-Images im Dockerfile deckt Dependabot nicht ab: sie werden ueber
+# `ARG` zusammengesetzt, und das kann der Docker-Updater nicht lesen. Ihre
+# Versionen stehen deshalb von Hand im Dockerfile und werden mit
+# `rust-toolchain.toml` angehoben.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      # Kleine Schritte gesammelt, damit nicht jede Patch-Version einen
+      # eigenen Pull Request aufmacht.
+      patch-und-minor:
+        update-types: ["minor", "patch"]

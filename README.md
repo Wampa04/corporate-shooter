@@ -77,6 +77,18 @@ Was dabei zu beachten ist:
   jedem Snapshot.
 * Eine WebSocket-Nachricht ist auf 4 KiB begrenzt. Ein `InputFrame` wiegt gut
   hundert Byte; die Vorgabe der Bibliothek läge bei 64 MiB.
+* Wer sich verbindet, hat 5 s Zeit für die Anmeldung, sonst ist der Platz
+  wieder frei. Ein angemeldeter Client, von dem 15 s lang nichts kommt, gilt
+  als getrennt.
+* Nachrichten sind gedrosselt: anderthalbmal die Tickrate, plus Luft für
+  Pings. Ein ehrlicher Client stößt nie daran; wer länger als 2 s darüber
+  liegt, wird getrennt.
+* WebSocket-Verbindungen von fremden Seiten (`Origin` passt nicht zum
+  `Host`) werden abgewiesen. Der Reverse Proxy muss deshalb den
+  `Host`-Kopf durchreichen — Caddy, nginx mit `proxy_set_header Host $host`
+  und Traefik tun das.
+* Der Client kommt mit einer strengen Content-Security-Policy: nur eigene
+  Skripte, keine Inline-Skripte, keine Einbettung in fremde Seiten.
 * Der Client wird gzip-komprimiert ausgeliefert — statt 800 KiB gehen rund
   200 KiB über die Leitung, der Löwenanteil davon Three.js.
 * Die Kartenbeschreibung wiegt beim Beitreten rund 109 KiB und geht
@@ -92,6 +104,8 @@ Erklärung auf:
 | `CORPSHOOT_BIND` | Adresse, an die gebunden wird |
 | `CORPSHOOT_NAME` | Name, unter dem der Server erscheint |
 | `CORPSHOOT_TICK_RATE` | Simulationsschritte pro Sekunde |
+| `CORPSHOOT_SNAPSHOT_INTERVAL` | Simulationsschritte je verschicktem Snapshot |
+| `CORPSHOOT_MAX_PLAYERS` | Höchstzahl gleichzeitiger Spieler |
 | `CORPSHOOT_SCORE_LIMIT` | Abschlüsse für den Rundensieg |
 | `CORPSHOOT_INTERMISSION` | Pause zwischen zwei Runden |
 | `CORPSHOOT_NO_MDNS` | mDNS-Bekanntmachung abschalten |
@@ -136,9 +150,10 @@ Selbst bauen:
 docker build -t corporate-shooter .
 ```
 
-Der Build ist zweistufig und nutzt [cargo-chef], damit eine Quelltextänderung
-nicht das Übersetzen von Bevy nach sich zieht — ein Rebuild dauert dann
-Sekunden statt Minuten. Das Laufzeitbild ist `debian-slim` ohne
+Der Build nutzt [cargo-chef] in getrennten Stufen (Bauplan, Abhängigkeiten,
+eigener Code), damit eine Quelltextänderung nicht das Übersetzen von Bevy nach
+sich zieht — ein Rebuild dauert dann Sekunden statt Minuten. Das
+Vorhersagemodul wird dabei frisch nach WebAssembly übersetzt. Das Laufzeitbild ist `debian-slim` ohne
 nachinstallierte Pakete: die Binärdatei braucht nur libc, libm und libgcc. Der
 Server läuft als unprivilegierter Nutzer.
 
@@ -228,8 +243,12 @@ Aus dem ursprünglichen Entwurf ist bewusst noch nicht umgesetzt:
 
 ```
 crates/protocol/   Wire-Typen, von Server und Client gemeinsam benutzt
+crates/sim-core/   Die Bewegung - eine Fassung für Server und Vorhersage
+crates/predict/    sim-core als WebAssembly für die Vorhersage im Browser
 crates/server/     Autoritative Simulation (Bevy, headless) und Netzwerkschicht
 client/            Browser-Client (Three.js, ES-Module, kein Build-Schritt)
+client/vendor/     three.js und das übersetzte predict.wasm
+scripts/           Prüfläufe außerhalb von cargo (Gleichlauf, Client-Logik)
 ```
 
 Der Server ist die einzige Quelle der Wahrheit. Er schickt dem Client beim
@@ -310,34 +329,42 @@ der Server seine erreichbaren URLs beim Start aus.
 ## Entwicklung
 
 ```sh
-cargo test --workspace   # Simulation, Protokoll und ein End-to-End-Duell
-cargo clippy --all-targets
+cargo test --workspace   # Simulation, Protokoll und End-to-End-Tests
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
+scripts/gleichlauf.sh    # Rust und WebAssembly rechnen dieselbe Bewegung
 ```
 
-Der End-to-End-Test startet den echten Serverprozess, verbindet sich per
-WebSocket wie ein Browser und spielt eine Runde durch. Er hat bereits zwei
+Die End-to-End-Tests starten den echten Serverprozess, verbinden sich per
+WebSocket wie ein Browser und spielen eine Runde durch; andere spielen die
+Missbrauchsfälle nach (stumme Sockets, Fluten, fremde Herkunft, unsinnige
+Zahlen). Er hat bereits zwei
 Fehler gefunden, die den Unit-Tests entgangen waren — es lohnt sich, ihn
 laufen zu lassen.
 
-Der Browser-Client hat keine automatisierten Tests. Änderungen daran gehören
-im Browser angesehen; die Konsole muss dabei fehlerfrei bleiben.
+Vom Browser-Client ist die Logik ohne Three.js und DOM getestet (die
+`scripts/*.mjs`); Darstellung und Bedienung nicht. Änderungen daran gehören im
+Browser angesehen; die Konsole muss dabei fehlerfrei bleiben.
 
-Rust 1.95 oder neuer (Vorgabe von Bevy 0.19). Das `Dockerfile` nagelt die
-Compiler-Version fest; wird Bevy angehoben, ist dort `RUST_VERSION`
-nachzuziehen.
+Die Rust-Version steht in `rust-toolchain.toml` (Bevy 0.19 verlangt
+mindestens 1.95), rustup holt sie von selbst. Das `Dockerfile` nennt dieselbe
+Version noch einmal als `RUST_VERSION`; die CI prüft, dass beide
+übereinstimmen.
 
 ### Continuous Integration
 
-`.github/workflows/image.yml` läuft bei jedem Push und Pull Request in zwei
-Stufen:
+`.github/workflows/image.yml` läuft bei jedem Push und Pull Request in drei
+Jobs:
 
-1. **Tests** — `cargo test --workspace --locked`.
-2. **Image** — bauen, starten und prüfen, dass es den Client ausliefert.
+1. **Format und Lints** — `cargo fmt --check`, `cargo clippy -D warnings`
+   (auch für das WASM-Ziel), gleiche Rust-Version in `rust-toolchain.toml`
+   und `Dockerfile`, Prüfsummen der mitgelieferten Bibliotheken.
+2. **Tests** — `cargo test --workspace --locked`, der Gleichlauf von Rust
+   und WebAssembly (auch für das eingecheckte `predict.wasm`) und die
+   Prüfläufe der Client-Logik.
+3. **Image** — bauen, starten und prüfen, dass es den Client ausliefert.
 
-Die zweite Stufe hängt an der ersten: aus rotem Code entsteht erst gar kein
-Image. Veröffentlicht wird nur vom Standardbranch und von `v*`-Tags, nach
-`ghcr.io/<repo>`.
-
-`cargo fmt --all -- --check` und `cargo clippy` laufen **nicht** in der CI und
-gehören vor dem Commit gelaufen.
+Die dritte Stufe hängt an den ersten beiden: aus rotem Code entsteht erst gar
+kein Image. Veröffentlicht wird nur vom Standardbranch und von `v*`-Tags, nach
+`ghcr.io/<repo>`. Die Actions sind auf Commit-SHAs festgenagelt; Dependabot
+hält sie und die Cargo-Abhängigkeiten aktuell.
