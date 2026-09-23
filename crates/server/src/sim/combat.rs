@@ -13,7 +13,7 @@ use protocol::{
     Aabb, Ammo, GameEvent, PlayerId, Team, Tracer, Vec3, WeaponId, WeaponKind, buttons,
 };
 
-use super::history::History;
+use super::history::{self, History};
 use super::movement::{look_direction, player_aabb, player_half_extents};
 use super::projectiles;
 use super::{
@@ -249,18 +249,24 @@ pub fn fire_weapons(
         // Lag-Kompensation: die Gegner dorthin zurücksetzen, wo der Schütze
         // sie gesehen hat. Nur die Gegner - die eigene Position ist aktuell
         // und bleibt es, und Geometrie bewegt sich ohnehin nicht.
-        let zurueckgespult = history.at(tick.0, inputs.current.view_tick).map(|damals| {
-            let mut kopie = targets.clone();
-            for ziel in &mut kopie {
-                if let Some((_, pos)) = damals.iter().find(|(id, _)| *id == ziel.id) {
-                    ziel.aabb = player_aabb(*pos, half);
+        let zurueckgespult = history
+            .at(
+                tick.snapshot_tick(),
+                inputs.current.view_tick,
+                history::max_rewind_ticks(config.tick_rate),
+            )
+            .map(|damals| {
+                let mut kopie = targets.clone();
+                for ziel in &mut kopie {
+                    if let Some((_, pos)) = damals.iter().find(|(id, _)| *id == ziel.id) {
+                        ziel.aabb = player_aabb(*pos, half);
+                    }
+                    // Wer damals noch nicht dabei war, bleibt an seinem
+                    // aktuellen Platz - das ist der einzige Stand, den es von
+                    // ihm gibt.
                 }
-                // Wer damals noch nicht dabei war, bleibt an seinem
-                // aktuellen Platz - das ist der einzige Stand, den es von
-                // ihm gibt.
-            }
-            kopie
-        });
+                kopie
+            });
         let ziele: &[Target] = zurueckgespult.as_deref().unwrap_or(&targets);
 
         match weapon.kind {

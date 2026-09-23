@@ -225,3 +225,31 @@ fn laufende_runde_hat_keinen_sieger_im_json() {
     assert_eq!(json["phase"], "Running");
     assert_eq!(json["remaining"], 0.0);
 }
+
+#[test]
+fn zu_grosse_zahl_wird_als_f32_unendlich() {
+    // Festgehalten, weil der Schutz des Servers darauf aufbaut: JSON kennt
+    // kein Unendlich, serde macht aus `1e39` aber still eines, sobald das
+    // Ziel ein `f32` ist. `is_finite` muss solche Rahmen erkennen.
+    let raw = r#"{"seq":1,"move_x":0.0,"move_z":1.0,"yaw":1e39,"pitch":0.0,
+        "buttons":0,"weapon_slot":0}"#;
+    let frame: InputFrame = serde_json::from_str(raw).unwrap();
+    assert!(frame.yaw.is_infinite());
+    assert!(!frame.is_finite());
+
+    let gewoehnlich: InputFrame = serde_json::from_str(&raw.replace("1e39", "1.5")).unwrap();
+    assert!(gewoehnlich.is_finite());
+}
+
+#[test]
+fn view_tick_bleibt_nach_tagen_ganzzahlig_genau() {
+    // Nach vier Tagen bei 60 Hz. Als `f32` laege die Zahl nicht mehr auf
+    // ganzen Ticks, und das Rueckspulen verrutschte.
+    let tick = 60u64 * 60 * 60 * 24 * 4 + 1;
+    let raw = format!(
+        r#"{{"seq":1,"move_x":0.0,"move_z":0.0,"yaw":0.0,"pitch":0.0,
+        "buttons":0,"weapon_slot":0,"view_tick":{tick}.5}}"#
+    );
+    let frame: InputFrame = serde_json::from_str(&raw).unwrap();
+    assert_eq!(frame.view_tick, Some(tick as f64 + 0.5));
+}

@@ -147,13 +147,29 @@ pub struct InputFrame {
     /// Gebrochen, weil der Client zwischen zwei Snapshots interpoliert.
     /// `None` heißt "keine Angabe" - dann wertet der Server gegen den
     /// aktuellen Stand aus, wie vor der Lag-Kompensation.
+    ///
+    /// `f64`, weil die Nummer mit der Laufzeit wächst: ein `f32` trifft ganze
+    /// Zahlen nur bis 2^24 - bei 60 Hz nach gut drei Tagen.
     #[serde(default)]
-    pub view_tick: Option<f32>,
+    pub view_tick: Option<f64>,
 }
 
 impl InputFrame {
     pub fn pressed(&self, bit: u8) -> bool {
         self.buttons & bit != 0
+    }
+
+    /// `true`, wenn alle Gleitkommafelder endlich sind.
+    ///
+    /// JSON kennt weder NaN noch Unendlich, aber `1e39` ist eine gueltige
+    /// JSON-Zahl - und wird beim Einlesen als `f32` zu Unendlich. Solche
+    /// Rahmen verwirft der Server, bevor sie die Simulation erreichen.
+    pub fn is_finite(&self) -> bool {
+        self.move_x.is_finite()
+            && self.move_z.is_finite()
+            && self.yaw.is_finite()
+            && self.pitch.is_finite()
+            && self.view_tick.is_none_or(f64::is_finite)
     }
 }
 

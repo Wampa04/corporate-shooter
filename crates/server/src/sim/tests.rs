@@ -1820,7 +1820,7 @@ fn fluegeltreppe_fuehrt_auf_die_chef_etage() {
 ///
 /// Liefert (App, Schuetze, Ziel, gesehener Tick, Blickwinkel auf die damalige
 /// Position).
-fn nachlaufendes_ziel(verzoegerung_ticks: u64) -> (App, Entity, Entity, f32, f32) {
+fn nachlaufendes_ziel(verzoegerung_ticks: u64) -> (App, Entity, Entity, f64, f32) {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -6.0), 0.0);
@@ -1838,11 +1838,10 @@ fn nachlaufendes_ziel(verzoegerung_ticks: u64) -> (App, Entity, Entity, f32, f32
     // Erst laufen lassen, bis Geschwindigkeit im Spiel ist.
     run(&mut app, 10);
 
-    // Diesen Stand sieht der Schuetze - und zwar erst spaeter.
-    //
-    // Der zuletzt aufgezeichnete Tick ist `Tick - 1`: der Zaehler steht schon
-    // auf dem naechsten, waehrend die Position die vom Ende des vorigen ist.
-    let gesehen = app.world().resource::<Tick>().0 - 1;
+    // Diesen Stand sieht der Schuetze - und zwar erst spaeter. Die Nummer ist
+    // die, die der Snapshot mit dieser Position traegt: `broadcast` liest den
+    // Zaehler nach `finish_tick`, also so, wie er jetzt steht.
+    let gesehen = app.world().resource::<Tick>().0;
     let damals = body(&app, target).pos;
 
     // Erst jetzt vergeht die Verzoegerung; das Ziel laeuft dabei weiter.
@@ -1851,7 +1850,7 @@ fn nachlaufendes_ziel(verzoegerung_ticks: u64) -> (App, Entity, Entity, f32, f32
     // Der Schuetze zielt auf die Stelle, an der er das Ziel sieht.
     // yaw = 0 blickt nach -Z; positives X liegt bei negativem yaw.
     let winkel = (damals.x).atan2(-damals.z);
-    (app, shooter, target, gesehen as f32, -winkel)
+    (app, shooter, target, gesehen as f64, -winkel)
 }
 
 #[test]
@@ -1909,7 +1908,7 @@ fn rueckspulen_ist_gedeckelt() {
     // behaupten, er habe den Stand von vor einer Minute gesehen, und Gegner
     // dort erschiessen, wo sie laengst nicht mehr sind.
     let (mut app, shooter, target, _gesehen, winkel) =
-        nachlaufendes_ziel(crate::sim::history::MAX_REWIND_TICKS + 20);
+        nachlaufendes_ziel(history::max_rewind_ticks(GameConfig::default().tick_rate) + 20);
 
     set_input(
         &mut app,
@@ -2052,5 +2051,165 @@ fn oefter_senden_macht_nicht_schneller() {
     assert!(
         strecke_f <= strecke_e * 1.15,
         "Vielsender kam {strecke_f:.2} m weit, ehrlicher Sender nur {strecke_e:.2} m"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Befunde aus dem Review: erst rot, dann behoben
+// ---------------------------------------------------------------------------
+
+/// Schickt eine einzelne Eingabe mit der naechsten freien Folgenummer.
+fn send_next(app: &mut App, entity: Entity, mut frame: InputFrame) {
+    let mut inputs = app.world_mut().get_mut::<Inputs>(entity).unwrap();
+    frame.seq = inputs.ack_seq + inputs.pending_len() as u32 + 1;
+    inputs.push(frame);
+}
+
+/// Wechselt auf den Locher und wartet die Wechselverzoegerung ab. Danach
+/// sendet der Spieler nichts mehr von selbst.
+fn locher_bereit() -> (App, Entity) {
+    let config = precise_config();
+    let slot = config.weapon(protocol::WeaponId::Locher).slot;
+    let mut app = app_with(config, arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    set_input(
+        &mut app,
+        shooter,
+        InputFrame {
+            weapon_slot: slot,
+            ..Default::default()
+        },
+    );
+    run_s(&mut app, 0.67);
+    app.world_mut().entity_mut(shooter).remove::<Held>();
+    // Ein paar Ticks ohne Eingabe: das Kontingent fuer einen Schub fuellt sich.
+    run(&mut app, 4);
+    (app, shooter)
+}
+
+fn count_shots(events: &[GameEvent]) -> usize {
+    events
+        .iter()
+        .filter(|e| matches!(e, GameEvent::Shot { .. }))
+        .count()
+}
+
+#[test]
+fn unendlicher_blickwinkel_verschiebt_den_spieler_nicht() {
+    // JSON kennt kein NaN und kein Unendlich - `1e39` passt aber in ein f64
+    // und wird beim Einlesen als f32 zu Unendlich. Daraus wurde NaN, und der
+    // Spieler landete in einer Ecke der Karte.
+    let mut app = app_with(GameConfig::default(), arena());
+    let p = add_player(
+        &mut app,
+        1,
+        Team::Engineering,
+        Vec3::new(3.0, 0.0, 3.0),
+        0.0,
+    );
+    app.world_mut().entity_mut(p).remove::<Held>();
+    run(&mut app, 30);
+    let vorher = body(&app, p).pos;
+
+    for _ in 0..3 {
+        send_next(
+            &mut app,
+            p,
+            InputFrame {
+                move_x: 1.0,
+                yaw: f32::INFINITY,
+                ..Default::default()
+            },
+        );
+        run(&mut app, 1);
+    }
+
+    let b = body(&app, p);
+    assert!(b.pos.is_finite() && b.yaw.is_finite(), "{b:?}");
+    assert!(
+        (b.pos - vorher).length() < 0.5,
+        "Spieler ist von {vorher:?} nach {:?} gesprungen",
+        b.pos
+    );
+}
+
+#[test]
+fn locher_feuert_nicht_weiter_wenn_keine_eingaben_kommen() {
+    // Ein Rahmen mit gedrueckter Taste, danach Funkstille. Die Taste gilt
+    // nicht als "gerade gedrueckt", nur weil nichts Neues kommt - sonst wird
+    // aus der Einzelschusswaffe ein Automat.
+    let (mut app, shooter) = locher_bereit();
+    send_next(
+        &mut app,
+        shooter,
+        InputFrame {
+            buttons: buttons::FIRE,
+            ..Default::default()
+        },
+    );
+    let events = run_s(&mut app, 4.0);
+    assert_eq!(count_shots(&events), 1);
+}
+
+#[test]
+fn tastendruck_im_ersten_rahmen_eines_schubs_geht_nicht_verloren() {
+    // Kommen drei Rahmen in einem Tick an, wertet die Waffe nur den Stand am
+    // Ende aus. Ein kurzer Klick im ersten Rahmen darf trotzdem nicht fehlen.
+    let (mut app, shooter) = locher_bereit();
+    send_next(
+        &mut app,
+        shooter,
+        InputFrame {
+            buttons: buttons::FIRE,
+            ..Default::default()
+        },
+    );
+    send_next(&mut app, shooter, InputFrame::default());
+    send_next(&mut app, shooter, InputFrame::default());
+    let events = run(&mut app, 1);
+    assert_eq!(count_shots(&events), 1);
+}
+
+#[test]
+fn verlauf_ist_nach_der_snapshot_nummer_verschluesselt() {
+    // Der Client beruft sich auf `snapshot.tick`. Unter genau dieser Nummer
+    // muss der Verlauf die Positionen fuehren, die im Snapshot standen - sonst
+    // spult der Server um einen Tick daneben.
+    let mut app = app_with(GameConfig::default(), arena());
+    let ziel = add_player(&mut app, 2, Team::Marketing, Vec3::ZERO, 0.0);
+    set_input(
+        &mut app,
+        ziel,
+        InputFrame {
+            move_x: 1.0,
+            ..Default::default()
+        },
+    );
+    run(&mut app, 20);
+
+    // Was der Snapshot dieses Ticks traegt: `broadcast` laeuft nach
+    // `finish_tick` und liest `Tick` so, wie er jetzt steht.
+    let nummer = app.world().resource::<Tick>().0;
+    let gezeigt = body(&app, ziel).pos;
+
+    run(&mut app, 1);
+
+    let damals = app
+        .world()
+        .resource::<history::History>()
+        .at(
+            app.world().resource::<Tick>().snapshot_tick(),
+            Some(nummer as f64),
+            history::max_rewind_ticks(GameConfig::default().tick_rate),
+        )
+        .expect("Verlauf muss den Stand kennen");
+    let pos = damals
+        .iter()
+        .find(|(id, _)| *id == PlayerId(2))
+        .map(|(_, p)| *p)
+        .unwrap();
+    assert!(
+        (pos - gezeigt).length() < 1e-4,
+        "Verlauf zu Tick {nummer}: {pos:?}, im Snapshot stand {gezeigt:?}"
     );
 }

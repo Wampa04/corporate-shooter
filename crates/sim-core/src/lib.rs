@@ -38,6 +38,12 @@ const TERMINAL_VELOCITY: f32 = 60.0;
 
 /// Winkel auf `-PI..PI` normieren.
 pub fn wrap_angle(a: f32) -> f32 {
+    // Aus einem nicht-endlichen Winkel wuerde NaN, und NaN zieht sich durch
+    // Geschwindigkeit und Position. Der Server verwirft solche Eingaben schon
+    // vorher; hier steht die letzte Linie, auch fuer das WASM-Modul.
+    if !a.is_finite() {
+        return 0.0;
+    }
     let tau = std::f32::consts::TAU;
     let mut x = a % tau;
     if x > std::f32::consts::PI {
