@@ -19,6 +19,9 @@ axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 tower-http = { version = "0.7", features = ["fs", "set-header", "compression-gzip", "compression-br"] }
 futures-util = "0.3"
+# Sendepuffer je Verbindung begrenzen; tokio selbst bietet das nur fuer
+# Sockets, die es noch nicht verbunden hat.
+socket2 = "0.6"
 
 crossbeam-channel = "0.5"
 mdns-sd = "0.21"

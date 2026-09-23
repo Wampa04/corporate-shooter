@@ -19,6 +19,28 @@ const SNAPSHOT_HISTORY = 64;
 /** Abstand zwischen zwei Laufzeitmessungen in Millisekunden. */
 const PING_INTERVAL = 1000;
 
+/**
+ * Fuehrt den eigenen Stand (`Local`) und den oeffentlichen `Snapshot`
+ * desselben Ticks zu dem Objekt zusammen, mit dem der Rest des Clients
+ * arbeitet: `{tick, ack_seq, players, local, events, match}`.
+ *
+ * Der Server schickt beides getrennt, damit er den Snapshot fuer alle
+ * Empfaenger nur einmal kodieren muss. `Local` kommt immer unmittelbar davor.
+ * Passt der Tick nicht, ist etwas grundsaetzlich schiefgelaufen - dann lieber
+ * einen Snapshot auslassen, als die Vorhersage mit dem Stand eines anderen
+ * Ticks abzugleichen.
+ *
+ * @param {{tick: number, ack_seq: number, local: object} | null} local
+ * @param {{tick: number}} snapshot
+ * @returns {object | null}
+ */
+export function mergeSnapshot(local, snapshot) {
+  if (!local || local.tick !== snapshot.tick) return null;
+  snapshot.ack_seq = local.ack_seq;
+  snapshot.local = local.local;
+  return snapshot;
+}
+
 export class Connection {
   constructor() {
     this.socket = null;
@@ -36,6 +58,8 @@ export class Connection {
     this.onClose = () => {};
 
     this._pingTimer = null;
+    /** Eigener Stand, wartet auf den Snapshot desselben Ticks. */
+    this._local = null;
   }
 
   /**
@@ -105,8 +129,14 @@ export class Connection {
         resolve(message.d);
         break;
 
+      case "Local":
+        this._local = message.d;
+        break;
+
       case "Snapshot": {
-        const snapshot = message.d;
+        const snapshot = mergeSnapshot(this._local, message.d);
+        this._local = null;
+        if (!snapshot) break;
         snapshot.recvTime = performance.now();
         this.snapshots.push(snapshot);
         if (this.snapshots.length > SNAPSHOT_HISTORY) this.snapshots.shift();

@@ -16,10 +16,11 @@ use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::any;
+use axum::serve::ListenerExt;
 use crossbeam_channel::Sender;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMessage, PlayerId, ServerMessage};
-use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tokio::sync::mpsc;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
@@ -27,6 +28,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{debug, info, warn};
 
 use super::NetEvent;
+use super::codec::{self, Encoded};
 
 /// Maximale Länge eines Anzeigenamens. Verhindert, dass jemand die Killfeed
 /// mit einem Roman belegt.
@@ -73,6 +75,47 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 /// So lange darf ein Client über seinem Nachrichtenkontingent liegen, bevor
 /// die Verbindung gekappt wird.
 const FLOOD_GRACE: Duration = Duration::from_secs(2);
+
+/// Wie viele Nachrichten sich für einen Client stauen dürfen.
+///
+/// Je Snapshot gehen zwei Nachrichten raus, bei 30 Snapshots je Sekunde also
+/// gut eine Sekunde Puffer. Ist er voll, liest der Client nicht mehr mit -
+/// dann trennt ihn die Simulation, statt unbegrenzt Speicher für ihn
+/// anzuhäufen. Den Snapshot stattdessen zu verwerfen hieße, die Ereignisse
+/// darin zu verlieren: Treffer und Abschüsse kämen nie an.
+pub const OUTBOX_CAPACITY: usize = 64;
+
+/// So lange darf das Absenden einer einzelnen Nachricht dauern.
+///
+/// Ist der Sendepuffer voll, wartet das Senden, bis der Client liest. Tut er
+/// das nicht, hinge die Schreibaufgabe für immer - und mit ihr der Platz,
+/// denn die Simulation kann ihn zwar aus der Welt nehmen, die blockierte
+/// Aufgabe merkt davon aber nichts. Selbst die 109 KiB der Willkommensnachricht
+/// gehen über eine langsame Leitung in einem Bruchteil davon durch.
+const SEND_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Sendepuffer des Betriebssystems je Verbindung, in Byte.
+///
+/// Ohne Vorgabe wächst er unter Linux auf bis zu 4 MiB. Solange er Platz hat,
+/// sieht die Anwendung keinen Stau: ein Client, der nichts mehr liest, wäre
+/// erst nach Minuten als solcher erkennbar, und bis dahin hielte der Kernel
+/// für ihn Megabytes an Snapshots vor, die niemand mehr sehen will. 128 KiB
+/// (der Kernel verdoppelt intern) sind bei sechzehn Spielern gut zwei
+/// Sekunden Spiel - danach greift [`OUTBOX_CAPACITY`].
+const SEND_BUFFER_BYTES: usize = 128 * 1024;
+
+/// Richtet eine frisch angenommene Verbindung ein.
+fn tune_socket(tcp: &mut tokio::net::TcpStream) {
+    // Nagle aus: Snapshots sind klein und zeitkritisch. Mit Nagle wartete
+    // der Snapshot auf die Bestätigung des unmittelbar davor geschickten
+    // `Local` - mit verzögerten ACKs leicht 40 ms.
+    if let Err(err) = tcp.set_nodelay(true) {
+        debug!(%err, "TCP_NODELAY nicht gesetzt");
+    }
+    if let Err(err) = socket2::SockRef::from(&*tcp).set_send_buffer_size(SEND_BUFFER_BYTES) {
+        debug!(%err, "Sendepuffer nicht begrenzt");
+    }
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -191,7 +234,7 @@ pub fn spawn(
                     .with_state(state);
 
                 if let Err(err) = axum::serve(
-                    listener,
+                    listener.tap_io(tune_socket),
                     app.into_make_service_with_connect_info::<SocketAddr>(),
                 )
                 .await
@@ -386,16 +429,14 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
 
     let Some(_platz) = Platz::belegen(&state.live, state.max_players) else {
         info!(%peer, max = state.max_players, "Verbindung abgewiesen: Server voll");
-        let _ = send_json(
-            &mut sink,
-            &ServerMessage::Rejected {
+        let _ = sink
+            .send(Message::Text(codec::encode(&ServerMessage::Rejected {
                 reason: format!(
                     "Das Büro ist voll ({} Plätze). Später noch einmal versuchen.",
                     state.max_players
                 ),
-            },
-        )
-        .await;
+            })))
+            .await;
         return;
     };
 
@@ -405,13 +446,11 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
         Ok(Some(Ok(Message::Text(text)))) => match serde_json::from_str::<ClientMessage>(&text) {
             Ok(ClientMessage::Join { name }) => sanitize_name(&name),
             _ => {
-                let _ = send_json(
-                    &mut sink,
-                    &ServerMessage::Rejected {
+                let _ = sink
+                    .send(Message::Text(codec::encode(&ServerMessage::Rejected {
                         reason: "Erste Nachricht muss Join sein".into(),
-                    },
-                )
-                .await;
+                    })))
+                    .await;
                 return;
             }
         },
@@ -423,7 +462,7 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
     };
 
     let id = PlayerId(state.next_id.fetch_add(1, Ordering::Relaxed));
-    let (out_tx, out_rx) = mpsc::unbounded_channel();
+    let (out_tx, out_rx) = mpsc::channel(OUTBOX_CAPACITY);
 
     if state
         .events
@@ -440,11 +479,18 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
 
     // Schreibrichtung als eigene Aufgabe: die Simulation darf beim Versenden
     // niemals blockieren.
-    let writer = tokio::spawn(write_loop(sink, out_rx));
+    let mut writer = tokio::spawn(write_loop(sink, out_rx));
 
     let mut throttle = Throttle::for_tick_rate(state.tick_rate, Instant::now());
     loop {
-        let frame = match tokio::time::timeout(IDLE_TIMEOUT, stream.next()).await {
+        let next = tokio::select! {
+            // Endet die Schreibrichtung, ist der Client fertig: entweder ist
+            // die Leitung tot, oder die Simulation hat ihn entfernt, weil er
+            // nicht mehr mitlas. Weiterzulesen hielte nur seinen Platz besetzt.
+            _ = &mut writer => break,
+            next = tokio::time::timeout(IDLE_TIMEOUT, stream.next()) => next,
+        };
+        let frame = match next {
             Ok(Some(frame)) => frame,
             Ok(None) => break,
             Err(_) => {
@@ -497,21 +543,21 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
 
 async fn write_loop(
     mut sink: futures_util::stream::SplitSink<WebSocket, Message>,
-    mut out_rx: UnboundedReceiver<ServerMessage>,
+    mut out_rx: mpsc::Receiver<Encoded>,
 ) {
     while let Some(message) = out_rx.recv().await {
-        if send_json(&mut sink, &message).await.is_err() {
-            break;
+        match tokio::time::timeout(SEND_TIMEOUT, sink.send(Message::Text(message))).await {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) => return,
+            Err(_) => {
+                debug!("Senden haengt - Client liest nicht mehr");
+                return;
+            }
         }
     }
-}
-
-async fn send_json(
-    sink: &mut futures_util::stream::SplitSink<WebSocket, Message>,
-    message: &ServerMessage,
-) -> Result<(), ()> {
-    let text = serde_json::to_string(message).map_err(|_| ())?;
-    sink.send(Message::Text(text.into())).await.map_err(|_| ())
+    // Die Simulation hat den Client entfernt. Ein sauberes Ende, falls er
+    // doch noch zuhört.
+    let _ = sink.send(Message::Close(None)).await;
 }
 
 #[cfg(test)]

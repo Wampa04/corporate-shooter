@@ -252,16 +252,18 @@ impl Client {
         // Bis zum nächsten Snapshot lesen; alles andere durchlassen.
         loop {
             match expect_message(&mut self.socket).await {
+                // Kommt unmittelbar vor dem Snapshot desselben Ticks.
+                ServerMessage::Local { ack_seq, .. } => {
+                    self.last_ack = ack_seq;
+                }
                 ServerMessage::Snapshot {
                     players,
                     events,
-                    ack_seq,
                     match_state,
                     ..
                 } => {
                     self.players = players;
                     self.events.extend(events);
-                    self.last_ack = ack_seq;
                     self.match_state = Some(match_state);
                     return;
                 }
@@ -935,4 +937,101 @@ async fn unendlicher_blickwinkel_kommt_nicht_in_der_welt_an() {
         "{vorher:?} -> {:?}",
         nachher.pos
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn eigener_stand_kommt_direkt_vor_dem_snapshot_desselben_ticks() {
+    // Der Client fuehrt `Local` und `Snapshot` zusammen und verlaesst sich
+    // darauf, dass beide denselben Tick tragen und in dieser Reihenfolge
+    // kommen.
+    let server = TestServer::start().await;
+    let mut client = Client::join(server.port, "Reihenfolge").await;
+    let mut offen: Option<u64> = None;
+    let mut paare = 0;
+    while paare < 20 {
+        match expect_message(&mut client.socket).await {
+            ServerMessage::Local { tick, .. } => {
+                assert!(offen.is_none(), "zwei Local ohne Snapshot dazwischen");
+                offen = Some(tick);
+            }
+            ServerMessage::Snapshot { tick, .. } => {
+                assert_eq!(offen.take(), Some(tick), "Snapshot ohne passendes Local");
+                paare += 1;
+            }
+            _ => {}
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn wer_nicht_mitliest_wird_getrennt_und_macht_platz() {
+    // Ein Client, der nichts mehr liest, darf nicht unbegrenzt Speicher im
+    // Server belegen. Sobald seine Warteschlange voll ist, fliegt er - und
+    // sein Platz wird frei.
+    let server = TestServer::start_with_max(1).await;
+
+    // Kleiner Empfangspuffer, damit sich der Stau schnell bis zum Server
+    // durchdrueckt. Mit den Vorgaben des Systems fingen Kernelpuffer von
+    // einigen Megabyte ihn minutenlang ab.
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_recv_buffer_size(4096).unwrap();
+    let stream = socket
+        .connect(format!("127.0.0.1:{}", server.port).parse().unwrap())
+        .await
+        .unwrap();
+    let (mut traege, _) = tokio_tungstenite::client_async(
+        format!("ws://127.0.0.1:{}/ws", server.port),
+        MaybeTlsStream::Plain(stream),
+    )
+    .await
+    .expect("WebSocket-Verbindung fehlgeschlagen");
+    send(
+        &mut traege,
+        &ClientMessage::Join {
+            name: "Traege".into(),
+        },
+    )
+    .await;
+    // Ab hier liest er nichts mehr, schickt aber brav Eingaben - an der
+    // Stille liegt es also nicht, wenn er fliegt.
+    let start = std::time::Instant::now();
+    let mut seq = 0;
+    let frei = loop {
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "Platz ist nach 30 s noch belegt"
+        );
+        seq += 1;
+        let _ = traege
+            .send(Message::Text(
+                serde_json::to_string(&ClientMessage::Input(InputFrame {
+                    seq,
+                    ..Default::default()
+                }))
+                .unwrap()
+                .into(),
+            ))
+            .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if seq % 10 != 0 {
+            continue;
+        }
+        // Jede Sekunde nachsehen, ob der Platz wieder zu haben ist.
+        let Ok((mut s, _)) =
+            tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/ws", server.port)).await
+        else {
+            continue;
+        };
+        send(
+            &mut s,
+            &ClientMessage::Join {
+                name: "Nachrueckerin".into(),
+            },
+        )
+        .await;
+        if matches!(expect_message(&mut s).await, ServerMessage::Welcome { .. }) {
+            break start.elapsed();
+        }
+    };
+    println!("Platz frei nach {frei:?}");
 }

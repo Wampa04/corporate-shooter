@@ -188,9 +188,7 @@ fn snapshot_traegt_den_rundenstand_unter_match() {
     // einfach aus.
     let json = serde_json::to_value(ServerMessage::Snapshot {
         tick: 7,
-        ack_seq: 3,
         players: vec![],
-        local: LocalState::default(),
         events: vec![],
         match_state: MatchState {
             phase: Phase::Over,
@@ -252,4 +250,133 @@ fn view_tick_bleibt_nach_tagen_ganzzahlig_genau() {
     );
     let frame: InputFrame = serde_json::from_str(&raw).unwrap();
     assert_eq!(frame.view_tick, Some(tick as f64 + 0.5));
+}
+
+#[test]
+fn eigener_stand_geht_als_local_neben_dem_snapshot() {
+    // Der Client fuehrt `Local` und den folgenden `Snapshot` desselben Ticks
+    // zusammen (client/js/net.js). Die Namen hier sind die, die er liest.
+    let json = serde_json::to_value(ServerMessage::Local {
+        tick: 7,
+        ack_seq: 3,
+        local: LocalState::default(),
+    })
+    .unwrap();
+    assert_eq!(json["t"], "Local");
+    assert_eq!(json["d"]["tick"], 7);
+    assert_eq!(json["d"]["ack_seq"], 3);
+    assert!(json["d"]["local"].is_object());
+
+    // Und der Snapshot selbst traegt nichts Persoenliches mehr - sonst waere
+    // er nicht fuer alle derselbe.
+    let snapshot = serde_json::to_value(ServerMessage::Snapshot {
+        tick: 7,
+        players: vec![],
+        events: vec![],
+        match_state: MatchState::default(),
+    })
+    .unwrap();
+    assert!(snapshot["d"].get("local").is_none());
+    assert!(snapshot["d"].get("ack_seq").is_none());
+}
+
+/// Uebersetzt eine Nachricht nach MessagePack und zurueck und vergleicht in
+/// JSON-Form.
+fn ueber_messagepack<T>(wert: &T)
+where
+    T: serde::Serialize + serde::de::DeserializeOwned,
+{
+    let bytes = rmp_serde::to_vec_named(wert).expect("MessagePack kodiert");
+    let zurueck: T = rmp_serde::from_slice(&bytes).expect("MessagePack dekodiert");
+    assert_eq!(
+        serde_json::to_value(wert).unwrap(),
+        serde_json::to_value(&zurueck).unwrap()
+    );
+}
+
+#[test]
+fn protokoll_haengt_nicht_an_json() {
+    // Leitplanke fuer ein spaeteres Binaerformat: jede Nachricht muss auch
+    // ueber ein zweites, selbstbeschreibendes Format hin und zurueck kommen.
+    // Faellt dieser Test, hat sich ein JSON-Sondermerkmal ins Protokoll
+    // geschlichen (`untagged`, `flatten`, `serde_json::Value` ...), und der
+    // Wechsel des Formats wuerde teurer, als er sein muesste.
+    let config = GameConfig::default();
+    let map = MapDesc {
+        name: "Test".into(),
+        bounds: Aabb::new(Vec3::ZERO, Vec3::ONE),
+        brushes: vec![Brush::new(
+            BrushKind::Floor,
+            Aabb::new(Vec3::ZERO, Vec3::ONE),
+        )],
+        spawns: vec![SpawnPoint {
+            pos: Vec3::ZERO,
+            yaw: 0.0,
+        }],
+    };
+    let spieler = PlayerState {
+        id: PlayerId(1),
+        name: "Karin".into(),
+        team: Team::Marketing,
+        pos: Vec3::new(1.0, 0.0, -2.0),
+        yaw: 0.5,
+        pitch: -0.1,
+        health: 80,
+        alive: true,
+        weapon: config.weapons[0].id,
+        kills: 2,
+        deaths: 1,
+    };
+    for nachricht in [
+        ServerMessage::Welcome {
+            player_id: PlayerId(1),
+            config: config.clone(),
+            map,
+        },
+        ServerMessage::Local {
+            tick: 9,
+            ack_seq: 4,
+            local: LocalState::default(),
+        },
+        ServerMessage::Snapshot {
+            tick: 9,
+            players: vec![spieler],
+            events: vec![
+                GameEvent::Joined {
+                    id: PlayerId(1),
+                    name: "Karin".into(),
+                    team: Team::Marketing,
+                },
+                GameEvent::Death {
+                    victim: PlayerId(2),
+                    killer: None,
+                    weapon: None,
+                },
+            ],
+            match_state: MatchState::default(),
+        },
+        ServerMessage::Pong {
+            client_time_ms: 12.5,
+        },
+        ServerMessage::Rejected {
+            reason: "voll".into(),
+        },
+    ] {
+        ueber_messagepack(&nachricht);
+    }
+    for nachricht in [
+        ClientMessage::Join {
+            name: "Karin".into(),
+        },
+        ClientMessage::Input(InputFrame {
+            seq: 1,
+            view_tick: Some(3.5),
+            ..Default::default()
+        }),
+        ClientMessage::Ping {
+            client_time_ms: 1.0,
+        },
+    ] {
+        ueber_messagepack(&nachricht);
+    }
 }

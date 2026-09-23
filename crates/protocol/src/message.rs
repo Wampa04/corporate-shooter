@@ -325,14 +325,24 @@ pub enum ServerMessage {
         config: GameConfig,
         map: MapDesc,
     },
-    Snapshot {
+    /// Was nur dieser Client über sich erfährt, für einen Snapshot-Tick.
+    ///
+    /// Geht unmittelbar vor dem [`ServerMessage::Snapshot`] desselben Ticks
+    /// raus; der Client führt beide zusammen. Getrennt, damit der Snapshot
+    /// für alle Empfänger derselbe ist und nur einmal kodiert werden muss -
+    /// vorher wurde er für jeden Client einzeln geklont und serialisiert.
+    Local {
         tick: u64,
         /// Höchste vom Server verarbeitete `InputFrame::seq` dieses Clients.
         ack_seq: u32,
-        players: Vec<PlayerState>,
         local: LocalState,
+    },
+    /// Der öffentliche Stand eines Ticks. Für alle Clients gleich.
+    Snapshot {
+        tick: u64,
+        players: Vec<PlayerState>,
         events: Vec<GameEvent>,
-        /// Stand der Runde. Für alle Clients gleich.
+        /// Stand der Runde.
         #[serde(rename = "match")]
         match_state: MatchState,
     },
