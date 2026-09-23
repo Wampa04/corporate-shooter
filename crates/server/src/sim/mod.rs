@@ -304,6 +304,10 @@ pub struct PendingDamage(pub Vec<DamageEvent>);
 pub struct DamageEvent {
     pub attacker: PlayerId,
     pub attacker_entity: Entity,
+    /// Team des Schützen, festgehalten beim Abschuss. Ein Projektil kann
+    /// ankommen, wenn der Schütze das Spiel schon verlassen hat - der
+    /// Teampunkt soll dann trotzdem zählen.
+    pub attacker_team: Team,
     pub target: Entity,
     pub amount: u16,
     pub pos: Vec3,

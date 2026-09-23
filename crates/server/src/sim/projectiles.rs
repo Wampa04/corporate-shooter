@@ -166,6 +166,7 @@ pub fn advance(
             pending.0.push(DamageEvent {
                 attacker: p.owner,
                 attacker_entity: p.owner_entity,
+                attacker_team: p.team,
                 target: ziel,
                 amount: beschreibung.damage,
                 pos: p.pos,
@@ -190,6 +191,7 @@ pub fn advance(
             pending.0.push(DamageEvent {
                 attacker: p.owner,
                 attacker_entity: p.owner_entity,
+                attacker_team: p.team,
                 target: ziel,
                 amount: schaden,
                 pos: p.pos,

@@ -2213,3 +2213,36 @@ fn verlauf_ist_nach_der_snapshot_nummer_verschluesselt() {
         "Verlauf zu Tick {nummer}: {pos:?}, im Snapshot stand {gezeigt:?}"
     );
 }
+
+#[test]
+fn email_zaehlt_auch_wenn_der_absender_schon_weg_ist() {
+    // Die E-Mail fliegt eine halbe Sekunde. Wer in der Zeit das Spiel
+    // verlaesst, hat den Abschuss trotzdem verdient - zumindest sein Team.
+    let mut app = app_with(runden_config(5, 10.0), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let target = add_player(
+        &mut app,
+        2,
+        Team::Marketing,
+        Vec3::new(0.0, 0.0, -12.0),
+        0.0,
+    );
+    app.world_mut().get_mut::<Vitals>(target).unwrap().health = 1;
+    nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
+
+    ein_schuss(&mut app, shooter, 1);
+    app.world_mut().despawn(shooter);
+    let events = run_s(&mut app, 1.2);
+
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            GameEvent::Death {
+                killer: Some(PlayerId(1)),
+                ..
+            }
+        )),
+        "die E-Mail hat nicht getoetet"
+    );
+    assert_eq!(runde(&app).score_engineering, 1, "Punkt ging verloren");
+}

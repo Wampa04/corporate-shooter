@@ -9,9 +9,7 @@
 //! mehr Code als zwei.
 
 use bevy::ecs::prelude::*;
-use protocol::{
-    Aabb, Ammo, GameEvent, PlayerId, Team, Tracer, Vec3, WeaponId, WeaponKind, buttons,
-};
+use protocol::{Aabb, Ammo, GameEvent, PlayerId, Team, Tracer, Vec3, WeaponKind, buttons};
 
 use super::history::{self, History};
 use super::movement::{look_direction, player_aabb, player_half_extents};
@@ -298,6 +296,7 @@ pub fn fire_weapons(
                         pending.0.push(DamageEvent {
                             attacker: player.id,
                             attacker_entity: shooter_entity,
+                            attacker_team: player.team,
                             target: entity,
                             amount: damage_at(
                                 weapon.damage,
@@ -354,7 +353,7 @@ pub fn resolve_deaths(
     mut runde: ResMut<super::matchstate::Match>,
     mut q: Query<(&Player, &Body, &Loadout, &mut Vitals)>,
 ) {
-    let mut deaths: Vec<(Entity, PlayerId, WeaponId)> = Vec::new();
+    let mut deaths: Vec<(Entity, Team)> = Vec::new();
 
     for hit in pending.0.drain(..) {
         let Ok((victim, body, loadout, mut vitals)) = q.get_mut(hit.target) else {
@@ -378,7 +377,7 @@ pub fn resolve_deaths(
             vitals.alive = false;
             vitals.deaths += 1;
             vitals.respawn_timer = config.respawn_delay;
-            deaths.push((hit.attacker_entity, victim_id, hit.weapon));
+            deaths.push((hit.attacker_entity, hit.attacker_team));
             events.push(GameEvent::Death {
                 victim: victim_id,
                 killer: Some(hit.attacker),
@@ -389,20 +388,21 @@ pub fn resolve_deaths(
 
     // Punkte des Schützen erst nach dem Abarbeiten gutschreiben: währenddessen
     // ist dessen `Vitals` als Ziel womöglich schon ausgeliehen.
-    for (killer, _, _) in deaths {
-        if let Ok((player, _, _, mut vitals)) = q.get_mut(killer) {
+    for (killer, team) in deaths {
+        if let Ok((_, _, _, mut vitals)) = q.get_mut(killer) {
             vitals.kills += 1;
-            // Der Teampunkt wird hier gebucht und nicht spaeter aus den
-            // Spielern summiert: verlaesst jemand das Spiel, verschwaende
-            // seine Entity - und mit ihr die Punkte, die sein Team bereits
-            // gemacht hat.
-            //
-            // In der Pause zaehlt nichts mehr. Geschossen wird dort ohnehin
-            // nicht; die Abfrage steht trotzdem hier, damit die Regel an der
-            // Stelle sichtbar ist, an der sie gilt.
-            if runde.laeuft() {
-                runde.0.add_score(player.team);
-            }
+        }
+        // Der Teampunkt wird hier gebucht und nicht spaeter aus den Spielern
+        // summiert: verlaesst jemand das Spiel, verschwaende seine Entity -
+        // und mit ihr die Punkte, die sein Team bereits gemacht hat. Aus
+        // demselben Grund haengt er am Team aus dem Treffer und nicht am
+        // Schuetzen: eine E-Mail kann ankommen, wenn der schon weg ist.
+        //
+        // In der Pause zaehlt nichts mehr. Geschossen wird dort ohnehin
+        // nicht; die Abfrage steht trotzdem hier, damit die Regel an der
+        // Stelle sichtbar ist, an der sie gilt.
+        if runde.laeuft() {
+            runde.0.add_score(team);
         }
     }
 }
