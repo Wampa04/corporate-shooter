@@ -8,7 +8,7 @@
 //! entgeht - Serialisierung, WebSocket-Rahmen, die Randsysteme der
 //! Netzwerkschicht und das Zusammenspiel mit der Bevy-Schleife.
 
-use std::net::TcpListener;
+use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
@@ -34,17 +34,42 @@ impl Drop for TestServer {
     }
 }
 
-/// Sucht einen freien Port, indem kurz darauf gelauscht wird.
+/// Startet den Server auf Port 0 und liest ab, welchen Port er bekommen hat.
 ///
-/// Zwischen Freigabe und Serverstart liegt ein winziges Zeitfenster, in dem
-/// ein anderer Prozess zugreifen könnte; für einen Test ist das vertretbar und
-/// deutlich robuster, als einen festen Port zu belegen.
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .expect("kein Port verfuegbar")
-        .local_addr()
-        .unwrap()
-        .port()
+/// Frueher suchte der Test selbst einen freien Port und reichte ihn weiter.
+/// Zwischen Freigabe und Serverstart lag ein Zeitfenster, und bei acht
+/// parallelen Tests vergab das System denselben Port gelegentlich zweimal:
+/// der zweite Server kam nicht hoch, und sein Test sprach mit dem Server
+/// eines anderen Tests. Mit Port 0 vergibt das System genau einmal.
+fn spawn_server(mut command: Command) -> TestServer {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Server liess sich nicht starten");
+
+    let stdout = child.stdout.take().expect("stdout fehlt");
+    let mut lines = BufReader::new(stdout).lines();
+    let port = loop {
+        let line = lines
+            .next()
+            .expect("Server hat beendet, bevor er seinen Port nannte")
+            .expect("stdout nicht lesbar");
+        // "  lokal:   http://localhost:4200"
+        if let Some(rest) = line.trim().strip_prefix("lokal:") {
+            break rest
+                .trim()
+                .rsplit(':')
+                .next()
+                .and_then(|p| p.parse().ok())
+                .expect("Port nicht lesbar");
+        }
+    };
+    // Weiter leeren: laeuft die Leitung voll, blockiert der Server beim
+    // naechsten Protokolleintrag.
+    std::thread::spawn(move || lines.for_each(drop));
+
+    TestServer { child, port }
 }
 
 /// Verzeichnis des Browser-Clients im Arbeitsbaum.
@@ -53,52 +78,42 @@ const CLIENT_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../client");
 impl TestServer {
     /// Startet den Server ueber Kommandozeilenargumente.
     async fn start() -> TestServer {
-        let port = free_port();
-        let child = Command::new(env!("CARGO_BIN_EXE_server"))
-            .args([
-                "--bind",
-                "127.0.0.1",
-                "--port",
-                &port.to_string(),
-                "--no-mdns",
-                // Fester Startwert: gleiche Streuung und Spawnauswahl bei
-                // jedem Lauf, damit der Test nicht gelegentlich anders ausgeht.
-                "--seed",
-                "12345",
-                "--client-dir",
-                CLIENT_DIR,
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("Server liess sich nicht starten");
+        let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+        command.args([
+            "--bind",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--no-mdns",
+            // Fester Startwert: gleiche Streuung und Spawnauswahl bei
+            // jedem Lauf, damit der Test nicht gelegentlich anders ausgeht.
+            "--seed",
+            "12345",
+            "--client-dir",
+            CLIENT_DIR,
+        ]);
 
-        let server = TestServer { child, port };
+        let server = spawn_server(command);
         server.await_ready().await;
         server
     }
 
     /// Startet den Server mit einer eigenen Spielerobergrenze.
     async fn start_with_max(max_players: usize) -> TestServer {
-        let port = free_port();
-        let child = Command::new(env!("CARGO_BIN_EXE_server"))
-            .args([
-                "--bind",
-                "127.0.0.1",
-                "--port",
-                &port.to_string(),
-                "--no-mdns",
-                "--max-players",
-                &max_players.to_string(),
-                "--client-dir",
-                CLIENT_DIR,
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("Server liess sich nicht starten");
+        let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+        command.args([
+            "--bind",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--no-mdns",
+            "--max-players",
+            &max_players.to_string(),
+            "--client-dir",
+            CLIENT_DIR,
+        ]);
 
-        let server = TestServer { child, port };
+        let server = spawn_server(command);
         server.await_ready().await;
         server
     }
@@ -108,29 +123,24 @@ impl TestServer {
     /// Dreissig Abschuesse ueber eine echte WebSocket-Verbindung zu spielen
     /// spraengte jede Zeitgrenze; mit einem reicht ein einziges Duell.
     async fn start_with_round(score_limit: u32, intermission: f32) -> TestServer {
-        let port = free_port();
-        let child = Command::new(env!("CARGO_BIN_EXE_server"))
-            .args([
-                "--bind",
-                "127.0.0.1",
-                "--port",
-                &port.to_string(),
-                "--no-mdns",
-                "--seed",
-                "12345",
-                "--score-limit",
-                &score_limit.to_string(),
-                "--intermission",
-                &intermission.to_string(),
-                "--client-dir",
-                CLIENT_DIR,
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("Server liess sich nicht starten");
+        let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+        command.args([
+            "--bind",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--no-mdns",
+            "--seed",
+            "12345",
+            "--score-limit",
+            &score_limit.to_string(),
+            "--intermission",
+            &intermission.to_string(),
+            "--client-dir",
+            CLIENT_DIR,
+        ]);
 
-        let server = TestServer { child, port };
+        let server = spawn_server(command);
         server.await_ready().await;
         server
     }
@@ -142,21 +152,17 @@ impl TestServer {
     /// `std::env::set_var` in Rust 2024 unsicher ist und mit den Threads der
     /// Simulation um die Umgebung raufen wuerde.
     async fn start_from_env() -> TestServer {
-        let port = free_port();
-        let child = Command::new(env!("CARGO_BIN_EXE_server"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+        command
             .env("CORPSHOOT_BIND", "127.0.0.1")
-            .env("CORPSHOOT_PORT", port.to_string())
+            .env("CORPSHOOT_PORT", "0")
             .env("CORPSHOOT_NO_MDNS", "true")
             .env("CORPSHOOT_SEED", "12345")
             .env("CORPSHOOT_CLIENT_DIR", CLIENT_DIR)
             .env("CORPSHOOT_TICK_RATE", "20")
-            .env("CORPSHOOT_NAME", "Daily Standup")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("Server liess sich nicht starten");
+            .env("CORPSHOOT_NAME", "Daily Standup");
 
-        let server = TestServer { child, port };
+        let server = spawn_server(command);
         server.await_ready().await;
         server
     }
