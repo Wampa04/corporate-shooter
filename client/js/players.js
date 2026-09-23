@@ -10,10 +10,20 @@ import * as THREE from "../vendor/three.module.min.js";
 import { baueFigur, legeFigurHin, stelleFigur } from "./figur.js";
 import { ruhe, schritt } from "./laufzyklus.js";
 
-export const TEAM_COLOR = {
-  Marketing:   0xe8559b,
-  Engineering: 0x29c1b8,
-};
+/**
+ * Teamfarbe als Zahl fuer Three.
+ *
+ * Gelesen aus dem Stylesheet (`--marketing`, `--engineering`), wo HUD und
+ * Killfeed sie ohnehin herholen. Vorher stand sie hier ein zweites Mal als
+ * Zahl, und eine Aenderung an nur einer Stelle haette Figuren und Anzeige
+ * verschieden gefaerbt.
+ */
+function teamColor(team) {
+  const css = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--${String(team).toLowerCase()}`)
+    .trim();
+  return css ? new THREE.Color(css).getHex() : 0xffffff;
+}
 
 /**
  * Verzoegerung, mit der fremde Spieler gezeigt werden.
@@ -94,7 +104,7 @@ function makeNameTag(name, color) {
 
 /** Eine Figur samt Namensschild. */
 function makeAvatar(state) {
-  const color = TEAM_COLOR[state.team] ?? 0xffffff;
+  const color = teamColor(state.team);
   const figur = baueFigur(color);
   figur.schild = makeNameTag(state.name, color);
   figur.wurzel.add(figur.schild);

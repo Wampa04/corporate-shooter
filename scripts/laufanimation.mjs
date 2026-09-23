@@ -12,7 +12,6 @@
 // `laufzyklus.js` importiert bewusst nichts - kein Three, kein DOM -, damit
 // genau das hier ohne Browser geht.
 import {
-  PHASE_JE_METER,
   VOLLES_TEMPO,
   gliedmassen,
   ruhe,
@@ -68,10 +67,8 @@ console.log("Stehen");
 console.log("Laufen");
 {
   // Eine Vierteldrehung der Phase: mitten im Schritt, nicht zufaellig in der
-  // Ruhelage. Feste Strecke statt "irgendwie lange laufen" - ein Test, der
-  // sich seine Phase aus den geprueften Konstanten ausrechnet, kann nicht
-  // scheitern.
-  const strecke = (Math.PI / 2) / PHASE_JE_METER;
+  // Ruhelage. Die Phase wird gesetzt statt "irgendwie lange" erlaufen - wie
+  // Strecke zu Phase wird, prueft der Abschnitt weiter unten.
   let z = laufen(ruhe(), VOLLES_TEMPO, 2);      // Ausschlag hochfahren
   z = { phase: Math.PI / 2, ausschlag: z.ausschlag };
   const w = gliedmassen(z);
@@ -93,7 +90,6 @@ console.log("Laufen");
     `beide oder keins: ${w.knieLinks.toFixed(2)} / ${w.knieRechts.toFixed(2)}`);
   pruefe("Knie beugen nur in eine Richtung", w.knieLinks >= 0 && w.knieRechts >= 0,
     "ein Knie beugt nach vorn");
-  const _ = strecke;
 }
 
 console.log("Phase haengt an der Strecke, nicht an der Zeit");

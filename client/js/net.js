@@ -44,16 +44,12 @@ export function mergeSnapshot(local, snapshot) {
 export class Connection {
   constructor() {
     this.socket = null;
-    this.playerId = null;
-    this.config = null;
-    this.map = null;
 
     /** Ringpuffer der letzten Snapshots, aelteste zuerst. */
     this.snapshots = [];
     /** Zuletzt gemessene Laufzeit in Millisekunden, `null` bis zum ersten Pong. */
     this.ping = null;
 
-    this.onWelcome = () => {};
     this.onSnapshot = () => {};
     this.onClose = () => {};
 
@@ -122,10 +118,6 @@ export class Connection {
   _handle(message, resolve, reject) {
     switch (message.t) {
       case "Welcome":
-        this.playerId = message.d.player_id;
-        this.config = message.d.config;
-        this.map = message.d.map;
-        this.onWelcome(message.d);
         resolve(message.d);
         break;
 
@@ -158,11 +150,6 @@ export class Connection {
     }
   }
 
-  /** Verwirft alle gepufferten Snapshots, etwa nach einem langen Tab-Wechsel. */
-  clearHistory() {
-    this.snapshots.length = 0;
-  }
-
   get latest() {
     return this.snapshots[this.snapshots.length - 1] ?? null;
   }
@@ -189,10 +176,5 @@ export class Connection {
       clearInterval(this._pingTimer);
       this._pingTimer = null;
     }
-  }
-
-  close() {
-    this._stopPinging();
-    this.socket?.close();
   }
 }
