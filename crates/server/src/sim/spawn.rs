@@ -67,6 +67,14 @@ pub fn respawn_players(
         return;
     }
 
+    // Fast immer steht niemand zum Einstieg an. Dann nichts einsammeln.
+    let niemand_wartet = q
+        .iter()
+        .all(|(_, _, vitals, _, _)| vitals.alive || vitals.respawn_timer > 0.0);
+    if niemand_wartet {
+        return;
+    }
+
     // Positionen der Lebenden je Team, bevor irgendetwas verändert wird.
     let living: Vec<(Team, Vec3)> = q
         .iter()

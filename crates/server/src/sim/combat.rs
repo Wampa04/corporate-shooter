@@ -186,7 +186,9 @@ pub fn fire_weapons(
         }
 
         let index = loadout.index;
-        let weapon = config.weapons[index].clone();
+        // Geliehen, nicht geklont: `WeaponDesc` traegt einen `String`, und
+        // das hier laeuft je lebendem Spieler und Tick, auch ohne Schuss.
+        let weapon = &config.weapons[index];
 
         // Das Whiteboard schiesst nicht. Es wirkt, indem man es haelt - der
         // Schaden wird in `resolve_deaths` abgehalten.

@@ -280,7 +280,7 @@ pub fn step(
     solid: &[Aabb],
     bounds: &Aabb,
 ) -> StepEvents {
-    let dt = 1.0 / config.tick_rate as f32;
+    let dt = config.tick_dt();
     let mut events = StepEvents::default();
 
     // Zeitgeber laufen auch im Tod weiter.

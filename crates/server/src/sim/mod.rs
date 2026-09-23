@@ -194,13 +194,22 @@ impl Inputs {
     /// diesem Tick nicht. Das ist Absicht: der Client sagt nur voraus, was er
     /// auch gesendet hat, und ein vom Server erfundener Schritt wäre genau
     /// die Abweichung, die er hinterher zurückzieht.
-    pub fn take_for_tick(&mut self) -> Vec<InputFrame> {
+    ///
+    /// Es sind höchstens [`MAX_BURST`]; sie kommen deshalb aus einem Feld auf
+    /// dem Stack statt aus einem je Spieler und Tick angelegten `Vec`. Der
+    /// Iterator leiht `self` nicht, damit währenddessen [`Inputs::applied`]
+    /// aufgerufen werden kann.
+    pub fn take_for_tick(&mut self) -> impl Iterator<Item = InputFrame> + use<> {
         // Ein neuer Tick beginnt: die Flanken des vorigen sind verbraucht.
         self.pressed_edges = 0;
         self.credit = (self.credit + 1).min(MAX_BURST);
         let n = self.pending.len().min(self.credit as usize);
         self.credit -= n as u32;
-        self.pending.drain(..n).collect()
+        let mut batch = [InputFrame::default(); MAX_BURST as usize];
+        for (slot, frame) in batch.iter_mut().zip(self.pending.drain(..n)) {
+            *slot = frame;
+        }
+        batch.into_iter().take(n)
     }
 
     /// Übernimmt eine gerade simulierte Eingabe als neuen Stand.
