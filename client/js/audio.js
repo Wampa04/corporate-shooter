@@ -47,7 +47,8 @@ export class Audio {
     this.ctx = Ctx ? new Ctx() : null;
     this.onStatus = () => {};
 
-    this._panners = [];
+    /** Lebende Panner, fuer das Aufraeumen in `dispose`. */
+    this._panners = new Set();
     this._walkers = new Map();
     this._ownDistance = 0;
     this._reloading = false;
@@ -191,14 +192,6 @@ export class Audio {
     this._placeListener(camera);
     this._ownFootsteps(dt, feet, onGround);
     this._otherFootsteps(dt, avatars);
-
-    // Abgelaufene Panner abraeumen - dieselbe Buchfuehrung wie in `effects.js`.
-    const jetzt = this.ctx.currentTime;
-    for (let i = this._panners.length - 1; i >= 0; i--) {
-      if (this._panners[i].until > jetzt) continue;
-      this._panners[i].node.disconnect();
-      this._panners.splice(i, 1);
-    }
   }
 
   _placeListener(camera) {
@@ -278,7 +271,7 @@ export class Audio {
       );
     }
 
-    for (const id of [...this._walkers.keys()]) {
+    for (const id of this._walkers.keys()) {
       if (!avatars.has(id)) this._walkers.delete(id);
     }
   }
@@ -477,7 +470,15 @@ export class Audio {
       panner.setPosition(pos[0], pos[1], pos[2]);
     }
     panner.connect(this.bus);
-    this._panners.push({ node: panner, until: this.ctx.currentTime + standzeit + 0.3 });
+    this._panners.add(panner);
+    // Mit einem eigenen Zeitgeber statt im Bildtakt: im Hintergrund-Tab wird
+    // nicht gezeichnet, Schuesse und Schritte der anderen kommen aber weiter
+    // an - die Panner stauten sich dann bis zur Rueckkehr. Zeitgeber laufen
+    // dort gedrosselt, aber sie laufen.
+    setTimeout(() => {
+      panner.disconnect();
+      this._panners.delete(panner);
+    }, (standzeit + 0.3) * 1000);
     return panner;
   }
 
@@ -537,8 +538,8 @@ export class Audio {
     this._ambience?.rauschen.stop();
     this._ambience?.brummen.stop();
     this._ambience = null;
-    for (const { node } of this._panners) node.disconnect();
-    this._panners.length = 0;
+    for (const panner of this._panners) panner.disconnect();
+    this._panners.clear();
     this.ctx.close();
   }
 }
