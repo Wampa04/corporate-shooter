@@ -126,7 +126,7 @@ fn run(app: &mut App, ticks: u32) -> Vec<GameEvent> {
             .world_mut()
             .query::<(Entity, &Held)>()
             .iter(app.world())
-            .map(|(e, h)| (e, h.0.clone()))
+            .map(|(e, h)| (e, h.0))
             .collect();
         for (entity, mut frame) in gehalten {
             let mut inputs = app.world_mut().get_mut::<Inputs>(entity).unwrap();

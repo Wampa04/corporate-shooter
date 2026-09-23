@@ -244,7 +244,7 @@ impl Client {
             self.seq += 1;
             let frame = InputFrame {
                 seq: self.seq,
-                ..frame.clone()
+                ..frame
             };
             send(&mut self.socket, &ClientMessage::Input(frame)).await;
         }

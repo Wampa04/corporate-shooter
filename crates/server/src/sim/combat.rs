@@ -118,6 +118,9 @@ pub fn damage_at(
     ((damage as f32 * factor).round() as u16).max(1)
 }
 
+// Ein Bevy-System bekommt seine Abhaengigkeiten als Parameter; die Zahl
+// spiegelt, was ein Schuss beruehrt.
+#[allow(clippy::too_many_arguments)]
 pub fn fire_weapons(
     config: Res<Config>,
     runde: Res<super::matchstate::Match>,

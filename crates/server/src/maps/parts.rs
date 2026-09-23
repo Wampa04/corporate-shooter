@@ -492,7 +492,11 @@ pub fn workstation(b: &mut Build, with_paper: bool) {
     desk(b, 0.0, 0.0, true);
     monitor(b, 0.0, -0.55);
     desk_clutter(b, 0.0, 0.0, 1.0, with_paper);
-    chair_at(b, At::at(0.0, 0.85).facing(Dir::North), ChairStyle::Swivel);
+    chair_at(
+        b,
+        At::floor(0.0, 0.85).facing(Dir::North),
+        ChairStyle::Swivel,
+    );
 }
 
 /// Vierertisch-Insel mit Sichtschutz - so wie das Grossraumbüro sie zu
@@ -504,7 +508,7 @@ pub fn desk_island(b: &mut Build) {
     {
         // Die Personen sitzen zur Gangseite, die Bildschirme stehen zur Mitte.
         let facing = if dz > 0.0 { Dir::North } else { Dir::South };
-        b.place(At::at(dx, dz).facing(facing), |b| {
+        b.place(At::floor(dx, dz).facing(facing), |b| {
             workstation(b, i % 2 == 0)
         });
     }

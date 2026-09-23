@@ -70,7 +70,7 @@ pub struct At {
 
 impl At {
     /// Auf dem Fussboden, ungedreht.
-    pub const fn at(x: f32, z: f32) -> Self {
+    pub const fn floor(x: f32, z: f32) -> Self {
         At {
             x,
             y: 0.0,
@@ -102,7 +102,7 @@ impl Build {
     pub fn new() -> Self {
         Build {
             out: Vec::new(),
-            frame: At::at(0.0, 0.0),
+            frame: At::floor(0.0, 0.0),
         }
     }
 
@@ -128,6 +128,9 @@ impl Build {
 
     /// Box aus zwei lokalen Ecken und einem Höhenbereich über dem lokalen
     /// Fussboden.
+    // Sechs Koordinaten sind die Box; sie in eine Struktur zu packen, machte
+    // die knapp hundert Aufrufe im Grundriss nur laenger, nicht klarer.
+    #[allow(clippy::too_many_arguments)]
     pub fn cuboid(
         &mut self,
         kind: BrushKind,
@@ -154,6 +157,9 @@ impl Build {
     }
 
     /// Box um einen lokalen Mittelpunkt - bei Möbeln die häufigere Form.
+    // Sechs Koordinaten sind die Box; sie in eine Struktur zu packen, machte
+    // die knapp hundert Aufrufe im Grundriss nur laenger, nicht klarer.
+    #[allow(clippy::too_many_arguments)]
     pub fn centered(
         &mut self,
         kind: BrushKind,
@@ -194,7 +200,7 @@ mod tests {
         // Tiefe auf.
         let ecken = |dir: Dir| {
             let mut b = Build::new();
-            b.place(At::at(0.0, 0.0).facing(dir), |b| {
+            b.place(At::floor(0.0, 0.0).facing(dir), |b| {
                 b.cuboid(BrushKind::Desk, -0.1, -0.5, 0.1, 0.5, 0.0, 1.0);
             });
             let a = erste(b);
@@ -213,7 +219,7 @@ mod tests {
         // Eine Box vor dem Nullpunkt (lokal -Z) muss bei East nach +X wandern:
         // "vorne" folgt der Blickrichtung.
         let mut b = Build::new();
-        b.place(At::at(0.0, 0.0).facing(Dir::East), |b| {
+        b.place(At::floor(0.0, 0.0).facing(Dir::East), |b| {
             b.centered(BrushKind::Mug, 0.0, -1.0, 0.2, 0.2, 0.0, 0.1);
         });
         let a = erste(b);
@@ -226,8 +232,8 @@ mod tests {
         // Ein Bauteil in einem Bauteil: erst 10 nach +X, dort um 90 Grad
         // gedreht, und darin nochmals 2 nach vorne.
         let mut b = Build::new();
-        b.place(At::at(10.0, 0.0).facing(Dir::East), |b| {
-            b.place(At::at(0.0, -2.0), |b| {
+        b.place(At::floor(10.0, 0.0).facing(Dir::East), |b| {
+            b.place(At::floor(0.0, -2.0), |b| {
                 b.centered(BrushKind::Mug, 0.0, 0.0, 0.2, 0.2, 0.0, 0.1);
             });
         });
@@ -242,8 +248,8 @@ mod tests {
         // Der Grund, aus dem es `on` gibt: Möbel auf der Chef-Etage werden
         // beschrieben, als stünden sie auf dem Boden.
         let mut b = Build::new();
-        b.place(At::at(0.0, 0.0).on(1.2), |b| {
-            b.place(At::at(0.0, 0.0).on(0.75), |b| {
+        b.place(At::floor(0.0, 0.0).on(1.2), |b| {
+            b.place(At::floor(0.0, 0.0).on(0.75), |b| {
                 b.centered(BrushKind::Mug, 0.0, 0.0, 0.1, 0.1, 0.0, 0.1);
             });
         });
@@ -254,7 +260,7 @@ mod tests {
     #[test]
     fn rahmen_wird_nach_dem_bauteil_wiederhergestellt() {
         let mut b = Build::new();
-        b.place(At::at(5.0, 5.0).facing(Dir::South).on(3.0), |_| {});
+        b.place(At::floor(5.0, 5.0).facing(Dir::South).on(3.0), |_| {});
         b.centered(BrushKind::Mug, 0.0, 0.0, 0.1, 0.1, 0.0, 0.1);
         let a = erste(b);
         assert_eq!((a.min.x, a.min.y, a.min.z), (-0.05, 0.0, -0.05));

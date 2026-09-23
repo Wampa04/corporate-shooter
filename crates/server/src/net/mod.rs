@@ -193,7 +193,7 @@ fn broadcast(
     // Nicht jeder Simulationsschritt wird verschickt. Der Ereignisspeicher
     // bleibt dabei bewusst stehen: was zwischen zwei Snapshots passiert ist,
     // muss mit dem naechsten mitgehen, sonst verschwinden Schuesse und Treffer.
-    if config.snapshot_interval > 1 && tick.0 % config.snapshot_interval as u64 != 0 {
+    if config.snapshot_interval > 1 && !tick.0.is_multiple_of(config.snapshot_interval as u64) {
         return;
     }
 

@@ -35,10 +35,10 @@ pub struct Lauf {
 fn wandern(i: u32) -> (f32, f32, f32, u8) {
     let t = i as f32;
     let mut b = 0u8;
-    if i % 97 == 0 {
+    if i.is_multiple_of(97) {
         b |= buttons::JUMP;
     }
-    if i % 151 == 0 {
+    if i.is_multiple_of(151) {
         b |= buttons::DASH;
     }
     ((t * 0.031).sin(), (t * 0.017).cos(), t * 0.011, b)
@@ -48,14 +48,22 @@ fn wandern(i: u32) -> (f32, f32, f32, u8) {
 /// der Pfad, den die erste Fassung dieses Tests nie berührt hat.
 fn treppe(i: u32) -> (f32, f32, f32, u8) {
     // `move_z = -1` läuft nach +Z, dorthin steigt die Treppe.
-    let b = if i % 130 == 0 { buttons::DASH } else { 0 };
+    let b = if i.is_multiple_of(130) {
+        buttons::DASH
+    } else {
+        0
+    };
     (0.0, -1.0, 0.0, b)
 }
 
 /// Gegen die Westwand rennen und daran entlang. Prüft das Auflösen an Wänden
 /// und die Spielfeldgrenze.
 fn wand(i: u32) -> (f32, f32, f32, u8) {
-    let b = if i % 80 == 0 { buttons::JUMP } else { 0 };
+    let b = if i.is_multiple_of(80) {
+        buttons::JUMP
+    } else {
+        0
+    };
     if i % 200 < 100 {
         (-1.0, 0.0, 0.0, b)
     } else {
@@ -66,7 +74,11 @@ fn wand(i: u32) -> (f32, f32, f32, u8) {
 /// Durch den Durchgang in den Ostflügel und dort in die Räume.
 fn fluegel(i: u32) -> (f32, f32, f32, u8) {
     let t = i as f32;
-    let b = if i % 110 == 0 { buttons::DASH } else { 0 };
+    let b = if i.is_multiple_of(110) {
+        buttons::DASH
+    } else {
+        0
+    };
     (1.0, (t * 0.02).sin(), (t * 0.004).sin() * 0.6, b)
 }
 
