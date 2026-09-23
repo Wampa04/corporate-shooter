@@ -59,6 +59,10 @@ const resumeHint = document.getElementById("resume-hint");
 const disconnectOverlay = document.getElementById("disconnected");
 const disconnectReason = document.getElementById("disconnect-reason");
 
+// Als Listener statt als onclick-Attribut: die Content-Security-Policy des
+// Servers laesst keine Inline-Skripte zu, auch keine Einzeiler im Markup.
+document.getElementById("reconnect").addEventListener("click", () => location.reload());
+
 // Zuletzt benutzter Name, damit niemand ihn bei jedem Neuladen neu tippt.
 nameField.value = localStorage.getItem("corpshoot.name") ?? "";
 

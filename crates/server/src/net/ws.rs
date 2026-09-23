@@ -8,11 +8,12 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, State};
-use axum::http::{HeaderValue, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::any;
 use crossbeam_channel::Sender;
@@ -42,6 +43,37 @@ const FALLBACK_NAME: &str = "Praktikant:in";
 /// mit einer einzigen Nachricht zu füllen.
 const MAX_MESSAGE_BYTES: usize = 4 * 1024;
 
+/// Was der Browser-Client laden und ausführen darf.
+const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; \
+     script-src 'self' 'wasm-unsafe-eval'; \
+     connect-src 'self'; \
+     img-src 'self' data:; \
+     style-src 'self'; \
+     object-src 'none'; \
+     base-uri 'none'; \
+     form-action 'none'; \
+     frame-ancestors 'none'";
+
+/// So lange darf eine frische Verbindung schweigen, bevor sie sich mit
+/// `Join` anmeldet.
+///
+/// Der Platz wird schon beim Verbinden belegt. Ohne Frist könnte jemand mit
+/// `--max-players` stummen Sockets den Server für alle sperren.
+const JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// So lange darf ein angemeldeter Client schweigen, bevor er als getrennt
+/// gilt.
+///
+/// Ein Client sendet in jedem Tick eine Eingabe und jede Sekunde einen Ping;
+/// fünfzehn Sekunden Stille heißen: die Leitung ist tot, auch wenn TCP davon
+/// noch nichts weiß (etwa ein Laptop, der zugeklappt wurde). Ohne Frist
+/// stünde er als eingefrorene Figur im Spiel.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// So lange darf ein Client über seinem Nachrichtenkontingent liegen, bevor
+/// die Verbindung gekappt wird.
+const FLOOD_GRACE: Duration = Duration::from_secs(2);
+
 #[derive(Clone)]
 struct AppState {
     events: Sender<NetEvent>,
@@ -50,6 +82,9 @@ struct AppState {
     /// wieder herunter, auch wenn die Verbindung abbricht.
     live: Arc<AtomicUsize>,
     max_players: usize,
+    /// Simulationsschritte pro Sekunde - daran bemisst sich, wie viele
+    /// Nachrichten ein ehrlicher Client schickt.
+    tick_rate: u32,
 }
 
 /// Startet HTTP- und WebSocket-Server in einem eigenen Thread.
@@ -60,6 +95,7 @@ pub fn spawn(
     bind: SocketAddr,
     client_dir: PathBuf,
     max_players: usize,
+    tick_rate: u32,
 ) -> anyhow::Result<(crossbeam_channel::Receiver<NetEvent>, SocketAddr)> {
     let (tx, rx) = crossbeam_channel::unbounded();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
@@ -101,6 +137,7 @@ pub fn spawn(
                     next_id: Arc::new(AtomicU32::new(1)),
                     live: Arc::new(AtomicUsize::new(0)),
                     max_players,
+                    tick_rate,
                 };
                 let app = Router::new()
                     .route("/ws", any(upgrade))
@@ -128,6 +165,25 @@ pub fn spawn(
                                 header::CACHE_CONTROL,
                                 HeaderValue::from_static("no-cache"),
                             ))
+                            // Der Client laedt nur Eigenes: Module, Stil,
+                            // WebAssembly und die WebSocket-Verbindung kommen
+                            // alle vom selben Server. Alles andere bleibt zu -
+                            // falls doch einmal ein Name durchs Escapen
+                            // rutscht, laeuft wenigstens kein Skript.
+                            // `wasm-unsafe-eval` braucht das Vorhersagemodul,
+                            // `data:` das eingebettete Favicon.
+                            .layer(SetResponseHeaderLayer::overriding(
+                                header::CONTENT_SECURITY_POLICY,
+                                HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+                            ))
+                            .layer(SetResponseHeaderLayer::overriding(
+                                header::X_CONTENT_TYPE_OPTIONS,
+                                HeaderValue::from_static("nosniff"),
+                            ))
+                            .layer(SetResponseHeaderLayer::overriding(
+                                header::REFERRER_POLICY,
+                                HeaderValue::from_static("no-referrer"),
+                            ))
                             .service(
                                 ServeDir::new(&client_dir).append_index_html_on_directories(true),
                             ),
@@ -151,12 +207,45 @@ pub fn spawn(
 
 async fn upgrade(
     ws: WebSocketUpgrade,
+    headers: HeaderMap,
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    if !same_origin(&headers) {
+        info!(%peer, origin = ?headers.get(header::ORIGIN), "Verbindung abgewiesen: fremde Herkunft");
+        return StatusCode::FORBIDDEN.into_response();
+    }
     ws.max_message_size(MAX_MESSAGE_BYTES)
         .max_frame_size(MAX_MESSAGE_BYTES)
         .on_upgrade(move |socket| handle(socket, state, peer))
+        .into_response()
+}
+
+/// Prüft, ob der WebSocket von der eigenen Seite aus geöffnet wird.
+///
+/// Browser schicken bei jedem WebSocket-Aufbau die Herkunft der Seite mit,
+/// und anders als bei `fetch` gilt für WebSockets keine
+/// Same-Origin-Policy. Ohne diese Prüfung könnte jede Webseite, die ein
+/// Kollege nebenbei offen hat, über seinen Browser Verbindungen zum Server
+/// im LAN aufbauen und Plätze belegen.
+///
+/// Fehlt der Kopf ganz, ist es kein Browser (Tests, Werkzeuge) - die
+/// könnten ihn ohnehin beliebig setzen, eine Sperre brächte dort nichts.
+/// Verglichen wird mit dem `Host`, unter dem die Seite aufgerufen wurde;
+/// ein Reverse Proxy muss ihn deshalb durchreichen, was die gängigen tun.
+fn same_origin(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers.get(header::ORIGIN) else {
+        return true;
+    };
+    let (Ok(origin), Some(Ok(host))) = (
+        origin.to_str(),
+        headers.get(header::HOST).map(|h| h.to_str()),
+    ) else {
+        return false;
+    };
+    origin
+        .split_once("://")
+        .is_some_and(|(_, rest)| rest.eq_ignore_ascii_case(host))
 }
 
 /// Bereinigt einen selbstgewählten Namen.
@@ -168,7 +257,7 @@ fn sanitize_name(raw: &str) -> String {
     let cleaned: String = raw
         .trim()
         .chars()
-        .filter(|c| !c.is_control())
+        .filter(|&c| !c.is_control() && !is_invisible_format(c))
         .take(MAX_NAME_LEN)
         .collect();
     let trimmed = cleaned.trim();
@@ -176,6 +265,92 @@ fn sanitize_name(raw: &str) -> String {
         FALLBACK_NAME.to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+/// Unsichtbare Formatzeichen, die in einem Anzeigenamen nichts verloren haben.
+///
+/// Richtungswechsel (U+202E dreht den Rest der Killfeed-Zeile um),
+/// Nullbreiten-Zeichen (zwei scheinbar gleiche Namen) und Zeilentrenner.
+/// Kein vollständiger Unicode-Katalog, aber genau die Zeichen, mit denen sich
+/// eine Anzeige verfälschen lässt.
+fn is_invisible_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'..='\u{200F}'
+            | '\u{2028}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{FEFF}'
+            | '\u{FFF9}'..='\u{FFFB}'
+    )
+}
+
+/// Begrenzt, wie viele Nachrichten ein Client schicken darf.
+///
+/// Ein Eimer, der sich mit fester Rate füllt und je Nachricht einen Zug
+/// abgibt. Ein ehrlicher Client schickt im Mittel eine Eingabe je Tick und
+/// jede Sekunde einen Ping, in Schüben bis zu drei Eingaben auf einmal. Wer
+/// deutlich darüber liegt, bekommt seine Nachrichten nicht mehr durch -
+/// jede davon kostet Parsen und einen Platz im Posteingang der Simulation.
+/// Bleibt er länger als [`FLOOD_GRACE`] darüber, fliegt er.
+struct Throttle {
+    rate: f64,
+    burst: f64,
+    tokens: f64,
+    last: Instant,
+    /// Seit wann der Client ununterbrochen über dem Kontingent liegt.
+    over_since: Option<Instant>,
+    /// Zuletzt verworfene Nachricht.
+    last_drop: Option<Instant>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Verdict {
+    Pass,
+    Drop,
+    Disconnect,
+}
+
+impl Throttle {
+    fn for_tick_rate(tick_rate: u32, now: Instant) -> Throttle {
+        // Anderthalbfach plus Luft für Pings: ehrliche Clients stoßen nie an.
+        let rate = f64::from(tick_rate) * 1.5 + 10.0;
+        let burst = rate;
+        Throttle {
+            rate,
+            burst,
+            tokens: burst,
+            last: now,
+            over_since: None,
+            last_drop: None,
+        }
+    }
+
+    fn check(&mut self, now: Instant) -> Verdict {
+        let elapsed = now.saturating_duration_since(self.last).as_secs_f64();
+        self.last = now;
+        self.tokens = (self.tokens + elapsed * self.rate).min(self.burst);
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            // Wer flutet, bekommt trotzdem ab und zu eine Nachricht durch -
+            // genau im Takt, mit dem der Eimer nachläuft. Das allein ist also
+            // kein Zeichen von Besserung; erst eine Sekunde ohne Verworfenes.
+            if self
+                .last_drop
+                .is_some_and(|t| now.saturating_duration_since(t) > Duration::from_secs(1))
+            {
+                self.over_since = None;
+                self.last_drop = None;
+            }
+            return Verdict::Pass;
+        }
+        self.last_drop = Some(now);
+        let since = *self.over_since.get_or_insert(now);
+        if now.saturating_duration_since(since) > FLOOD_GRACE {
+            Verdict::Disconnect
+        } else {
+            Verdict::Drop
+        }
     }
 }
 
@@ -226,8 +401,8 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
 
     // Erste Nachricht muss `Join` sein. Alles andere wird abgewiesen, damit
     // niemand ohne Namen in der Welt landet.
-    let name = match stream.next().await {
-        Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
+    let name = match tokio::time::timeout(JOIN_TIMEOUT, stream.next()).await {
+        Ok(Some(Ok(Message::Text(text)))) => match serde_json::from_str::<ClientMessage>(&text) {
             Ok(ClientMessage::Join { name }) => sanitize_name(&name),
             _ => {
                 let _ = send_json(
@@ -240,7 +415,11 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
                 return;
             }
         },
-        _ => return,
+        Ok(_) => return,
+        Err(_) => {
+            debug!(%peer, "Verbindung ohne Anmeldung geschlossen");
+            return;
+        }
     };
 
     let id = PlayerId(state.next_id.fetch_add(1, Ordering::Relaxed));
@@ -263,7 +442,24 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
     // niemals blockieren.
     let writer = tokio::spawn(write_loop(sink, out_rx));
 
-    while let Some(frame) = stream.next().await {
+    let mut throttle = Throttle::for_tick_rate(state.tick_rate, Instant::now());
+    loop {
+        let frame = match tokio::time::timeout(IDLE_TIMEOUT, stream.next()).await {
+            Ok(Some(frame)) => frame,
+            Ok(None) => break,
+            Err(_) => {
+                info!(player = %id, "Verbindung ohne Lebenszeichen getrennt");
+                break;
+            }
+        };
+        match throttle.check(Instant::now()) {
+            Verdict::Pass => {}
+            Verdict::Drop => continue,
+            Verdict::Disconnect => {
+                warn!(player = %id, %peer, "Verbindung getrennt: zu viele Nachrichten");
+                break;
+            }
+        }
         let text = match frame {
             Ok(Message::Text(text)) => text,
             Ok(Message::Close(_)) | Err(_) => break,
@@ -271,6 +467,10 @@ async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
         };
         match serde_json::from_str::<ClientMessage>(&text) {
             Ok(ClientMessage::Input(frame)) => {
+                if !frame.is_finite() {
+                    debug!(player = %id, "Eingabe mit nicht-endlichen Werten verworfen");
+                    continue;
+                }
                 if state.events.send(NetEvent::Input { id, frame }).is_err() {
                     break;
                 }
@@ -316,7 +516,96 @@ async fn send_json(
 
 #[cfg(test)]
 mod tests {
-    use super::{FALLBACK_NAME, MAX_NAME_LEN, sanitize_name};
+    use std::time::{Duration, Instant};
+
+    use axum::http::{HeaderMap, HeaderValue, header};
+
+    use super::{
+        FALLBACK_NAME, FLOOD_GRACE, MAX_NAME_LEN, Throttle, Verdict, same_origin, sanitize_name,
+    };
+
+    #[test]
+    fn richtungswechsel_und_nullbreiten_fliegen_raus() {
+        // U+202E dreht die Killfeed-Zeile um, U+200B macht zwei gleich
+        // aussehende Namen verschieden.
+        assert_eq!(sanitize_name("Bob\u{202E}nnA"), "BobnnA");
+        assert_eq!(sanitize_name("Kar\u{200B}in"), "Karin");
+        assert_eq!(sanitize_name("\u{FEFF}\u{2060}"), FALLBACK_NAME);
+    }
+
+    fn headers(origin: Option<&str>, host: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(header::HOST, HeaderValue::from_str(host).unwrap());
+        if let Some(origin) = origin {
+            h.insert(header::ORIGIN, HeaderValue::from_str(origin).unwrap());
+        }
+        h
+    }
+
+    #[test]
+    fn eigene_seite_darf_verbinden() {
+        assert!(same_origin(&headers(
+            Some("http://192.168.1.20:4200"),
+            "192.168.1.20:4200"
+        )));
+        assert!(same_origin(&headers(
+            Some("https://buero.example"),
+            "buero.example"
+        )));
+        // Ohne Origin ist es kein Browser.
+        assert!(same_origin(&headers(None, "localhost:4200")));
+    }
+
+    #[test]
+    fn fremde_seite_darf_nicht_verbinden() {
+        assert!(!same_origin(&headers(
+            Some("https://boese.example"),
+            "192.168.1.20:4200"
+        )));
+        assert!(!same_origin(&headers(
+            Some("http://localhost:4201"),
+            "localhost:4200"
+        )));
+        assert!(!same_origin(&headers(Some("null"), "localhost:4200")));
+    }
+
+    #[test]
+    fn ehrlicher_client_stoesst_nie_an() {
+        // Eine Eingabe je Tick plus ein Ping je Sekunde, zehn Sekunden lang,
+        // dazu gelegentlich ein Schub von drei Eingaben in einem Bild.
+        let start = Instant::now();
+        let mut t = Throttle::for_tick_rate(60, start);
+        for tick in 0..600u64 {
+            let now = start + Duration::from_micros(tick * 16_667);
+            let n = if tick % 50 == 0 { 3 } else { 1 };
+            for _ in 0..n {
+                assert_eq!(t.check(now), Verdict::Pass, "Tick {tick}");
+            }
+            if tick % 60 == 0 {
+                assert_eq!(t.check(now), Verdict::Pass);
+            }
+        }
+    }
+
+    #[test]
+    fn flut_wird_gedrosselt_und_dann_getrennt() {
+        let start = Instant::now();
+        let mut t = Throttle::for_tick_rate(60, start);
+        // Tausend Nachrichten auf einmal: der Eimer ist schnell leer.
+        let verdicts: Vec<_> = (0..1000).map(|_| t.check(start)).collect();
+        assert!(verdicts.contains(&Verdict::Drop));
+        assert!(!verdicts.contains(&Verdict::Disconnect));
+        // Wer weiter flutet, fliegt nach der Schonfrist.
+        let mut now = start;
+        let mut verdict = Verdict::Drop;
+        while now < start + FLOOD_GRACE + Duration::from_millis(100) {
+            now += Duration::from_millis(1);
+            for _ in 0..10 {
+                verdict = t.check(now);
+            }
+        }
+        assert_eq!(verdict, Verdict::Disconnect);
+    }
 
     #[test]
     fn namen_werden_gekuerzt_und_getrimmt() {

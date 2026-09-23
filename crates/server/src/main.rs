@@ -209,6 +209,7 @@ fn main() -> anyhow::Result<()> {
         SocketAddr::new(args.bind, args.port),
         client_dir.clone(),
         args.max_players,
+        config.tick_rate,
     )?;
 
     // Der Daemon muss bis zum Programmende leben, sonst verschwindet der

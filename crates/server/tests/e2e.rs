@@ -569,6 +569,26 @@ async fn client_dateien_werden_vor_dem_benutzen_revalidiert() {
 }
 
 /// Minimaler HTTP-GET, um keine weitere Abhaengigkeit aufzunehmen.
+#[tokio::test(flavor = "multi_thread")]
+async fn client_wird_mit_sicherheitskoepfen_ausgeliefert() {
+    let server = TestServer::start().await;
+    let antwort = reqwest_get(server.port, "/").await.to_lowercase();
+    for kopf in [
+        "content-security-policy: default-src 'self';",
+        "script-src 'self' 'wasm-unsafe-eval';",
+        "frame-ancestors 'none'",
+        "x-content-type-options: nosniff",
+        "referrer-policy: no-referrer",
+    ] {
+        assert!(antwort.contains(kopf), "fehlt: {kopf}");
+    }
+    // Die CSP verbietet Inline-Skripte - also darf die Seite auch keine haben.
+    assert!(
+        !antwort.contains("onclick="),
+        "Inline-Handler in index.html"
+    );
+}
+
 async fn reqwest_get(port: u16, path: &str) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -666,7 +686,13 @@ async fn grosse_clientdateien_werden_komprimiert_ausgeliefert() {
     let roh = hole(false).await;
     let gezippt = hole(true).await;
 
-    let kopfzeilen = String::from_utf8_lossy(&gezippt[..gezippt.len().min(400)]).to_lowercase();
+    // Bis zur Leerzeile, nicht eine feste Byte-Zahl: die Sicherheitskoepfe
+    // sind lang und schoben `content-encoding` sonst aus dem Fenster.
+    let ende = gezippt
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .expect("Antwort ohne Kopfende");
+    let kopfzeilen = String::from_utf8_lossy(&gezippt[..ende]).to_lowercase();
     assert!(
         kopfzeilen.contains("content-encoding: gzip"),
         "Antwort ohne content-encoding: {kopfzeilen}"
@@ -768,4 +794,145 @@ async fn runde_zu_ende() {
             p.name
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stummer_socket_gibt_seinen_platz_wieder_frei() {
+    // Der Platz wird beim Verbinden belegt, nicht erst beim `Join`. Ohne
+    // Frist sperrte ein einziger stummer Socket einen Server mit einem Platz
+    // fuer immer - und `--max-players` stumme Sockets jeden anderen.
+    let server = TestServer::start_with_max(1).await;
+    let (stumm, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/ws", server.port))
+        .await
+        .expect("WebSocket-Verbindung fehlgeschlagen");
+
+    // Nach Ablauf der Frist (5 s) muss der Platz wieder zu haben sein.
+    tokio::time::sleep(Duration::from_millis(5500)).await;
+    let client = tokio::time::timeout(
+        Duration::from_secs(5),
+        Client::join(server.port, "Puenktlich"),
+    )
+    .await
+    .expect("Anmeldung haengt");
+    assert_ne!(client.id, PlayerId(0));
+    drop(stumm);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fremde_seite_bekommt_keinen_websocket() {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::tungstenite::http::HeaderValue;
+
+    let server = TestServer::start().await;
+    let url = format!("ws://127.0.0.1:{}/ws", server.port);
+
+    let mut fremd = url.as_str().into_client_request().unwrap();
+    fremd
+        .headers_mut()
+        .insert("Origin", HeaderValue::from_static("https://boese.example"));
+    let fehler = tokio_tungstenite::connect_async(fremd)
+        .await
+        .expect_err("fremde Herkunft haette abgewiesen werden muessen");
+    match fehler {
+        tokio_tungstenite::tungstenite::Error::Http(antwort) => {
+            assert_eq!(antwort.status(), 403);
+        }
+        andere => panic!("unerwarteter Fehler: {andere}"),
+    }
+
+    // Die eigene Seite kommt durch.
+    let mut eigen = url.as_str().into_client_request().unwrap();
+    let origin = format!("http://127.0.0.1:{}", server.port);
+    eigen
+        .headers_mut()
+        .insert("Origin", HeaderValue::from_str(&origin).unwrap());
+    tokio_tungstenite::connect_async(eigen)
+        .await
+        .expect("eigene Seite muss verbinden duerfen");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flutender_client_wird_getrennt() {
+    let server = TestServer::start().await;
+    let mut flut = Client::join(server.port, "Flut").await;
+    let mut ehrlich = Client::join(server.port, "Ehrlich").await;
+
+    // Pings ohne Pause, gut drei Sekunden lang. Die Drossel verwirft den
+    // Ueberschuss und trennt nach ihrer Schonfrist.
+    let ping = serde_json::to_string(&ClientMessage::Ping {
+        client_time_ms: 0.0,
+    })
+    .unwrap();
+    let start = std::time::Instant::now();
+    let mut getrennt = false;
+    while start.elapsed() < Duration::from_secs(6) {
+        if flut
+            .socket
+            .send(Message::Text(ping.clone().into()))
+            .await
+            .is_err()
+        {
+            getrennt = true;
+            break;
+        }
+    }
+    if !getrennt {
+        // Der Server hat womoeglich schon geschlossen, ohne dass das Senden
+        // es gemerkt hat: dann endet der Lesestrom.
+        getrennt = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match flut.socket.next().await {
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return true,
+                    Some(Ok(_)) => continue,
+                }
+            }
+        })
+        .await
+        .unwrap_or(false);
+    }
+    assert!(getrennt, "flutender Client wurde nicht getrennt");
+
+    // Der ehrliche Mitspieler spielt weiter, und der Flutende verschwindet
+    // aus seiner Welt. Nach der Zeit statt nach Schritten: waehrend der Flut
+    // hat er nicht gelesen, bei ihm liegen noch Snapshots von davor.
+    let mut weg = false;
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_secs(10) {
+        ehrlich.step(InputFrame::default()).await;
+        if ehrlich.players.iter().all(|p| p.name != "Flut") {
+            weg = true;
+            break;
+        }
+    }
+    assert!(weg, "flutender Spieler steht noch in den Snapshots");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unendlicher_blickwinkel_kommt_nicht_in_der_welt_an() {
+    let server = TestServer::start().await;
+    let mut client = Client::join(server.port, "Schraeg").await;
+    client.step(InputFrame::default()).await;
+    let vorher = client.me().pos;
+
+    // Von Hand geschrieben: aus einem f32 laesst sich `1e39` nicht
+    // serialisieren, aus einem Browser aber sehr wohl schicken.
+    for seq in 100..110 {
+        let raw = format!(
+            r#"{{"t":"Input","d":{{"seq":{seq},"move_x":1.0,"move_z":0.0,"yaw":1e39,
+            "pitch":0.0,"buttons":0,"weapon_slot":0}}}}"#
+        );
+        client.socket.send(Message::Text(raw.into())).await.unwrap();
+    }
+    // Ein paar Snapshots abwarten. Stuende NaN im Zustand, kaeme er als
+    // `null` an und liesse sich gar nicht erst einlesen.
+    for _ in 0..5 {
+        client.step(InputFrame::default()).await;
+    }
+    let nachher = client.me();
+    assert!(nachher.pos.is_finite() && nachher.yaw.is_finite());
+    assert!(
+        (nachher.pos - vorher).length() < 0.5,
+        "{vorher:?} -> {:?}",
+        nachher.pos
+    );
 }
