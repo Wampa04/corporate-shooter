@@ -77,6 +77,20 @@ Was dabei zu beachten ist:
   jedem Snapshot.
 * Eine WebSocket-Nachricht ist auf 4 KiB begrenzt. Ein `InputFrame` wiegt gut
   hundert Byte; die Vorgabe der Bibliothek läge bei 64 MiB.
+* Wer sich verbindet, hat 5 s Zeit für die Anmeldung, sonst ist der Platz
+  wieder frei. Ein angemeldeter Client, von dem 15 s lang nichts kommt, gilt
+  als getrennt.
+* Nachrichten sind gedrosselt: anderthalbmal die Tickrate, plus Luft für
+  Pings. Ein ehrlicher Client stößt nie daran; wer länger als 2 s darüber
+  liegt, wird getrennt.
+* WebSocket-Verbindungen von fremden Seiten (`Origin` passt nicht zum
+  `Host`) werden abgewiesen. Der Reverse Proxy muss deshalb den
+  `Host`-Kopf durchreichen — Caddy und Traefik tun das, nginx mit
+  `proxy_set_header Host $host`. Geht das nicht, gibt
+  `--allowed-origin https://buero.example` (oder
+  `CORPSHOOT_ALLOWED_ORIGINS`) die öffentliche Adresse ausdrücklich frei.
+* Der Client kommt mit einer strengen Content-Security-Policy: nur eigene
+  Skripte, keine Inline-Skripte, keine Einbettung in fremde Seiten.
 * Der Client wird gzip-komprimiert ausgeliefert — statt 800 KiB gehen rund
   200 KiB über die Leitung, der Löwenanteil davon Three.js.
 * Die Kartenbeschreibung wiegt beim Beitreten rund 109 KiB und geht
@@ -92,6 +106,9 @@ Erklärung auf:
 | `CORPSHOOT_BIND` | Adresse, an die gebunden wird |
 | `CORPSHOOT_NAME` | Name, unter dem der Server erscheint |
 | `CORPSHOOT_TICK_RATE` | Simulationsschritte pro Sekunde |
+| `CORPSHOOT_SNAPSHOT_INTERVAL` | Simulationsschritte je verschicktem Snapshot |
+| `CORPSHOOT_MAX_PLAYERS` | Höchstzahl gleichzeitiger Spieler |
+| `CORPSHOOT_ALLOWED_ORIGINS` | Weitere Seiten, die WebSockets öffnen dürfen (hinter Proxys) |
 | `CORPSHOOT_SCORE_LIMIT` | Abschlüsse für den Rundensieg |
 | `CORPSHOOT_INTERMISSION` | Pause zwischen zwei Runden |
 | `CORPSHOOT_NO_MDNS` | mDNS-Bekanntmachung abschalten |
@@ -136,9 +153,10 @@ Selbst bauen:
 docker build -t corporate-shooter .
 ```
 
-Der Build ist zweistufig und nutzt [cargo-chef], damit eine Quelltextänderung
-nicht das Übersetzen von Bevy nach sich zieht — ein Rebuild dauert dann
-Sekunden statt Minuten. Das Laufzeitbild ist `debian-slim` ohne
+Der Build nutzt [cargo-chef] in getrennten Stufen (Bauplan, Abhängigkeiten,
+eigener Code), damit eine Quelltextänderung nicht das Übersetzen von Bevy nach
+sich zieht — ein Rebuild dauert dann Sekunden statt Minuten. Das
+Vorhersagemodul wird dabei frisch nach WebAssembly übersetzt. Das Laufzeitbild ist `debian-slim` ohne
 nachinstallierte Pakete: die Binärdatei braucht nur libc, libm und libgcc. Der
 Server läuft als unprivilegierter Nutzer.
 
@@ -157,15 +175,18 @@ werden. Eine Schwelle darunter wäre unerreichbar — der Regler könnte fallen,
 aber nie wieder steigen.
 
 Die Stufen, von schön nach schnell: voller Schattenwurf, ohne Schattenwurf,
-dann in zwei Schritten weniger Bildpunkte. Der Schattenwurf fällt zuerst, weil
-er das ganze Stockwerk ein zweites Mal zeichnet und damit unabhängig von der
-Bildgröße kostet; die Auflösung sinkt zuletzt, weil man das sieht. Auf einem
+dann in zwei Schritten weniger Bildpunkte. Der Schattenwurf fällt zuerst, die
+Auflösung sinkt zuletzt, weil man das sieht. Die Schattenkarte selbst wird nur
+einmal gerechnet (die Karte steht still, Figuren werfen keinen Schatten);
+danach kostet der Schattenwurf noch das Abtasten der Karte in jedem Bildpunkt. Auf einem
 Bildschirm mit Pixelverhältnis 1 entfällt die erste Auflösungsstufe, weil sie
 dort nichts änderte.
 
 Gemessen im Prüflauf (SwiftShader, ein und dieselbe Sitzung): 83 ms bei voller
 Stufe, 67 ms ohne Schattenwurf, 50 ms bei 75 Prozent Auflösung - zwölf,
-fünfzehn, zwanzig Bilder je Sekunde.
+fünfzehn, zwanzig Bilder je Sekunde. Das war noch mit einer Schattenkarte, die
+in jedem Bild neu entstand; seit sie nur bei Bedarf gerechnet wird, liegt die
+volle Stufe im selben Prüflauf um 10-17 % schneller.
 
 Gemessen wird der Median, nicht der Mittelwert: ein einzelnes langes Bild -
 eine Speicherbereinigung, die Rückkehr aus einem anderen Tab - sagt nichts
@@ -228,8 +249,12 @@ Aus dem ursprünglichen Entwurf ist bewusst noch nicht umgesetzt:
 
 ```
 crates/protocol/   Wire-Typen, von Server und Client gemeinsam benutzt
+crates/sim-core/   Die Bewegung - eine Fassung für Server und Vorhersage
+crates/predict/    sim-core als WebAssembly für die Vorhersage im Browser
 crates/server/     Autoritative Simulation (Bevy, headless) und Netzwerkschicht
 client/            Browser-Client (Three.js, ES-Module, kein Build-Schritt)
+client/vendor/     three.js und das übersetzte predict.wasm
+scripts/           Prüfläufe außerhalb von cargo (Gleichlauf, Client-Logik)
 ```
 
 Der Server ist die einzige Quelle der Wahrheit. Er schickt dem Client beim
@@ -256,7 +281,7 @@ Gemessen: 0,38 ms je Tick von 16,7 ms Budget bei acht Spielern.
 Antwort des Servers, sondern rechnet selbst weiter und gleicht bei jedem
 Snapshot ab. Gerechnet wird dabei nicht in JavaScript: `crates/predict`
 übersetzt dieselbe Rust-Funktion nach WebAssembly, die auch der Server
-ausführt. `scripts/gleichlauf.sh` hält fest, dass beide dasselbe rechnen.
+ausführt. `scripts/lockstep.sh` hält fest, dass beide dasselbe rechnen.
 
 **Schüsse werden zurückgespult.** Fremde Spieler werden im Client bewusst
 verzögert gezeigt, damit ihre Bewegung nicht ruckelt; dazu kommt die Laufzeit.
@@ -310,34 +335,72 @@ der Server seine erreichbaren URLs beim Start aus.
 ## Entwicklung
 
 ```sh
-cargo test --workspace   # Simulation, Protokoll und ein End-to-End-Duell
-cargo clippy --all-targets
+cargo test --workspace   # Simulation, Protokoll und End-to-End-Tests
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
+scripts/lockstep.sh    # Rust und WebAssembly rechnen dieselbe Bewegung
 ```
 
-Der End-to-End-Test startet den echten Serverprozess, verbindet sich per
-WebSocket wie ein Browser und spielt eine Runde durch. Er hat bereits zwei
+Die End-to-End-Tests starten den echten Serverprozess, verbinden sich per
+WebSocket wie ein Browser und spielen eine Runde durch; andere spielen die
+Missbrauchsfälle nach (stumme Sockets, Fluten, fremde Herkunft, unsinnige
+Zahlen). Er hat bereits zwei
 Fehler gefunden, die den Unit-Tests entgangen waren — es lohnt sich, ihn
 laufen zu lassen.
 
-Der Browser-Client hat keine automatisierten Tests. Änderungen daran gehören
-im Browser angesehen; die Konsole muss dabei fehlerfrei bleiben.
+Für den Browser-Client gibt es Prüfwerkzeuge, aber weiterhin keinen
+Build-Schritt — der Server liefert `client/` so aus, wie es im Repository liegt:
 
-Rust 1.95 oder neuer (Vorgabe von Bevy 0.19). Das `Dockerfile` nagelt die
-Compiler-Version fest; wird Bevy angehoben, ist dort `RUST_VERSION`
-nachzuziehen.
+```sh
+npm ci           # ESLint, Prettier, TypeScript (nur zur Prüfung)
+npm run check    # Lint, Format, Typprüfung (JSDoc) und Tests
+npm run format   # formatieren
+```
+
+Die Typprüfung liest die JSDoc-Kommentare; `client/vendor/three.module.min.d.ts`
+verweist dafür auf die Typen von three.js. Getestet ist die Logik ohne Three.js
+und DOM (`scripts/*.mjs`); Darstellung und Bedienung nicht. Änderungen daran
+gehören im Browser angesehen; die Konsole muss dabei fehlerfrei bleiben.
+
+Prettier lässt die Modelldaten (`viewmodel.js`, `parts.js`, `figure.js`) sowie
+HTML und CSS aus: eine Zeile je Bauteil liest sich dort besser als zehn.
+
+Die Rust-Version steht in `rust-toolchain.toml` (Bevy 0.19 verlangt
+mindestens 1.95), rustup holt sie von selbst. Das `Dockerfile` nennt dieselbe
+Version noch einmal als `RUST_VERSION`; die CI prüft, dass beide
+übereinstimmen.
+
+### Konventionen
+
+* **Bezeichner englisch, Kommentare deutsch.** Typen, Funktionen, Variablen,
+  Testnamen und Dateinamen sind englisch; Kommentare, Dokumentation und alle
+  Texte, die Spielerinnen und Spieler sehen, bleiben deutsch.
+* **Das Leitungsformat ist englisch** und in `crates/protocol` festgeschrieben.
+  `wire_format.rs` hält die Form fest, auf die sich der Client verlässt, und
+  prüft, dass jede Nachricht auch über MessagePack hin und zurück kommt - damit
+  sich keine JSON-Sonderheit einschleicht.
+* **Ausgehende Nachrichten kodiert nur `net/codec.rs`.** Wer ein anderes Format
+  will, ändert dort eine Zeile.
+* **Formatierung macht das Werkzeug:** rustfmt für Rust, Prettier für die
+  Logik des Clients. Die CI prüft beides.
+* **Zahlen mit Einheit heißen danach** (`_ms`, `_secs`, `_ticks`), Grenzen, die
+  Zeit meinen, werden in Zeit angegeben und bei Bedarf in Ticks umgerechnet.
 
 ### Continuous Integration
 
-`.github/workflows/image.yml` läuft bei jedem Push und Pull Request in zwei
-Stufen:
+`.github/workflows/image.yml` läuft bei jedem Push und Pull Request in vier
+Jobs:
 
-1. **Tests** — `cargo test --workspace --locked`.
-2. **Image** — bauen, starten und prüfen, dass es den Client ausliefert.
+1. **Format und Lints** — `cargo fmt --check`, `cargo clippy -D warnings`
+   (auch für das WASM-Ziel), gleiche Rust-Version in `rust-toolchain.toml`
+   und `Dockerfile`, Prüfsummen der mitgelieferten Bibliotheken.
+2. **Tests** — `cargo test --workspace --locked` und der Gleichlauf von Rust
+   und WebAssembly (auch für das eingecheckte `predict.wasm`).
+3. **Client** — ESLint, Prettier, Typprüfung und Tests der Client-Logik
+   (`npm run check`).
+4. **Image** — bauen, starten und prüfen, dass es den Client ausliefert.
 
-Die zweite Stufe hängt an der ersten: aus rotem Code entsteht erst gar kein
-Image. Veröffentlicht wird nur vom Standardbranch und von `v*`-Tags, nach
-`ghcr.io/<repo>`.
-
-`cargo fmt --all -- --check` und `cargo clippy` laufen **nicht** in der CI und
-gehören vor dem Commit gelaufen.
+Das Image hängt an den drei Prüfjobs: aus rotem Code entsteht erst gar
+kein Image. Veröffentlicht wird nur vom Standardbranch und von `v*`-Tags, nach
+`ghcr.io/<repo>`. Die Actions sind auf Commit-SHAs festgenagelt; Dependabot
+hält sie und die Cargo-Abhängigkeiten aktuell.

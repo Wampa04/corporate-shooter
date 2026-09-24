@@ -30,7 +30,7 @@ const STEP_DISTANCE = 0.78;
 const MAX_STEP_SPEED = 20;
 
 /** Groesste Strecke, die bei einem Zeitschritt noch als Laufen zaehlt. */
-function maxStrecke(dt) {
+function maxStepDistance(dt) {
   return MAX_STEP_SPEED * Math.max(dt, 1 / 120);
 }
 
@@ -42,19 +42,23 @@ export class Audio {
    * @param {number|null} forcedVolume Vorgabe aus der URL, `null` fuer gespeichert
    */
   constructor(forcedVolume = null) {
-    const Ctx = window.AudioContext ?? window.webkitAudioContext;
+    // `webkitAudioContext` gibt es nur in alten Safari-Fassungen; die Typen
+    // von TypeScript kennen ihn deshalb nicht.
+    const Ctx = window.AudioContext ?? /** @type {any} */ (window).webkitAudioContext;
     /** Ohne Web-Audio bleibt alles still, aber nichts geht kaputt. */
     this.ctx = Ctx ? new Ctx() : null;
+    /** @type {(text: string) => void} */
     this.onStatus = () => {};
 
-    this._panners = [];
+    /** Lebende Panner, fuer das Aufraeumen in `dispose`. */
+    this._panners = new Set();
     this._walkers = new Map();
     this._ownDistance = 0;
     this._reloading = false;
     this._ambience = null;
 
-    const gespeichert = Number.parseFloat(localStorage.getItem("corpshoot.volume"));
-    this.volume = forcedVolume ?? (Number.isFinite(gespeichert) ? gespeichert : DEFAULT_VOLUME);
+    const stored = Number.parseFloat(localStorage.getItem("corpshoot.volume"));
+    this.volume = forcedVolume ?? (Number.isFinite(stored) ? stored : DEFAULT_VOLUME);
 
     if (!this.ctx) return;
 
@@ -97,16 +101,16 @@ export class Audio {
         if (this.volume > 0) {
           // Die alte Lautstaerke merken, damit das Einschalten sie
           // zurueckbringt statt auf die Vorgabe zu springen.
-          this._vorher = this.volume;
+          this._previousVolume = this.volume;
           this.setVolume(0);
           this.onStatus("Ton aus");
         } else {
-          this.setVolume(this._vorher ?? DEFAULT_VOLUME);
+          this.setVolume(this._previousVolume ?? DEFAULT_VOLUME);
           this.onStatus("Ton an");
         }
       } else if (event.code === "Period" || event.code === "Comma") {
-        const schritt = event.code === "Period" ? 0.1 : -0.1;
-        this.setVolume(Math.round((this.volume + schritt) * 10) / 10);
+        const advanceWalk = event.code === "Period" ? 0.1 : -0.1;
+        this.setVolume(Math.round((this.volume + advanceWalk) * 10) / 10);
         this.onStatus(`Ton ${Math.round(this.volume * 100)} %`);
       }
     };
@@ -133,13 +137,13 @@ export class Audio {
           // Die eigene Waffe laeuft nicht durch den Panner: sie klebt an der
           // Kamera, und ein Klang, der im Kopf herumwandert, wirkt falsch.
           const pos = d.shooter === selfId ? null : d.tracers[0]?.from;
-          if (d.weapon === "Locher") this._shotLocher(pos);
-          else if (d.weapon === "Kaffeevollautomat") this._shotKaffee(pos);
-          else this._shotTextmarker(pos);
+          if (d.weapon === "HolePunch") this._shotHolePunch(pos);
+          else if (d.weapon === "CoffeeMachine") this._shotCoffeeMachine(pos);
+          else this._shotHighlighter(pos);
           break;
         }
         case "Launched":
-          this._wurf(d.shooter === selfId ? null : d.pos);
+          this._throw(d.shooter === selfId ? null : d.pos);
           break;
         case "Burst":
           this._burst(d.pos);
@@ -180,8 +184,8 @@ export class Audio {
    * Setzt den Hoerer und erzeugt Schritte.
    *
    * @param {number} dt Zeitschritt in Sekunden
-   * @param {THREE.Camera} camera Kamera, an der der Hoerer haengt
-   * @param {{x: number, y: number, z: number}} feet eigene Fussposition
+   * @param {import("../vendor/three.module.min.js").Camera} camera Kamera, an der der Hoerer haengt
+   * @param {{x: number, z: number} | null} feet eigene Fussposition
    * @param {boolean} onGround eigener Bodenkontakt
    * @param {Map} avatars Mitspieler aus `PlayerViews.avatars`
    */
@@ -191,14 +195,6 @@ export class Audio {
     this._placeListener(camera);
     this._ownFootsteps(dt, feet, onGround);
     this._otherFootsteps(dt, avatars);
-
-    // Abgelaufene Panner abraeumen - dieselbe Buchfuehrung wie in `effects.js`.
-    const jetzt = this.ctx.currentTime;
-    for (let i = this._panners.length - 1; i >= 0; i--) {
-      if (this._panners[i].until > jetzt) continue;
-      this._panners[i].node.disconnect();
-      this._panners.splice(i, 1);
-    }
   }
 
   _placeListener(camera) {
@@ -229,10 +225,10 @@ export class Audio {
   _ownFootsteps(dt, feet, onGround) {
     if (!feet) return;
     if (this._lastOwn && onGround) {
-      const strecke = Math.hypot(feet.x - this._lastOwn.x, feet.z - this._lastOwn.z);
-      if (strecke <= maxStrecke(dt)) {
-        this._ownDistance += strecke;
-        this._ownDistance = this._schritte(this._ownDistance, () => this._footstep(null, 1.0));
+      const distance = Math.hypot(feet.x - this._lastOwn.x, feet.z - this._lastOwn.z);
+      if (distance <= maxStepDistance(dt)) {
+        this._ownDistance += distance;
+        this._ownDistance = this._takeSteps(this._ownDistance, () => this._footstep(null, 1.0));
       }
     }
     this._lastOwn = { x: feet.x, z: feet.z };
@@ -246,39 +242,39 @@ export class Audio {
    * je Bild mehr als ein Schritt faellig waere - bliebe es bei einem einzigen.
    * Genau daran sind hier drei statt siebzehn Schritten herausgekommen.
    */
-  _schritte(strecke, spiele) {
-    let rest = strecke;
+  _takeSteps(distance, play) {
+    let remaining = distance;
     // Obergrenze, damit ein Sprung in der Buchfuehrung keine Salve ausloest.
-    for (let i = 0; rest >= STEP_DISTANCE && i < 4; i++) {
-      rest -= STEP_DISTANCE;
-      spiele();
+    for (let i = 0; remaining >= STEP_DISTANCE && i < 4; i++) {
+      remaining -= STEP_DISTANCE;
+      play();
     }
-    return rest;
+    return remaining;
   }
 
   _otherFootsteps(dt, avatars) {
     if (!avatars) return;
-    const grenze = maxStrecke(dt);
+    const limit = maxStepDistance(dt);
 
     for (const [id, entry] of avatars) {
       const p = entry.group.position;
-      const zuvor = this._walkers.get(id);
-      const eintrag = { x: p.x, y: p.y, z: p.z, weg: zuvor?.weg ?? 0 };
-      this._walkers.set(id, eintrag);
-      if (!zuvor || !entry.group.visible) continue;
+      const previous = this._walkers.get(id);
+      const walker = { x: p.x, y: p.y, z: p.z, walked: previous?.walked ?? 0 };
+      this._walkers.set(id, walker);
+      if (!previous || !entry.group.visible) continue;
 
-      const strecke = Math.hypot(p.x - zuvor.x, p.z - zuvor.z);
+      const distance = Math.hypot(p.x - previous.x, p.z - previous.z);
       // Nur am Boden: in der Luft macht niemand Schritte.
-      if (strecke > grenze || Math.abs(p.y - zuvor.y) > 0.08) continue;
+      if (distance > limit || Math.abs(p.y - previous.y) > 0.08) continue;
 
       // Fremde Schritte laut genug, um sie taktisch nutzen zu koennen - die
       // Entfernung daempft sie ohnehin.
-      eintrag.weg = this._schritte(zuvor.weg + strecke, () =>
+      walker.walked = this._takeSteps(previous.walked + distance, () =>
         this._footstep([p.x, p.y + 0.1, p.z], 1.4),
       );
     }
 
-    for (const id of [...this._walkers.keys()]) {
+    for (const id of this._walkers.keys()) {
       if (!avatars.has(id)) this._walkers.delete(id);
     }
   }
@@ -293,14 +289,14 @@ export class Audio {
   // -------------------------------------------------------------------------
 
   /** Textmarker: ein quietschendes Blip mit trockenem Klick. */
-  _shotTextmarker(pos) {
+  _shotHighlighter(pos) {
     const dest = this._dest(pos, 0.2);
     this._tone({ type: "square", from: 720, to: 240, dur: 0.07, peak: 0.16, dest });
     this._noise({ dur: 0.035, peak: 0.1, type: "highpass", freq: 2200, dest });
   }
 
   /** Locher: schweres Klacken mit Bums und Metallping. */
-  _shotLocher(pos) {
+  _shotHolePunch(pos) {
     const dest = this._dest(pos, 0.45);
     this._noise({ dur: 0.09, peak: 0.34, type: "bandpass", freq: 1600, q: 1.1, dest });
     this._tone({ type: "sine", from: 120, to: 55, dur: 0.16, peak: 0.4, dest });
@@ -313,14 +309,14 @@ export class Audio {
    * Leiser als die anderen Schuesse, und das ist Absicht: bei sechzehn Schuss
    * je Sekunde summiert sich alles, was einzeln passend klingt, zu Krach.
    */
-  _shotKaffee(pos) {
+  _shotCoffeeMachine(pos) {
     const dest = this._dest(pos, 0.25);
     this._noise({ dur: 0.05, peak: 0.09, type: "highpass", freq: 3200, dest });
     this._tone({ type: "sawtooth", from: 190, to: 130, dur: 0.045, peak: 0.055, dest });
   }
 
   /** E-Mail unterwegs: Papier, das durch die Luft geht. */
-  _wurf(pos) {
+  _throw(pos) {
     const dest = this._dest(pos, 0.35);
     this._noise({ dur: 0.22, peak: 0.1, type: "bandpass", freq: 1400, q: 0.6, dest });
     this._tone({ type: "sine", from: 300, to: 480, dur: 0.18, peak: 0.05, dest });
@@ -353,14 +349,14 @@ export class Audio {
   }
 
   /** Abgang: ein absteigender Ton. Der eigene klingt im Kopf, fremde im Raum. */
-  _death(eigener, pos) {
+  _death(own, pos) {
     this._tone({
       type: "sawtooth",
-      from: eigener ? 380 : 300,
+      from: own ? 380 : 300,
       to: 110,
       dur: 0.45,
-      peak: eigener ? 0.3 : 0.18,
-      dest: eigener ? this.bus : this._dest(pos, 0.5),
+      peak: own ? 0.3 : 0.18,
+      dest: own ? this.bus : this._dest(pos, 0.5),
     });
   }
 
@@ -389,10 +385,17 @@ export class Audio {
   }
 
   _click(freq) {
-    this._tone({ type: "square", from: freq, to: freq * 0.6, dur: 0.04, peak: 0.1, dest: this.bus });
+    this._tone({
+      type: "square",
+      from: freq,
+      to: freq * 0.6,
+      dur: 0.04,
+      peak: 0.1,
+      dest: this.bus,
+    });
   }
 
-  _footstep(pos, lautstaerke) {
+  _footstep(pos, loudness) {
     const dest = this._dest(pos, 0.15);
     // Teppich: kurzes, dumpfes Rauschen ohne Ausschwingen.
     // Ein Tiefpass bei 750 Hz nimmt weissem Rauschen fast den ganzen Pegel:
@@ -400,7 +403,7 @@ export class Audio {
     // deutlich lauter und etwas offener - Teppich bleibt dumpf, aber hoerbar.
     this._noise({
       dur: 0.08,
-      peak: 0.55 * lautstaerke,
+      peak: 0.55 * loudness,
       type: "lowpass",
       freq: 1100 + Math.random() * 400,
       q: 0.7,
@@ -415,29 +418,29 @@ export class Audio {
    * wirkt das Buero wie ein Standbild.
    */
   _startAmbience() {
-    const rauschen = this.ctx.createBufferSource();
-    rauschen.buffer = this.noise;
-    rauschen.loop = true;
+    const noiseSource = this.ctx.createBufferSource();
+    noiseSource.buffer = this.noise;
+    noiseSource.loop = true;
 
-    const tief = this.ctx.createBiquadFilter();
-    tief.type = "lowpass";
-    tief.frequency.value = 420;
+    const down = this.ctx.createBiquadFilter();
+    down.type = "lowpass";
+    down.frequency.value = 420;
 
-    const pegel = this.ctx.createGain();
-    pegel.gain.value = 0.02;
-    rauschen.connect(tief).connect(pegel).connect(this.bus);
-    rauschen.start();
+    const level = this.ctx.createGain();
+    level.gain.value = 0.02;
+    noiseSource.connect(down).connect(level).connect(this.bus);
+    noiseSource.start();
 
     // Das Brummen der Leuchten, eine Oktave unter Netzfrequenz.
-    const brummen = this.ctx.createOscillator();
-    brummen.type = "sine";
-    brummen.frequency.value = 100;
-    const brummPegel = this.ctx.createGain();
-    brummPegel.gain.value = 0.006;
-    brummen.connect(brummPegel).connect(this.bus);
-    brummen.start();
+    const hum = this.ctx.createOscillator();
+    hum.type = "sine";
+    hum.frequency.value = 100;
+    const humLevel = this.ctx.createGain();
+    humLevel.gain.value = 0.006;
+    hum.connect(humLevel).connect(this.bus);
+    hum.start();
 
-    this._ambience = { rauschen, brummen };
+    this._ambience = { noiseSource, hum };
   }
 
   // -------------------------------------------------------------------------
@@ -445,11 +448,11 @@ export class Audio {
   // -------------------------------------------------------------------------
 
   /** Zwei Sekunden weisses Rauschen, von allen Klaengen geteilt. */
-  _noiseBuffer(sekunden) {
+  _noiseBuffer(seconds) {
     const rate = this.ctx.sampleRate;
-    const buffer = this.ctx.createBuffer(1, Math.floor(rate * sekunden), rate);
-    const daten = buffer.getChannelData(0);
-    for (let i = 0; i < daten.length; i++) daten[i] = Math.random() * 2 - 1;
+    const buffer = this.ctx.createBuffer(1, Math.floor(rate * seconds), rate);
+    const samples = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
     return buffer;
   }
 
@@ -460,7 +463,7 @@ export class Audio {
    * Mit Position kommt ein `PannerNode` davor, der nach Ablauf wieder
    * abgeraeumt wird.
    */
-  _dest(pos, standzeit) {
+  _dest(pos, lifetime) {
     if (!pos) return this.bus;
 
     const panner = this.ctx.createPanner();
@@ -477,7 +480,18 @@ export class Audio {
       panner.setPosition(pos[0], pos[1], pos[2]);
     }
     panner.connect(this.bus);
-    this._panners.push({ node: panner, until: this.ctx.currentTime + standzeit + 0.3 });
+    this._panners.add(panner);
+    // Mit einem eigenen Zeitgeber statt im Bildtakt: im Hintergrund-Tab wird
+    // nicht gezeichnet, Schuesse und Schritte der anderen kommen aber weiter
+    // an - die Panner stauten sich dann bis zur Rueckkehr. Zeitgeber laufen
+    // dort gedrosselt, aber sie laufen.
+    setTimeout(
+      () => {
+        panner.disconnect();
+        this._panners.delete(panner);
+      },
+      (lifetime + 0.3) * 1000,
+    );
     return panner;
   }
 
@@ -495,7 +509,7 @@ export class Audio {
     return g;
   }
 
-  _tone({ type, from, to, dur, peak, dest, delay = 0 }) {
+  _tone({ type, from, to = 0, dur, peak, dest, delay = 0 }) {
     const t0 = this.ctx.currentTime + delay;
     const osc = this.ctx.createOscillator();
     osc.type = type;
@@ -509,7 +523,7 @@ export class Audio {
     osc.onended = () => env.disconnect();
   }
 
-  _noise({ dur, peak, type, freq, freqTo, q, dest, delay = 0 }) {
+  _noise({ dur, peak, type, freq, freqTo = 0, q = 0, dest, delay = 0 }) {
     const t0 = this.ctx.currentTime + delay;
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise;
@@ -534,11 +548,11 @@ export class Audio {
   dispose() {
     window.removeEventListener("keydown", this._onKey);
     if (!this.ctx) return;
-    this._ambience?.rauschen.stop();
-    this._ambience?.brummen.stop();
+    this._ambience?.noiseSource.stop();
+    this._ambience?.hum.stop();
     this._ambience = null;
-    for (const { node } of this._panners) node.disconnect();
-    this._panners.length = 0;
+    for (const panner of this._panners) panner.disconnect();
+    this._panners.clear();
     this.ctx.close();
   }
 }

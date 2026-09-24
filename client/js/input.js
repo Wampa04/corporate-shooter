@@ -21,11 +21,11 @@ const MOVEMENT_KEYS = {
 };
 
 const BUTTON_KEYS = {
-  Space:      BUTTON.JUMP,
-  ShiftLeft:  BUTTON.DASH,
+  Space: BUTTON.JUMP,
+  ShiftLeft: BUTTON.DASH,
   ShiftRight: BUTTON.DASH,
-  KeyE:       BUTTON.HEAL,
-  KeyR:       BUTTON.RELOAD,
+  KeyE: BUTTON.HEAL,
+  KeyR: BUTTON.RELOAD,
 };
 
 export class InputController {
@@ -54,6 +54,7 @@ export class InputController {
     this._latched = 0;
     this._slots = new Set(weapons.map((w) => w.slot));
 
+    /** @type {(locked: boolean) => void} */
     this.onLockChange = () => {};
     this.onLockError = () => {};
 

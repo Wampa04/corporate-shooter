@@ -13,10 +13,10 @@
  * Die ersten Bilder sind durch Shader-Uebersetzung und Texturupload verzerrt
  * und taugen nicht als Massstab.
  */
-export const WARMLAUF_BILDER = 30;
+export const WARMUP_FRAMES = 30;
 
 /** Wie viele Bilder ein Messfenster hoechstens umfasst. */
-export const FENSTER_BILDER = 60;
+export const WINDOW_FRAMES = 60;
 
 /**
  * Wie lange ein Messfenster hoechstens dauert.
@@ -26,11 +26,11 @@ export const FENSTER_BILDER = 60;
  * Bilder fuenf Sekunden Ruckeln, bevor ueberhaupt reagiert wird. Gerade dort
  * soll es aber schnell gehen.
  */
-export const FENSTER_MS = 1500;
+export const WINDOW_MS = 1500;
 
 /** Wie viele Bilder ein Fenster mindestens enthaelt. Ein Median aus fuenf
  *  Werten ist kein Median, sondern ein Zufall. */
-export const MIN_BILDER = 20;
+export const MIN_FRAMES = 20;
 
 /**
  * Ab dieser Bildzeit wird eine Stufe heruntergeschaltet.
@@ -57,7 +57,7 @@ export const BUDGET_MS = 28;
  * gilt als schnell genug; wer bei 50 Bildern je Sekunde (20 ms) haengt, laesst
  * Bilder aus und gilt es nicht.
  */
-export const KOMFORT_MS = 18;
+export const COMFORT_MS = 18;
 
 /**
  * Wie viele gute Fenster hintereinander eine Stufe zurueckholen.
@@ -66,7 +66,7 @@ export const KOMFORT_MS = 18;
  * erst nach fuenf, denn eine ruhige Sekunde im Einzelbuero beweist noch nicht,
  * dass der Rechner auch die Halle traegt.
  */
-export const ERHOLUNG_FENSTER = 5;
+export const RECOVERY_WINDOWS = 5;
 
 /**
  * Wie oft eine Stufe hoechstens wieder verlassen werden darf.
@@ -74,7 +74,7 @@ export const ERHOLUNG_FENSTER = 5;
  * Wer zweimal von derselben Stufe herunter musste, kommt nicht mehr hinauf:
  * die Maschine hat den Beweis zweimal angetreten und zweimal verloren.
  */
-export const MAX_VERSUCHE = 2;
+export const MAX_ATTEMPTS = 2;
 
 /**
  * Die Grafikstufen, von schoen nach schnell.
@@ -90,25 +90,25 @@ export const MAX_VERSUCHE = 2;
  * aendern: auf einem Geraet mit Pixelverhaeltnis 1 waere `min(1, 1)` dieselbe
  * Stufe noch einmal, und der Regler verloere ein ganzes Fenster an nichts.
  */
-export function baueStufen(geraeteVerhaeltnis) {
+export function buildTiers(deviceRatio) {
   // Ueber zwei hinaus lohnt sich nichts: der Zugewinn ist auf keinem
   // Bildschirm zu sehen, die Kosten wachsen quadratisch.
-  const voll = Math.min(geraeteVerhaeltnis > 0 ? geraeteVerhaeltnis : 1, 2);
-  const stufen = [
-    { schatten: true, pixel: voll, name: "voll" },
-    { schatten: false, pixel: voll, name: "ohne Schatten" },
+  const fullRatio = Math.min(deviceRatio > 0 ? deviceRatio : 1, 2);
+  const tiers = [
+    { shadows: true, pixel: fullRatio, name: "voll" },
+    { shadows: false, pixel: fullRatio, name: "ohne Schatten" },
   ];
-  for (const ziel of [1, 0.75]) {
-    const pixel = Math.min(voll, ziel);
-    if (pixel < stufen[stufen.length - 1].pixel - 0.01) {
-      stufen.push({
-        schatten: false,
+  for (const target of [1, 0.75]) {
+    const pixel = Math.min(fullRatio, target);
+    if (pixel < tiers[tiers.length - 1].pixel - 0.01) {
+      tiers.push({
+        shadows: false,
         pixel,
-        name: `${Math.round((pixel / voll) * 100)} % Aufloesung`,
+        name: `${Math.round((pixel / fullRatio) * 100)} % Aufloesung`,
       });
     }
   }
-  return stufen;
+  return tiers;
 }
 
 /**
@@ -125,74 +125,70 @@ export function baueStufen(geraeteVerhaeltnis) {
  * nach den ersten anderthalb Sekunden trifft genau den Spawnpunkt und danach
  * nie wieder.
  */
-export class Grafikregler {
+export class GraphicsGovernor {
   /**
-   * @param {number} anzahlStufen  Zahl der verfuegbaren Stufen
+   * @param {number} tierCount  Zahl der verfuegbaren Stufen
    * @param {number} start         Stufe, mit der begonnen wird
    */
-  constructor(anzahlStufen, start = 0) {
-    this.anzahl = anzahlStufen;
-    this.stufe = start;
-    this._fenster = [];
-    this._fensterMs = 0;
-    this._verworfen = 0;
-    this._guteFenster = 0;
+  constructor(tierCount, start = 0) {
+    this.count = tierCount;
+    this.tier = start;
+    this._window = [];
+    this._windowMs = 0;
+    this._discarded = 0;
+    this._goodWindows = 0;
     // Wie oft jede Stufe schon nach unten verlassen wurde. Verhindert, dass
     // eine Maschine an der Grenze dauerhaft zwischen zwei Stufen pendelt.
-    this._abstiege = new Array(anzahlStufen).fill(0);
+    this._downgrades = new Array(tierCount).fill(0);
   }
 
   /**
    * Nimmt die Zeit eines Bildes entgegen.
    *
    * @param {number} ms Dauer des Bildes in Millisekunden
-   * @returns {{stufe: number, median: number} | null} die neue Stufe, oder
+   * @returns {{tier: number, median: number} | null} die neue Stufe, oder
    *   `null`, wenn alles bleibt, wie es ist.
    */
-  bild(ms) {
-    if (this._verworfen < WARMLAUF_BILDER) {
-      this._verworfen++;
+  recordFrame(ms) {
+    if (this._discarded < WARMUP_FRAMES) {
+      this._discarded++;
       return null;
     }
 
-    this._fenster.push(ms);
-    this._fensterMs += ms;
-    const voll =
-      this._fenster.length >= FENSTER_BILDER ||
-      (this._fenster.length >= MIN_BILDER && this._fensterMs >= FENSTER_MS);
-    if (!voll) return null;
+    this._window.push(ms);
+    this._windowMs += ms;
+    const fullRatio =
+      this._window.length >= WINDOW_FRAMES ||
+      (this._window.length >= MIN_FRAMES && this._windowMs >= WINDOW_MS);
+    if (!fullRatio) return null;
 
-    this._fenster.sort((a, b) => a - b);
-    const median = this._fenster[this._fenster.length >> 1];
-    this._fenster = [];
-    this._fensterMs = 0;
+    this._window.sort((a, b) => a - b);
+    const median = this._window[this._window.length >> 1];
+    this._window = [];
+    this._windowMs = 0;
 
-    if (median > BUDGET_MS && this.stufe < this.anzahl - 1) {
-      this._abstiege[this.stufe]++;
-      return this._wechsle(this.stufe + 1, median);
+    if (median > BUDGET_MS && this.tier < this.count - 1) {
+      this._downgrades[this.tier]++;
+      return this._switchTier(this.tier + 1, median);
     }
 
-    if (
-      median <= KOMFORT_MS &&
-      this.stufe > 0 &&
-      this._abstiege[this.stufe - 1] < MAX_VERSUCHE
-    ) {
-      if (++this._guteFenster >= ERHOLUNG_FENSTER) {
-        return this._wechsle(this.stufe - 1, median);
+    if (median <= COMFORT_MS && this.tier > 0 && this._downgrades[this.tier - 1] < MAX_ATTEMPTS) {
+      if (++this._goodWindows >= RECOVERY_WINDOWS) {
+        return this._switchTier(this.tier - 1, median);
       }
       return null;
     }
 
-    this._guteFenster = 0;
+    this._goodWindows = 0;
     return null;
   }
 
-  _wechsle(ziel, median) {
-    this.stufe = ziel;
-    this._guteFenster = 0;
+  _switchTier(target, median) {
+    this.tier = target;
+    this._goodWindows = 0;
     // Nach dem Umschalten uebersetzt Three die Shader neu; die naechsten
     // Bilder sind so wenig aussagekraeftig wie die beim Start.
-    this._verworfen = 0;
-    return { stufe: ziel, median };
+    this._discarded = 0;
+    return { tier: target, median };
   }
 }

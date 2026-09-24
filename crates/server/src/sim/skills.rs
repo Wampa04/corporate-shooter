@@ -11,8 +11,9 @@ use protocol::{GameEvent, buttons};
 
 use super::{Config, EventLog, Inputs, Player, Skills, Vitals};
 
-/// Zählt alle Cooldowns herunter. Läuft als erstes System des Ticks, damit ein
-/// abgelaufener Cooldown noch im selben Tick benutzt werden kann.
+/// Zählt alle Cooldowns herunter. Läuft direkt nach der Bewegung und vor
+/// [`apply_skills`], damit ein abgelaufener Cooldown noch im selben Tick
+/// benutzt werden kann.
 pub fn tick_cooldowns(config: Res<Config>, mut q: Query<(&mut Skills, &mut Vitals)>) {
     let dt = config.tick_dt();
     for (mut skills, mut vitals) in &mut q {

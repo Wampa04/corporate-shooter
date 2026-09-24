@@ -28,6 +28,9 @@ services:
     #
     #   ports:
     #     - "127.0.0.1:4200:4200"
+    #
+    # `CORPSHOOT_PORT=0` (freien Port waehlen) ergibt im Container keinen Sinn:
+    # die Portzuordnung und der Healthcheck brauchen die Nummer im Voraus.
     ports:
       - "${CORPSHOOT_PORT:-4200}:${CORPSHOOT_PORT:-4200}"
 
@@ -43,6 +46,19 @@ services:
         required: false
 
     restart: unless-stopped
+
+    # Der Server schreibt nichts auf die Platte und braucht keine besonderen
+    # Rechte. Was er nicht braucht, bekommt er auch nicht: ein
+    # schreibgeschuetztes Dateisystem, keine Linux-Capabilities, kein Weg zu
+    # mehr Rechten ueber setuid.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # Grenzen gegen einen durchgehenden Prozess. Gemessen liegt der Server mit
+    # sechzehn Spielern weit darunter.
+    mem_limit: 512m
+    pids_limit: 256
 
     # Der Server haelt keinen Zustand, den es zu sichern gaebe. Laenger als
     # noetig auf ein sauberes Ende zu warten, bringt hier nichts.
@@ -75,6 +91,12 @@ services:
     build:
       context: .
     network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256
     env_file:
       - path: .env
         required: false

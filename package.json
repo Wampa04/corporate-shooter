@@ -1,0 +1,26 @@
+{
+  "name": "corporate-shooter-client",
+  "private": true,
+  "description": "Pruefwerkzeuge fuer den Browser-Client. Der Client selbst hat keinen Build-Schritt.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --project jsconfig.json",
+    "test": "node --test scripts/client-logic.test.mjs scripts/graphics-governor.test.mjs scripts/walk-cycle.test.mjs scripts/frame-blending.test.mjs",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.4",
+    "@types/three": "0.185.4",
+    "eslint": "10.11.0",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3"
+  }
+}

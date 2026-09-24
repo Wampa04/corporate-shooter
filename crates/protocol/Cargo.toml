@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 serde = { workspace = true }
@@ -12,3 +13,9 @@ glam = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+serde = { workspace = true }
+# Nur fuer den Test, der das Protokoll von JSON unabhaengig haelt.
+rmp-serde = "1"
+
+[lints]
+workspace = true

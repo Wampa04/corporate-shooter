@@ -7,13 +7,23 @@
 // statt in die Zukunft raten zu muessen.
 
 import * as THREE from "../vendor/three.module.min.js";
-import { baueFigur, legeFigurHin, stelleFigur } from "./figur.js";
-import { ruhe, schritt } from "./laufzyklus.js";
+import { buildFigure, layFigureDown, poseFigure } from "./figure.js";
+import { rest, advanceWalk } from "./walk-cycle.js";
 
-export const TEAM_COLOR = {
-  Marketing:   0xe8559b,
-  Engineering: 0x29c1b8,
-};
+/**
+ * Teamfarbe als Zahl fuer Three.
+ *
+ * Gelesen aus dem Stylesheet (`--marketing`, `--engineering`), wo HUD und
+ * Killfeed sie ohnehin herholen. Vorher stand sie hier ein zweites Mal als
+ * Zahl, und eine Aenderung an nur einer Stelle haette Figuren und Anzeige
+ * verschieden gefaerbt.
+ */
+function teamColor(team) {
+  const css = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--${String(team).toLowerCase()}`)
+    .trim();
+  return css ? new THREE.Color(css).getHex() : 0xffffff;
+}
 
 /**
  * Verzoegerung, mit der fremde Spieler gezeigt werden.
@@ -94,11 +104,11 @@ function makeNameTag(name, color) {
 
 /** Eine Figur samt Namensschild. */
 function makeAvatar(state) {
-  const color = TEAM_COLOR[state.team] ?? 0xffffff;
-  const figur = baueFigur(color);
-  figur.schild = makeNameTag(state.name, color);
-  figur.wurzel.add(figur.schild);
-  return figur;
+  const color = teamColor(state.team);
+  const tag = makeNameTag(state.name, color);
+  const figure = { ...buildFigure(color), tag };
+  figure.root.add(tag);
+  return figure;
 }
 
 export class PlayerViews {
@@ -112,14 +122,16 @@ export class PlayerViews {
     this.selfId = selfId;
     this.delayMs = Math.max(INTERPOLATION_MS, (2 * 1000) / tickRate);
     /**
-     * @type {Map<number, {group: THREE.Group, figur: object, team: string,
-     *                     lauf: {phase: number, ausschlag: number}}>}
+     * @type {Map<number, {group: THREE.Group, figure: object, team: string,
+     *                     name: string, walk: {phase: number, amplitude: number},
+     *                     seen: boolean}>}
      *
      * `audio.js` liest diese Karte fuer die Schritte der Mitspieler und
      * verlaesst sich auf `group.position` und `group.visible`.
      */
     this.avatars = new Map();
-
+    /** Zwischenstand der Interpolation, von Bild zu Bild wiederverwendet. */
+    this._states = new Map();
   }
 
   /**
@@ -135,12 +147,12 @@ export class PlayerViews {
     // haengt ohnehin schon an `now`, und ein zweiter Parameter waere eine
     // zweite Gelegenheit, ihn falsch zu uebergeben. Gedeckelt gegen den
     // Sprung nach einem Tabwechsel.
-    const dt = this._zuletzt === undefined ? 0 : Math.min((now - this._zuletzt) / 1000, 0.1);
-    this._zuletzt = now;
+    const dt = this._lastNow === undefined ? 0 : Math.min((now - this._lastNow) / 1000, 0.1);
+    this._lastNow = now;
 
     const target = now - this.delayMs;
     const [older, newer, t] = bracket(snapshots, target);
-    const states = interpolateStates(older, newer, t);
+    const states = interpolateStates(older, newer, t, this._states);
 
     for (const [id, state] of states) {
       if (id === this.selfId) continue;
@@ -148,17 +160,20 @@ export class PlayerViews {
       let entry = this.avatars.get(id);
       // Beim Teamwechsel oder nach einer Namensaenderung neu aufbauen, damit
       // Farbe und Schild stimmen.
-      if (entry && entry.team !== state.team) {
+      if (entry && (entry.team !== state.team || entry.name !== state.name)) {
         this._remove(id);
         entry = undefined;
       }
       if (!entry) {
-        const figur = makeAvatar(state);
+        const figure = makeAvatar(state);
         entry = {
-          group: figur.wurzel,
-          figur,
+          group: figure.root,
+          figure,
           team: state.team,
-          lauf: ruhe(),
+          name: state.name,
+          walk: rest(),
+          /** Ob die Figur schon einmal stand - erst dann gibt es eine Strecke. */
+          seen: false,
         };
         this.scene.add(entry.group);
         this.avatars.set(id, entry);
@@ -167,37 +182,39 @@ export class PlayerViews {
       // Die waagerechte Strecke seit dem letzten Bild treibt den Laufzyklus.
       // Sie kommt aus der Position, die die Interpolation ohnehin liefert -
       // eine zweite Messung waere eine zweite Quelle fuer dasselbe.
-      const vorher = entry.group.position;
-      let strecke = entry.gesehen
-        ? Math.hypot(state.pos[0] - vorher.x, state.pos[2] - vorher.z)
+      const lastPos = entry.group.position;
+      let distance = entry.seen
+        ? Math.hypot(state.pos[0] - lastPos.x, state.pos[2] - lastPos.z)
         : 0;
       // Ein Sprung ist kein Weg. Beim Wiedereinstieg liegen dreissig Meter
       // zwischen zwei Bildern; ungedeckelt drehte die Figur dabei zwanzig
       // Schrittzyklen in einem einzigen Bild. Dieselbe Grenze, mit der die
       // Interpolation weiter unten einen Sprung von einer Bewegung
       // unterscheidet.
-      if (strecke > TELEPORT_DISTANCE) strecke = 0;
-      entry.gesehen = true;
+      if (distance > TELEPORT_DISTANCE) distance = 0;
+      entry.seen = true;
 
       entry.group.position.set(state.pos[0], state.pos[1], state.pos[2]);
       entry.group.rotation.y = state.yaw;
 
       if (state.alive) {
-        entry.lauf = schritt(entry.lauf, strecke, dt);
-        stelleFigur(entry.figur.glieder, entry.figur.koerper, entry.lauf, state.pitch ?? 0);
+        entry.walk = advanceWalk(entry.walk, distance, dt);
+        poseFigure(entry.figure.limbs, entry.figure.torso, entry.walk, state.pitch ?? 0);
       } else {
         // Tote bleiben liegen, wo sie gefallen sind, statt zu verschwinden:
         // wer um die Ecke kommt, soll sehen, dass hier gerade jemand
         // freigestellt wurde. Das Namensschild geht weg - es haengt an der
         // Wurzel und stuende sonst zwei Meter ueber einer Leiche in der Luft.
-        entry.lauf = ruhe();
-        legeFigurHin(entry.figur.glieder, entry.figur.koerper);
+        entry.walk = rest();
+        layFigureDown(entry.figure.limbs, entry.figure.torso);
       }
-      entry.figur.schild.visible = state.alive;
+      entry.figure.tag.visible = state.alive;
     }
 
     // Wer nicht mehr im Snapshot steht, hat das Unternehmen verlassen.
-    for (const id of [...this.avatars.keys()]) {
+    // Loeschen waehrend des Durchlaufs ist bei einer Map erlaubt; die Kopie
+    // der Schluessel je Bild braucht es dafuer nicht.
+    for (const id of this.avatars.keys()) {
       if (!states.has(id)) this._remove(id);
     }
   }
@@ -226,9 +243,12 @@ export class PlayerViews {
     if (!entry) return;
     this.scene.remove(entry.group);
     entry.group.traverse((object) => {
-      object.geometry?.dispose();
-      object.material?.map?.dispose();
-      object.material?.dispose();
+      // Netze und Sprites haben Geometrie und Material, die Gruppen dazwischen
+      // nicht - daher die Fragezeichen und der Umweg ueber `any`.
+      const o = /** @type {any} */ (object);
+      o.geometry?.dispose();
+      o.material?.map?.dispose();
+      o.material?.dispose();
     });
     this.avatars.delete(id);
   }
@@ -264,10 +284,14 @@ function bracket(snapshots, target) {
   return [newest, newest, 0];
 }
 
-/** Mischt die Spielerzustaende zweier Snapshots. */
-function interpolateStates(older, newer, t) {
-  const previous = new Map(older.players.map((p) => [p.id, p]));
-  const result = new Map();
+/**
+ * Mischt die Spielerzustaende zweier Snapshots.
+ *
+ * Schreibt in `result`, das der Aufrufer von Bild zu Bild wiederverwendet.
+ */
+function interpolateStates(older, newer, t, result) {
+  const previous = older.byId;
+  result.clear();
 
   for (const state of newer.players) {
     const before = previous.get(state.id);
@@ -288,11 +312,7 @@ function interpolateStates(older, newer, t) {
 
     result.set(state.id, {
       ...state,
-      pos: [
-        before.pos[0] + dx * t,
-        before.pos[1] + dy * t,
-        before.pos[2] + dz * t,
-      ],
+      pos: [before.pos[0] + dx * t, before.pos[1] + dy * t, before.pos[2] + dz * t],
       yaw: lerpAngle(before.yaw, state.yaw, t),
       pitch: before.pitch + (state.pitch - before.pitch) * t,
     });

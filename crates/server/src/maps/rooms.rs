@@ -16,7 +16,15 @@ use protocol::BrushKind;
 /// Aussenwand, Boden und Decke des Altbaus.
 pub fn shell(b: &mut Build) {
     let t = WALL_THICKNESS;
-    b.cuboid(BrushKind::Floor, -HALF_X, -HALF_Z, HALF_X, HALF_Z, -0.5, 0.0);
+    b.cuboid(
+        BrushKind::Floor,
+        -HALF_X,
+        -HALF_Z,
+        HALF_X,
+        HALF_Z,
+        -0.5,
+        0.0,
+    );
     b.cuboid(
         BrushKind::Ceiling,
         -HALF_X,
@@ -70,7 +78,15 @@ pub fn shell(b: &mut Build) {
         CEILING,
     );
     for z in [OPENING_Z0, OPENING_Z1] {
-        b.cuboid(BrushKind::Trim, HALF_X - 0.02, z - 0.08, HALF_X + t + 0.02, z + 0.08, 0.0, 2.6);
+        b.cuboid(
+            BrushKind::Trim,
+            HALF_X - 0.02,
+            z - 0.08,
+            HALF_X + t + 0.02,
+            z + 0.08,
+            0.0,
+            2.6,
+        );
     }
 }
 
@@ -89,7 +105,7 @@ pub fn shell_skirting(b: &mut Build) {
 pub fn open_plan(b: &mut Build) {
     for (ix, cx) in [-10.0f32, -4.0, 2.0].iter().enumerate() {
         for (iz, cz) in [-8.0f32, -1.0].iter().enumerate() {
-            b.place(At::at(*cx, *cz), desk_island);
+            b.place(At::floor(*cx, *cz), desk_island);
             // Versetzte Whiteboards brechen die Sichtachsen der Gänge auf.
             if (ix + iz) % 2 == 0 {
                 whiteboard(b, cx + 3.0, cz + 3.2, 2.6, true);
@@ -141,18 +157,30 @@ pub fn open_plan(b: &mut Build) {
     // (-17, -12.5), was erst der Freiraum-Test der Spawnpunkte zutage
     // gefördert hat.
     for (x, z) in [(-18.9f32, -13.4f32), (11.0, 3.0), (-3.0, -13.5)] {
-        plant_at(b, At::at(x, z), PlantSize::Yucca);
+        plant_at(b, At::floor(x, z), PlantSize::Yucca);
     }
     // Diese steht auf dem Chef-Podest. Vorher war sie dort 1.2 m tief
     // eingegraben, weil die Höhe des Podests niemand mitgerechnet hat.
-    plant_at(b, At::at(17.0, 11.0).on(EXECUTIVE_FLOOR), PlantSize::Yucca);
+    plant_at(
+        b,
+        At::floor(17.0, 11.0).on(EXECUTIVE_FLOOR),
+        PlantSize::Yucca,
+    );
 }
 
 /// Drei nebeneinander liegende Papierstapel auf einem Schrank.
 fn paper_stack(b: &mut Build, cx: f32, cz: f32, h: f32) {
     for k in 0..3 {
         let x = cx - 0.9 + k as f32 * 0.9;
-        b.cuboid(BrushKind::Paper, x, cz - 0.16, x + 0.32, cz + 0.16, h, h + 0.09);
+        b.cuboid(
+            BrushKind::Paper,
+            x,
+            cz - 0.16,
+            x + 0.32,
+            cz + 0.16,
+            h,
+            h + 0.09,
+        );
     }
 }
 
@@ -167,23 +195,23 @@ pub fn kitchen(b: &mut Build) {
     // beschrieben, nicht in Weltkoordinaten - vorher war jede Zahl hier eine
     // absolute, und die Küche liess sich weder verschieben noch für sich
     // ansehen.
-    b.place(At::at(KITCHEN_X, KITCHEN_Z), |b| {
+    b.place(At::floor(KITCHEN_X, KITCHEN_Z), |b| {
         // Zwei Raumteiler: einer quer nach Süden, einer längs nach Osten. Sie
         // trennen die Küche vom Grossraum, ohne die Sicht zu nehmen.
-        b.place(At::at(-1.4, -3.0), |b| {
+        b.place(At::floor(-1.4, -3.0), |b| {
             counter_run(b, BrushKind::Shelf, 4.4, 0.6, 1.0, None)
         });
-        b.place(At::at(4.0, 2.05).facing(Dir::West), |b| {
+        b.place(At::floor(4.0, 2.05).facing(Dir::West), |b| {
             counter_run(b, BrushKind::Shelf, 3.1, 0.6, 1.0, None)
         });
 
         // Küchenzeile an der Westwand, mit Hängeschränken darüber.
-        b.place(At::at(-3.9, 0.0).facing(Dir::East), |b| {
+        b.place(At::floor(-3.9, 0.0).facing(Dir::East), |b| {
             counter_run(b, BrushKind::Cabinet, 4.8, 0.7, 0.85, Some(3.6))
         });
         // Zweite Zeile an der Nordwand, ohne Hängeschränke - darüber hängt
         // schon das Schild.
-        b.place(At::at(-0.5, 3.6), |b| {
+        b.place(At::floor(-0.5, 3.6), |b| {
             counter_run(b, BrushKind::Cabinet, 4.2, 0.7, 0.85, None)
         });
 
@@ -215,7 +243,7 @@ pub fn kitchen(b: &mut Build) {
             (1.3, -0.2, Dir::East),
             (0.0, -1.5, Dir::South),
         ] {
-            chair_at(b, At::at(cx, cz).facing(dir), ChairStyle::Visitor);
+            chair_at(b, At::floor(cx, cz).facing(dir), ChairStyle::Visitor);
         }
 
         // Hausfarbe: bündig an der Wand, nicht frei in der Luft.
@@ -230,7 +258,7 @@ pub fn kitchen(b: &mut Build) {
 /// Glas blockiert Schüsse und Wege, aber nicht die Sicht: man sieht genau,
 /// wer einen gleich erledigt.
 pub fn server_room(b: &mut Build) {
-    b.place(At::at(SERVER_X, SERVER_Z), |b| {
+    b.place(At::floor(SERVER_X, SERVER_Z), |b| {
         // Westwand in voller Länge; die Nordwand hat eine Lücke als Tür.
         b.cuboid(BrushKind::Glass, -4.0, -3.6, -3.7, 3.0, 0.0, CEILING);
         b.cuboid(BrushKind::Glass, -3.7, 2.7, 0.5, 3.0, 0.0, CEILING);
@@ -269,7 +297,7 @@ pub fn executive_floor(b: &mut Build) {
     // Alles Weitere steht auf dem Podest. Innerhalb dieses Rahmens wird
     // gerechnet, als läge der Fussboden bei null - vorher stand hier achtmal
     // `EXECUTIVE_FLOOR + <Zahl>` mit von Hand addierten Höhen.
-    b.place(At::at(0.0, 0.0).on(EXECUTIVE_FLOOR), |b| {
+    b.place(At::floor(0.0, 0.0).on(EXECUTIVE_FLOOR), |b| {
         // Brüstung mit Lücke an den Aufgängen.
         b.cuboid(BrushKind::Glass, 8.0, 5.0, 8.3, 15.0, 0.0, 1.1);
         b.cuboid(BrushKind::Glass, 11.2, 5.0, 17.2, 5.3, 0.0, 1.1);
@@ -278,7 +306,11 @@ pub fn executive_floor(b: &mut Build) {
         b.cuboid(BrushKind::Desk, 13.0, 10.0, 17.4, 11.2, 0.0, 0.78);
         b.cuboid(BrushKind::Shelf, 9.0, 13.8, 14.0, 14.6, 0.0, 1.9);
         monitor(b, 15.2, 10.4);
-        chair_at(b, At::at(15.2, 9.3).facing(Dir::South), ChairStyle::Swivel);
+        chair_at(
+            b,
+            At::floor(15.2, 9.3).facing(Dir::South),
+            ChairStyle::Swivel,
+        );
 
         // Der obligatorische Besprechungstisch für Runden, in denen nichts
         // entschieden wird.
@@ -289,7 +321,7 @@ pub fn executive_floor(b: &mut Build) {
             (11.0, 6.5, Dir::South),
             (11.0, 9.9, Dir::North),
         ] {
-            chair_at(b, At::at(cx, cz).facing(dir), ChairStyle::Visitor);
+            chair_at(b, At::floor(cx, cz).facing(dir), ChairStyle::Visitor);
         }
 
         accent_panel(b, 14.0, 14.9, 8.0, true, 1.0, 1.6);
@@ -368,21 +400,21 @@ pub enum OfficeStyle {
     /// Schreibtisch quer vor der Aussenwand, Aktenschrank, Whiteboard.
     /// Deckung steht hier hoch und schmal - man verschwindet dahinter ganz
     /// oder gar nicht.
-    Akten,
+    Files,
     /// Schreibtisch in der Nordecke, ein niedriges Sideboard quer durch den
     /// Raum, davor zwei Besucherstühle. Deckung liegt hier niedrig und breit:
     /// man geht dahinter in Deckung, sieht aber weiter über sie hinweg.
-    Besprechung,
+    Meeting,
 }
 
 /// Einzelbüro mit Fenster zum Flur. Die Einrichtung hängt am [`OfficeStyle`].
 pub fn single_office(b: &mut Build, w: f32, d: f32, style: OfficeStyle) {
     match style {
-        OfficeStyle::Akten => {
+        OfficeStyle::Files => {
             // Der Schreibtisch steht quer vor der Aussenwand, die Person sitzt
             // dahinter und sieht zur Tür - so herum wie jeder, der ein eigenes
             // Büro bekommt, seinen Tisch stellt.
-            b.place(At::at(w - 1.9, 0.0).facing(Dir::West), |b| {
+            b.place(At::floor(w - 1.9, 0.0).facing(Dir::West), |b| {
                 workstation(b, true)
             });
 
@@ -391,26 +423,26 @@ pub fn single_office(b: &mut Build, w: f32, d: f32, style: OfficeStyle) {
             paper_stack(b, w - 1.2, -d * 0.5 + 0.3, 1.2);
             chair_at(
                 b,
-                At::at(w - 3.1, 0.9).facing(Dir::East),
+                At::floor(w - 3.1, 0.9).facing(Dir::East),
                 ChairStyle::Visitor,
             );
 
             // Whiteboard an der Seitenwand und eine Palme in der hinteren Ecke.
             whiteboard(b, w - 2.6, d * 0.5 - 0.2, 2.4, true);
-            plant_at(b, At::at(w - 0.55, -d * 0.5 + 0.55), PlantSize::Yucca);
+            plant_at(b, At::floor(w - 0.55, -d * 0.5 + 0.55), PlantSize::Yucca);
         }
-        OfficeStyle::Besprechung => {
+        OfficeStyle::Meeting => {
             // Der Schreibtisch steht in der Nordecke und schaut nach Süden,
             // quer zum anderen Büro. Wer aus dem Flur hereinkommt, sieht die
             // Person also von der Seite statt frontal.
-            b.place(At::at(w - 1.7, d * 0.5 - 1.1).facing(Dir::South), |b| {
+            b.place(At::floor(w - 1.7, d * 0.5 - 1.1).facing(Dir::South), |b| {
                 workstation(b, false)
             });
 
             // Das Sideboard läuft an der Südwand entlang und ist die eigentliche
             // Deckung des Raums: hüfthoch, breit, und man sieht darüber hinweg.
             // Dasselbe Bauteil wie die Küchenzeile.
-            b.place(At::at(w * 0.5 + 0.4, -d * 0.5).facing(Dir::South), |b| {
+            b.place(At::floor(w * 0.5 + 0.4, -d * 0.5).facing(Dir::South), |b| {
                 counter_run(b, BrushKind::Cabinet, 3.0, 0.5, 1.05, None)
             });
             paper_stack(b, w * 0.5 + 1.2, -d * 0.5 + 0.25, 1.1);
@@ -418,12 +450,12 @@ pub fn single_office(b: &mut Build, w: f32, d: f32, style: OfficeStyle) {
             // Zwei Besucherstühle vor dem Sideboard, einander zugewandt.
             chair_at(
                 b,
-                At::at(w - 4.0, -d * 0.5 + 1.35).facing(Dir::East),
+                At::floor(w - 4.0, -d * 0.5 + 1.35).facing(Dir::East),
                 ChairStyle::Visitor,
             );
             chair_at(
                 b,
-                At::at(w - 2.4, -d * 0.5 + 1.35).facing(Dir::West),
+                At::floor(w - 2.4, -d * 0.5 + 1.35).facing(Dir::West),
                 ChairStyle::Visitor,
             );
 
@@ -431,7 +463,7 @@ pub fn single_office(b: &mut Build, w: f32, d: f32, style: OfficeStyle) {
             // Büros. Stattdessen Hausfarbe an der Aussenwand und die Palme in
             // der Nordecke, also diagonal gegenüber.
             accent_panel(b, w - 0.05, 0.4, 2.6, false, 1.15, 1.75);
-            plant_at(b, At::at(w - 0.55, d * 0.5 - 0.55), PlantSize::Yucca);
+            plant_at(b, At::floor(w - 0.55, d * 0.5 - 0.55), PlantSize::Yucca);
         }
     }
 
@@ -445,7 +477,15 @@ pub fn single_office(b: &mut Build, w: f32, d: f32, style: OfficeStyle) {
 pub fn meeting_room(b: &mut Build, w: f32, d: f32) {
     let (cx, cz) = (w * 0.5 + 0.3, 0.0);
 
-    b.cuboid(BrushKind::Desk, cx - 1.8, cz - 0.7, cx + 1.8, cz + 0.7, 0.0, DESK_TOP);
+    b.cuboid(
+        BrushKind::Desk,
+        cx - 1.8,
+        cz - 0.7,
+        cx + 1.8,
+        cz + 0.7,
+        0.0,
+        DESK_TOP,
+    );
     worktop(b, cx - 1.8, cz - 0.7, cx + 1.8, cz + 0.7, DESK_TOP);
 
     // Acht Stühle ringsum, jeder zum Tisch gedreht. Genau dafür gibt es die
@@ -463,7 +503,7 @@ pub fn meeting_room(b: &mut Build, w: f32, d: f32) {
     ] {
         chair_at(
             b,
-            At::at(cx + dx, cz + dz).facing(dir),
+            At::floor(cx + dx, cz + dz).facing(dir),
             ChairStyle::Visitor,
         );
     }
@@ -493,7 +533,7 @@ pub fn meeting_room(b: &mut Build, w: f32, d: f32) {
     }
 
     whiteboard(b, w - 0.25, cz, 3.2, false);
-    plant_at(b, At::at(0.7, -d * 0.5 + 0.6), PlantSize::Yucca);
+    plant_at(b, At::floor(0.7, -d * 0.5 + 0.6), PlantSize::Yucca);
     hanging_sign(b, 1.6, 0.0, 2.0, false);
 
     light_panel(b, w * 0.4, -1.8);
@@ -559,45 +599,51 @@ pub fn east_wing(b: &mut Build) {
     // ein Anbau, in dem man von aussen nichts sieht, wäre eine Sackgasse mit
     // Türen.
     for z in [OFFICE_A_Z0, OFFICE_B_Z0, OFFICE_B_Z1] {
-        b.place(At::at(CORRIDOR_EAST, z), |b| {
+        b.place(At::floor(CORRIDOR_EAST, z), |b| {
             glass_wall(b, WING_EAST - CORRIDOR_EAST, None)
         });
     }
 
     // Längswand zum Flur, je Raum ein Stück mit Tür.
-    let raeume = [
+    let rooms = [
         (WING_SOUTH, OFFICE_A_Z0),
         (OFFICE_A_Z0, OFFICE_B_Z0),
         (OFFICE_B_Z0, OFFICE_B_Z1),
     ];
-    for (z0, z1) in raeume {
-        let laenge = z1 - z0;
-        b.place(At::at(CORRIDOR_EAST, z0).facing(Dir::East), |b| {
+    for (z0, z1) in rooms {
+        let length = z1 - z0;
+        b.place(At::floor(CORRIDOR_EAST, z0).facing(Dir::East), |b| {
             // Die Tür sitzt zum Flurende hin, nicht mittig: so steht man beim
             // Eintreten nicht sofort im Schussfeld des Schreibtischs.
-            glass_wall(b, laenge, Some(laenge - DOOR_WIDTH - 0.6))
+            glass_wall(b, length, Some(length - DOOR_WIDTH - 0.6))
         });
     }
 
     // Besprechungsraum und zwei Einzelbüros. Dieselbe Funktion, zweimal
     // aufgerufen - aber mit verschiedener Einrichtung, damit die beiden Räume
     // sich nicht gleich spielen.
-    let tiefe = WING_EAST - CORRIDOR_EAST;
+    let depth = WING_EAST - CORRIDOR_EAST;
     b.place(
-        At::at(CORRIDOR_EAST, (WING_SOUTH + OFFICE_A_Z0) * 0.5),
-        |b| meeting_room(b, tiefe, OFFICE_A_Z0 - WING_SOUTH),
+        At::floor(CORRIDOR_EAST, (WING_SOUTH + OFFICE_A_Z0) * 0.5),
+        |b| meeting_room(b, depth, OFFICE_A_Z0 - WING_SOUTH),
     );
     b.place(
-        At::at(CORRIDOR_EAST, (OFFICE_A_Z0 + OFFICE_B_Z0) * 0.5),
-        |b| single_office(b, tiefe, OFFICE_B_Z0 - OFFICE_A_Z0, OfficeStyle::Akten),
+        At::floor(CORRIDOR_EAST, (OFFICE_A_Z0 + OFFICE_B_Z0) * 0.5),
+        |b| single_office(b, depth, OFFICE_B_Z0 - OFFICE_A_Z0, OfficeStyle::Files),
     );
     b.place(
-        At::at(CORRIDOR_EAST, (OFFICE_B_Z0 + OFFICE_B_Z1) * 0.5),
-        |b| single_office(b, tiefe, OFFICE_B_Z1 - OFFICE_B_Z0, OfficeStyle::Besprechung),
+        At::floor(CORRIDOR_EAST, (OFFICE_B_Z0 + OFFICE_B_Z1) * 0.5),
+        |b| single_office(b, depth, OFFICE_B_Z1 - OFFICE_B_Z0, OfficeStyle::Meeting),
     );
 
     // Flur: Leitstreifen, Leuchten, Sockelleisten, Beschilderung.
-    floor_stripe(b, HALF_X + 1.2, WING_SOUTH + 0.4, HALF_X + 1.5, WING_NORTH - 0.4);
+    floor_stripe(
+        b,
+        HALF_X + 1.2,
+        WING_SOUTH + 0.4,
+        HALF_X + 1.5,
+        WING_NORTH - 0.4,
+    );
     let mut z = WING_SOUTH + 2.0;
     while z < WING_NORTH {
         light_panel(b, HALF_X + 1.3, z);
@@ -626,7 +672,11 @@ pub fn east_wing(b: &mut Build) {
     // genau im Durchgang und hat den Anbau unbetretbar gemacht.
     cabinet(b, HALF_X + 0.3, OPENING_Z1 + 1.7, 2.4, false, 1.2);
     cabinet(b, HALF_X + 0.3, WING_SOUTH + 1.2, 2.4, false, 1.9);
-    plant_at(b, At::at(WING_EAST - 0.6, WING_SOUTH + 0.7), PlantSize::Yucca);
+    plant_at(
+        b,
+        At::floor(WING_EAST - 0.6, WING_SOUTH + 0.7),
+        PlantSize::Yucca,
+    );
 
     // Hausfarbe an der Aussenwand des Flügels.
     accent_panel(b, WING_EAST - 0.05, 0.0, 8.0, false, 1.15, 1.75);

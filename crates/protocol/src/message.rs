@@ -88,7 +88,6 @@ impl Default for MatchState {
 }
 
 impl MatchState {
-
     pub fn score(&self, team: Team) -> u32 {
         match team {
             Team::Marketing => self.score_marketing,
@@ -148,13 +147,29 @@ pub struct InputFrame {
     /// Gebrochen, weil der Client zwischen zwei Snapshots interpoliert.
     /// `None` heißt "keine Angabe" - dann wertet der Server gegen den
     /// aktuellen Stand aus, wie vor der Lag-Kompensation.
+    ///
+    /// `f64`, weil die Nummer mit der Laufzeit wächst: ein `f32` trifft ganze
+    /// Zahlen nur bis 2^24 - bei 60 Hz nach gut drei Tagen.
     #[serde(default)]
-    pub view_tick: Option<f32>,
+    pub view_tick: Option<f64>,
 }
 
 impl InputFrame {
     pub fn pressed(&self, bit: u8) -> bool {
         self.buttons & bit != 0
+    }
+
+    /// `true`, wenn alle Gleitkommafelder endlich sind.
+    ///
+    /// JSON kennt weder NaN noch Unendlich, aber `1e39` ist eine gueltige
+    /// JSON-Zahl - und wird beim Einlesen als `f32` zu Unendlich. Solche
+    /// Rahmen verwirft der Server, bevor sie die Simulation erreichen.
+    pub fn is_finite(&self) -> bool {
+        self.move_x.is_finite()
+            && self.move_z.is_finite()
+            && self.yaw.is_finite()
+            && self.pitch.is_finite()
+            && self.view_tick.is_none_or(f64::is_finite)
     }
 }
 
@@ -310,14 +325,24 @@ pub enum ServerMessage {
         config: GameConfig,
         map: MapDesc,
     },
-    Snapshot {
+    /// Was nur dieser Client über sich erfährt, für einen Snapshot-Tick.
+    ///
+    /// Geht unmittelbar vor dem [`ServerMessage::Snapshot`] desselben Ticks
+    /// raus; der Client führt beide zusammen. Getrennt, damit der Snapshot
+    /// für alle Empfänger derselbe ist und nur einmal kodiert werden muss -
+    /// vorher wurde er für jeden Client einzeln geklont und serialisiert.
+    Local {
         tick: u64,
         /// Höchste vom Server verarbeitete `InputFrame::seq` dieses Clients.
         ack_seq: u32,
-        players: Vec<PlayerState>,
         local: LocalState,
+    },
+    /// Der öffentliche Stand eines Ticks. Für alle Clients gleich.
+    Snapshot {
+        tick: u64,
+        players: Vec<PlayerState>,
         events: Vec<GameEvent>,
-        /// Stand der Runde. Für alle Clients gleich.
+        /// Stand der Runde.
         #[serde(rename = "match")]
         match_state: MatchState,
     },

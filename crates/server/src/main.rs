@@ -100,6 +100,20 @@ struct Args {
     #[arg(long, env = "CORPSHOOT_MAX_PLAYERS", default_value_t = 16)]
     max_players: usize,
 
+    /// Herkunft, die ausser der eigenen Seite WebSockets oeffnen darf, etwa
+    /// `https://buero.example`. Mehrfach angebbar, in der Umgebung
+    /// kommagetrennt.
+    ///
+    /// Noetig nur hinter einem Reverse Proxy, der den `Host`-Kopf nicht
+    /// durchreicht: dann sieht der Server die interne Adresse, der Browser
+    /// meldet die oeffentliche, und ohne Freigabe wuerde jeder abgewiesen.
+    #[arg(
+        long = "allowed-origin",
+        env = "CORPSHOOT_ALLOWED_ORIGINS",
+        value_delimiter = ','
+    )]
+    allowed_origins: Vec<String>,
+
     /// Karte und Konfiguration als JSON ausgeben und beenden.
     ///
     /// Fuer Werkzeuge, die den Grundriss brauchen, ohne den Server zu starten -
@@ -182,13 +196,16 @@ fn main() -> anyhow::Result<()> {
         (1..=120).contains(&args.tick_rate),
         "--tick-rate muss zwischen 1 und 120 liegen"
     );
-    anyhow::ensure!(args.score_limit >= 1, "--score-limit muss mindestens 1 sein");
+    anyhow::ensure!(
+        args.score_limit >= 1,
+        "--score-limit muss mindestens 1 sein"
+    );
     anyhow::ensure!(
         args.intermission >= 0.0 && args.intermission.is_finite(),
         "--intermission muss eine nicht-negative Zahl sein"
     );
 
-    let map = maps::grossraumbuero();
+    let map = maps::open_plan_office();
 
     if let Some(dir) = &args.dump_map {
         let config = config_from(&args);
@@ -206,6 +223,8 @@ fn main() -> anyhow::Result<()> {
         SocketAddr::new(args.bind, args.port),
         client_dir.clone(),
         args.max_players,
+        config.tick_rate,
+        args.allowed_origins.clone(),
     )?;
 
     // Der Daemon muss bis zum Programmende leben, sonst verschwindet der
@@ -251,14 +270,14 @@ mod tests {
     use protocol::GameConfig;
 
     #[test]
-    fn kommandozeile_ist_wohlgeformt() {
+    fn command_line_is_well_formed() {
         // Faengt widerspruechliche Attribute ab, die sonst erst zur Laufzeit
         // beim ersten Aufruf auffallen wuerden.
         Args::command().debug_assert();
     }
 
     #[test]
-    fn vorgaben_ohne_argumente() {
+    fn defaults_without_arguments() {
         let args = Args::parse_from(["server"]);
         assert_eq!(args.port, 4200);
         assert_eq!(args.tick_rate, 60);
@@ -268,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn kommandozeile_und_default_stimmen_ueberein() {
+    fn command_line_matches_default() {
         // Der Server nimmt seine Werte von der Kommandozeile, die Tests von
         // `GameConfig::default()`. Laufen die beiden auseinander, laufen Tests
         // und Server mit verschiedenen Zahlen - und die Tests bleiben gruen,
@@ -283,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn rundeneinstellungen_lassen_sich_setzen() {
+    fn match_settings_can_be_set() {
         let args = Args::parse_from(["server", "--score-limit", "5", "--intermission", "2.5"]);
         let config = config_from(&args);
         assert_eq!(config.score_limit, 5);
@@ -291,7 +310,27 @@ mod tests {
     }
 
     #[test]
-    fn no_mdns_laesst_sich_setzen_und_ausdruecklich_abwaehlen() {
+    fn allowed_origins_from_flag_and_list() {
+        let args = Args::parse_from([
+            "server",
+            "--allowed-origin",
+            "https://a.example",
+            "--allowed-origin",
+            "https://b.example,https://c.example",
+        ]);
+        assert_eq!(
+            args.allowed_origins,
+            [
+                "https://a.example",
+                "https://b.example",
+                "https://c.example"
+            ]
+        );
+        assert!(Args::parse_from(["server"]).allowed_origins.is_empty());
+    }
+
+    #[test]
+    fn no_mdns_can_be_set_and_explicitly_unset() {
         // Ohne den Wert bleibt es eine gewoehnliche Schaltflagge ...
         assert!(Args::parse_from(["server", "--no-mdns"]).no_mdns);
         // ... mit Wert laesst es sich abwaehlen. Das braucht es, weil dieselbe
@@ -302,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn argumente_werden_uebernommen() {
+    fn arguments_are_applied() {
         let args = Args::parse_from([
             "server",
             "--port",

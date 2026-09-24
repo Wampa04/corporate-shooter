@@ -14,8 +14,8 @@ mod tests;
 pub mod combat;
 pub mod history;
 pub mod matchstate;
-pub mod projectiles;
 pub mod movement;
+pub mod projectiles;
 pub mod skills;
 pub mod spawn;
 
@@ -119,7 +119,7 @@ pub struct Skills {
 
 /// Höchstzahl gepufferter, noch nicht simulierter Eingaben.
 ///
-/// Bei 30 Hz sind acht Eingaben eine Viertelsekunde Netzschwankung. Wer mehr
+/// Bei 60 Hz sind acht Eingaben gut eine Achtelsekunde Netzschwankung. Wer mehr
 /// anstaut, hat kein Ruckeln mehr, sondern eine tote Leitung - dann ist es
 /// richtiger, die ältesten fallen zu lassen, als minutenlang Vergangenheit
 /// nachzuspielen.
@@ -145,8 +145,14 @@ pub struct Inputs {
     pending: std::collections::VecDeque<InputFrame>,
     /// Zuletzt simulierte Eingabe.
     pub current: InputFrame,
-    /// Tasten der davor simulierten Eingabe, für die Flankenerkennung.
-    pub prev_buttons: u8,
+    /// Tasten, die in diesem Tick neu gedrückt wurden - über alle in diesem
+    /// Tick simulierten Eingaben hinweg.
+    ///
+    /// Gesammelt statt aus `current` und dem Rahmen davor abgelesen: kommt
+    /// in einem Tick nichts an, gibt es auch keine neue Flanke (sonst feuert
+    /// die Einzelschusswaffe weiter, solange der Client schweigt). Kommen
+    /// mehrere an, geht ein kurzer Klick im ersten nicht verloren.
+    pressed_edges: u8,
     /// Höchste *simulierte* `InputFrame::seq`, wird dem Client bestätigt.
     ///
     /// Bewusst nicht die höchste empfangene: der Client streicht alles
@@ -162,11 +168,14 @@ pub struct Inputs {
 impl Inputs {
     /// `true`, wenn die Taste in diesem Tick neu gedrückt wurde.
     pub fn just_pressed(&self, bit: u8) -> bool {
-        self.current.pressed(bit) && (self.prev_buttons & bit) == 0
+        self.pressed_edges & bit != 0
     }
 
     /// Nimmt eine empfangene Eingabe in die Warteschlange auf.
     pub fn push(&mut self, frame: InputFrame) {
+        if !frame.is_finite() {
+            return;
+        }
         // Veraltete Frames verwerfen: bei TCP kommen sie zwar in Reihenfolge
         // an, aber ein Client darf trotzdem nicht rückwärts springen.
         if frame.seq <= self.seen_seq && self.seen_seq != 0 {
@@ -185,16 +194,27 @@ impl Inputs {
     /// diesem Tick nicht. Das ist Absicht: der Client sagt nur voraus, was er
     /// auch gesendet hat, und ein vom Server erfundener Schritt wäre genau
     /// die Abweichung, die er hinterher zurückzieht.
-    pub fn take_for_tick(&mut self) -> Vec<InputFrame> {
+    ///
+    /// Es sind höchstens [`MAX_BURST`]; sie kommen deshalb aus einem Feld auf
+    /// dem Stack statt aus einem je Spieler und Tick angelegten `Vec`. Der
+    /// Iterator leiht `self` nicht, damit währenddessen [`Inputs::applied`]
+    /// aufgerufen werden kann.
+    pub fn take_for_tick(&mut self) -> impl Iterator<Item = InputFrame> + use<> {
+        // Ein neuer Tick beginnt: die Flanken des vorigen sind verbraucht.
+        self.pressed_edges = 0;
         self.credit = (self.credit + 1).min(MAX_BURST);
         let n = self.pending.len().min(self.credit as usize);
         self.credit -= n as u32;
-        self.pending.drain(..n).collect()
+        let mut batch = [InputFrame::default(); MAX_BURST as usize];
+        for (slot, frame) in batch.iter_mut().zip(self.pending.drain(..n)) {
+            *slot = frame;
+        }
+        batch.into_iter().take(n)
     }
 
     /// Übernimmt eine gerade simulierte Eingabe als neuen Stand.
     pub fn applied(&mut self, frame: InputFrame) {
-        self.prev_buttons = self.current.buttons;
+        self.pressed_edges |= frame.buttons & !self.current.buttons;
         self.ack_seq = frame.seq;
         self.current = frame;
     }
@@ -251,8 +271,22 @@ impl std::ops::Deref for Config {
     }
 }
 
+/// Zähler der Simulationsschritte.
+///
+/// Während der Simulation steht hier die Nummer des laufenden Schritts;
+/// `finish_tick` zählt am Ende hoch, und erst danach geht der Snapshot raus.
+/// Der Snapshot eines Schritts trägt also die Nummer *danach* - siehe
+/// [`Tick::snapshot_tick`].
 #[derive(Resource, Debug, Default)]
 pub struct Tick(pub u64);
+
+impl Tick {
+    /// Die Nummer, die der Snapshot am Ende des laufenden Schritts tragen
+    /// wird. Auf sie beruft sich der Client in `InputFrame::view_tick`.
+    pub fn snapshot_tick(&self) -> u64 {
+        self.0 + 1
+    }
+}
 
 /// Ereignisse dieses Ticks. Wird nach dem Versand geleert.
 #[derive(Resource, Debug, Default)]
@@ -279,6 +313,10 @@ pub struct PendingDamage(pub Vec<DamageEvent>);
 pub struct DamageEvent {
     pub attacker: PlayerId,
     pub attacker_entity: Entity,
+    /// Team des Schützen, festgehalten beim Abschuss. Ein Projektil kann
+    /// ankommen, wenn der Schütze das Spiel schon verlassen hat - der
+    /// Teampunkt soll dann trotzdem zählen.
+    pub attacker_team: Team,
     pub target: Entity,
     pub amount: u16,
     pub pos: Vec3,
@@ -357,8 +395,8 @@ impl Plugin for SimPlugin {
             .init_resource::<PendingDamage>()
             .init_resource::<EventLog>()
             .init_resource::<Lobby>()
-            .insert_resource(matchstate::Match::neu())
-            .init_resource::<projectiles::NaechsteId>()
+            .insert_resource(matchstate::Match::new())
+            .init_resource::<projectiles::NextProjectileId>()
             .add_systems(
                 Update,
                 (
@@ -394,7 +432,8 @@ impl Plugin for SimPlugin {
 /// anfallen.
 ///
 /// Läuft als letztes System der Simulation, aber *vor* dem Snapshot-Versand -
-/// der Snapshot trägt damit die Nummer des gerade simulierten Ticks.
+/// der Snapshot trägt damit die Nummer nach dem gerade simulierten Tick
+/// ([`Tick::snapshot_tick`]).
 fn finish_tick(mut tick: ResMut<Tick>) {
     tick.0 += 1;
 }

@@ -26,7 +26,7 @@ const RADIUS: f32 = 0.09;
 
 /// Fortlaufende Nummer, damit der Client Abschuss und Einschlag zuordnen kann.
 #[derive(Resource, Debug, Default)]
-pub struct NaechsteId(pub u32);
+pub struct NextProjectileId(pub u32);
 
 #[derive(Component, Debug)]
 pub struct Projectile {
@@ -42,7 +42,7 @@ pub struct Projectile {
 }
 
 /// Angaben, mit denen ein Geschoss auf die Reise geht.
-pub struct Neu {
+pub struct Launch {
     pub owner: PlayerId,
     pub owner_entity: Entity,
     pub team: Team,
@@ -53,29 +53,29 @@ pub struct Neu {
 
 pub fn spawn(
     commands: &mut Commands,
-    naechste: &mut NaechsteId,
+    next: &mut NextProjectileId,
     events: &mut EventLog,
-    neu: Neu,
+    new: Launch,
 ) {
-    naechste.0 = naechste.0.wrapping_add(1);
-    let id = naechste.0;
+    next.0 = next.0.wrapping_add(1);
+    let id = next.0;
 
     events.push(GameEvent::Launched {
         projectile: id,
-        shooter: neu.owner,
-        weapon: neu.weapon,
-        pos: neu.pos,
-        vel: neu.vel,
+        shooter: new.owner,
+        weapon: new.weapon,
+        pos: new.pos,
+        vel: new.vel,
     });
 
     commands.spawn(Projectile {
         id,
-        owner: neu.owner,
-        owner_entity: neu.owner_entity,
-        team: neu.team,
-        weapon: neu.weapon,
-        pos: neu.pos,
-        vel: neu.vel,
+        owner: new.owner,
+        owner_entity: new.owner_entity,
+        team: new.team,
+        weapon: new.weapon,
+        pos: new.pos,
+        vel: new.vel,
         // Wird beim ersten Schritt aus der Waffenbeschreibung gesetzt.
         fuse: f32::INFINITY,
     });
@@ -92,21 +92,21 @@ pub fn advance(
     mut commands: Commands,
     mut events: ResMut<EventLog>,
     mut pending: ResMut<PendingDamage>,
-    ziele: Query<(Entity, &Player, &Body, &Vitals)>,
-    mut fliegende: Query<(Entity, &mut Projectile)>,
+    targets: Query<(Entity, &Player, &Body, &Vitals)>,
+    mut in_flight: Query<(Entity, &mut Projectile)>,
 ) {
     let dt = config.tick_dt();
     let half = player_half_extents(config.player_radius, config.player_height);
 
-    for (entity, mut p) in &mut fliegende {
-        let beschreibung = config.weapon(p.weapon);
+    for (entity, mut p) in &mut in_flight {
+        let spec = config.weapon(p.weapon);
         let WeaponKind::Projectile {
             gravity,
             fuse,
             splash_radius,
             splash_damage,
             ..
-        } = beschreibung.kind
+        } = spec.kind
         else {
             // Kann nur passieren, wenn eine Waffe umkonfiguriert wurde,
             // während etwas von ihr in der Luft war.
@@ -119,80 +119,86 @@ pub fn advance(
         }
 
         p.vel.y -= gravity * dt;
-        let von = p.pos;
-        let nach = von + p.vel * dt;
+        let from = p.pos;
+        let to = from + p.vel * dt;
         p.fuse -= dt;
 
         // Der Flugweg dieses Ticks als Strecke prüfen, nicht nur der Endpunkt:
         // bei 22 m/s sind das gut 36 cm je Tick, und eine Wand ist dünner.
-        let strecke = nach - von;
-        let laenge = strecke.length();
-        let richtung = if laenge > 1e-6 {
-            strecke / laenge
+        let travel = to - from;
+        let travel_len = travel.length();
+        let direction = if travel_len > 1e-6 {
+            travel / travel_len
         } else {
             Vec3::Z
         };
 
-        let mut treffer = laenge;
-        let mut getroffen: Option<Entity> = None;
+        let mut hit_distance = travel_len;
+        let mut hit_entity: Option<Entity> = None;
 
         for brush in &level.opaque {
-            if let Some(t) = brush.ray_intersection(von, richtung, treffer) {
-                treffer = t;
-                getroffen = None;
+            if let Some(t) = brush.ray_intersection(from, direction, hit_distance) {
+                hit_distance = t;
+                hit_entity = None;
             }
         }
-        for (ziel, spieler, koerper, vitals) in &ziele {
+        for (candidate, players, body_state, vitals) in &targets {
             // Kein Selbstbeschuss und kein Beschuss der eigenen Abteilung -
             // dieselbe Regel wie beim Hitscan.
-            if !vitals.alive || spieler.id == p.owner || spieler.team == p.team {
+            if !vitals.alive || players.id == p.owner || players.team == p.team {
                 continue;
             }
-            let aufgeblasen = aufblasen(player_aabb(koerper.pos, half), RADIUS);
-            if let Some(t) = aufgeblasen.ray_intersection(von, richtung, treffer) {
-                treffer = t;
-                getroffen = Some(ziel);
+            let inflated = inflate(player_aabb(body_state.pos, half), RADIUS);
+            if let Some(t) = inflated.ray_intersection(from, direction, hit_distance) {
+                hit_distance = t;
+                hit_entity = Some(candidate);
             }
         }
 
-        let zerplatzt = getroffen.is_some() || treffer < laenge || p.fuse <= 0.0;
-        p.pos = if treffer < laenge { von + richtung * treffer } else { nach };
-        if !zerplatzt {
+        let burst = hit_entity.is_some() || hit_distance < travel_len || p.fuse <= 0.0;
+        p.pos = if hit_distance < travel_len {
+            from + direction * hit_distance
+        } else {
+            to
+        };
+        if !burst {
             continue;
         }
 
         // Direkter Treffer zusätzlich zum Umkreis: wer trifft, soll mehr davon
         // haben als wer danebenwirft.
-        if let Some(ziel) = getroffen {
+        if let Some(candidate) = hit_entity {
             pending.0.push(DamageEvent {
                 attacker: p.owner,
                 attacker_entity: p.owner_entity,
-                target: ziel,
-                amount: beschreibung.damage,
+                attacker_team: p.team,
+                target: candidate,
+                amount: spec.damage,
                 pos: p.pos,
                 weapon: p.weapon,
             });
         }
 
-        for (ziel, spieler, koerper, vitals) in &ziele {
-            if !vitals.alive || spieler.team == p.team {
+        for (candidate, players, body_state, vitals) in &targets {
+            if !vitals.alive || players.team == p.team {
                 continue;
             }
             // Gemessen zur Körpermitte, nicht zu den Füßen: eine Explosion auf
             // Kopfhöhe soll nicht wirkungslos sein, weil die Position am Boden
             // hängt.
-            let mitte = koerper.pos + Vec3::Y * (config.player_height * 0.5);
-            let abstand = (mitte - p.pos).length();
-            if abstand >= splash_radius {
+            let center = body_state.pos + Vec3::Y * (config.player_height * 0.5);
+            let distance = (center - p.pos).length();
+            if distance >= splash_radius {
                 continue;
             }
-            let anteil = 1.0 - abstand / splash_radius;
-            let schaden = ((splash_damage as f32 * anteil).round() as u16).max(1);
+            let share = 1.0 - distance / splash_radius;
+            let splash_amount = ((splash_damage as f32 * share).round() as u16).max(1);
             pending.0.push(DamageEvent {
                 attacker: p.owner,
                 attacker_entity: p.owner_entity,
-                target: ziel,
-                amount: schaden,
+                attacker_team: p.team,
+                target: candidate,
+                amount: splash_amount,
                 pos: p.pos,
                 weapon: p.weapon,
             });
@@ -209,7 +215,7 @@ pub fn advance(
 
 /// Vergrößert eine Box in alle Richtungen - so bekommt das Geschoss eine
 /// Ausdehnung, ohne dass die Strahlenprüfung eine braucht.
-fn aufblasen(a: Aabb, r: f32) -> Aabb {
+fn inflate(a: Aabb, r: f32) -> Aabb {
     Aabb {
         min: a.min - Vec3::splat(r),
         max: a.max + Vec3::splat(r),

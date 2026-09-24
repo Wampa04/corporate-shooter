@@ -23,11 +23,11 @@ use super::{Config, EventLog, Vitals};
 pub struct Match(pub MatchState);
 
 impl Match {
-    pub fn neu() -> Self {
+    pub fn new() -> Self {
         Match(MatchState::default())
     }
 
-    pub fn laeuft(&self) -> bool {
+    pub fn is_running(&self) -> bool {
         self.0.phase == Phase::Running
     }
 }
@@ -41,42 +41,42 @@ impl Match {
 /// zweite Wiedereinstiegslogik, die zur ersten passen muesste.
 pub fn rules(
     config: Res<Config>,
-    mut runde: ResMut<Match>,
+    mut current_match: ResMut<Match>,
     mut events: ResMut<EventLog>,
     mut q: Query<&mut Vitals>,
 ) {
-    match runde.0.phase {
+    match current_match.0.phase {
         Phase::Running => {
             // Beide Teams pruefen, nicht nur eines: im selben Tick koennen
             // beide den letzten Punkt machen.
-            let sieger = [Team::Marketing, Team::Engineering]
+            let leader = [Team::Marketing, Team::Engineering]
                 .into_iter()
-                .filter(|t| runde.0.score(*t) >= config.score_limit)
+                .filter(|t| current_match.0.score(*t) >= config.score_limit)
                 // Bei Gleichstand gewinnt, wer mehr hat; sind auch die gleich,
                 // entscheidet die Reihenfolge. Ein Unentschieden waere die
                 // ehrlichere Antwort, aber "Marketing und Engineering haben
                 // gemeinsam gewonnen" glaubt im Buero ohnehin niemand.
-                .max_by_key(|t| runde.0.score(*t));
+                .max_by_key(|t| current_match.0.score(*t));
 
-            if let Some(team) = sieger {
-                runde.0.phase = Phase::Over;
-                runde.0.winner = Some(team);
-                runde.0.remaining = config.intermission;
+            if let Some(team) = leader {
+                current_match.0.phase = Phase::Over;
+                current_match.0.winner = Some(team);
+                current_match.0.remaining = config.intermission;
                 events.push(GameEvent::MatchOver {
                     winner: team,
-                    score_marketing: runde.0.score_marketing,
-                    score_engineering: runde.0.score_engineering,
+                    score_marketing: current_match.0.score_marketing,
+                    score_engineering: current_match.0.score_engineering,
                 });
             }
         }
 
         Phase::Over => {
-            runde.0.remaining = (runde.0.remaining - config.tick_dt()).max(0.0);
-            if runde.0.remaining > 0.0 {
+            current_match.0.remaining = (current_match.0.remaining - config.tick_dt()).max(0.0);
+            if current_match.0.remaining > 0.0 {
                 return;
             }
 
-            runde.0 = MatchState::default();
+            current_match.0 = MatchState::default();
             for mut vitals in &mut q {
                 vitals.kills = 0;
                 vitals.deaths = 0;

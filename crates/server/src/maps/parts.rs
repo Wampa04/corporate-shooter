@@ -58,12 +58,12 @@ pub fn counter_run(
     b.cuboid(kind, -hw, -depth, hw, 0.0, 0.0, height);
     worktop(b, -hw, -depth, hw, 0.0, height);
 
-    if let Some(oben) = over {
+    if let Some(overhang) = over {
         b.cuboid(
             kind,
-            -oben * 0.5,
+            -overhang * 0.5,
             -WALL_CABINET_DEPTH,
-            oben * 0.5,
+            overhang * 0.5,
             0.0,
             WALL_CABINET_Y0,
             WALL_CABINET_Y1,
@@ -83,7 +83,15 @@ pub fn skirting(b: &mut Build, x0: f32, z0: f32, x1: f32, z1: f32) {
 
 /// Leuchtenfeld, bündig in die Rasterdecke eingelassen.
 pub fn light_panel(b: &mut Build, cx: f32, cz: f32) {
-    b.centered(BrushKind::LightPanel, cx, cz, 1.2, 0.6, CEILING - 0.06, CEILING);
+    b.centered(
+        BrushKind::LightPanel,
+        cx,
+        cz,
+        1.2,
+        0.6,
+        CEILING - 0.06,
+        CEILING,
+    );
 }
 
 /// Lüftungsgitter, bündig in der Rasterdecke.
@@ -285,8 +293,24 @@ pub fn office_chair(b: &mut Build, style: ChairStyle) {
 
     // Armlehnen.
     for side in [-1.0f32, 1.0] {
-        b.centered(BrushKind::ChairFrame, side * 0.26, 0.02, 0.06, 0.24, 0.62, 0.68);
-        b.centered(BrushKind::ChairFrame, side * 0.26, 0.12, 0.05, 0.05, 0.50, 0.62);
+        b.centered(
+            BrushKind::ChairFrame,
+            side * 0.26,
+            0.02,
+            0.06,
+            0.24,
+            0.62,
+            0.68,
+        );
+        b.centered(
+            BrushKind::ChairFrame,
+            side * 0.26,
+            0.12,
+            0.05,
+            0.05,
+            0.50,
+            0.62,
+        );
     }
 
     match style {
@@ -360,8 +384,24 @@ pub fn potted_plant(b: &mut Build, size: PlantSize) {
     // Übertopf: unten schmaler, oben mit Rand. Zwei Boxen genügen, damit er
     // nicht wie ein Würfel wirkt.
     let pot_top = h * 0.22;
-    b.centered(BrushKind::Plant, 0.0, 0.0, r * 1.7, r * 1.7, 0.0, pot_top * 0.25);
-    b.centered(BrushKind::Plant, 0.0, 0.0, r * 2.0, r * 2.0, pot_top * 0.25, pot_top);
+    b.centered(
+        BrushKind::Plant,
+        0.0,
+        0.0,
+        r * 1.7,
+        r * 1.7,
+        0.0,
+        pot_top * 0.25,
+    );
+    b.centered(
+        BrushKind::Plant,
+        0.0,
+        0.0,
+        r * 2.0,
+        r * 2.0,
+        pot_top * 0.25,
+        pot_top,
+    );
     b.centered(
         BrushKind::PlantRim,
         0.0,
@@ -383,7 +423,15 @@ pub fn potted_plant(b: &mut Build, size: PlantSize) {
 
     // Stamm, leicht versetzt fortgesetzt: kein Mast, sondern gewachsen.
     let stem_top = h * 0.55;
-    b.centered(BrushKind::Stem, 0.0, 0.0, r * 0.42, r * 0.42, pot_top, stem_top);
+    b.centered(
+        BrushKind::Stem,
+        0.0,
+        0.0,
+        r * 0.42,
+        r * 0.42,
+        pot_top,
+        stem_top,
+    );
     b.centered(
         BrushKind::Stem,
         r * 0.13,
@@ -423,15 +471,7 @@ pub fn potted_plant(b: &mut Build, size: PlantSize) {
         );
     }
     // Herzblatt, das oben aus der Krone steht.
-    b.centered(
-        BrushKind::Foliage,
-        0.0,
-        0.0,
-        r * 0.6,
-        r * 0.6,
-        h * 0.82,
-        h,
-    );
+    b.centered(BrushKind::Foliage, 0.0, 0.0, r * 0.6, r * 0.6, h * 0.82, h);
 }
 
 /// Pflanze an Ort und Stelle.
@@ -452,7 +492,11 @@ pub fn workstation(b: &mut Build, with_paper: bool) {
     desk(b, 0.0, 0.0, true);
     monitor(b, 0.0, -0.55);
     desk_clutter(b, 0.0, 0.0, 1.0, with_paper);
-    chair_at(b, At::at(0.0, 0.85).facing(Dir::North), ChairStyle::Swivel);
+    chair_at(
+        b,
+        At::floor(0.0, 0.85).facing(Dir::North),
+        ChairStyle::Swivel,
+    );
 }
 
 /// Vierertisch-Insel mit Sichtschutz - so wie das Grossraumbüro sie zu
@@ -464,7 +508,7 @@ pub fn desk_island(b: &mut Build) {
     {
         // Die Personen sitzen zur Gangseite, die Bildschirme stehen zur Mitte.
         let facing = if dz > 0.0 { Dir::North } else { Dir::South };
-        b.place(At::at(dx, dz).facing(facing), |b| {
+        b.place(At::floor(dx, dz).facing(facing), |b| {
             workstation(b, i % 2 == 0)
         });
     }
@@ -494,7 +538,7 @@ fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
     if y0 <= 0.0 {
         b.cuboid(BrushKind::Trim, x0, -t, x1, t, 0.0, 0.10);
     }
-    let unten = y0.max(0.10);
+    let floor_y = y0.max(0.10);
 
     // Jedes der drei Bänder wird auf [unten, y1] beschnitten und nur gebaut,
     // wenn davon etwas übrig bleibt.
@@ -504,8 +548,8 @@ fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
     // gebaut, aber Milchglasband und Oberglas fragten y0 gar nicht - sie
     // standen immer auf 0.90 bis 3.30, also mitten in der Türöffnung. Von
     // aussen sah die Tür normal aus, nur durchgehen konnte man nicht.
-    let stueck = |b: &mut Build, kind: BrushKind, a: f32, e: f32| {
-        let (a, e) = (a.max(unten), e.min(y1));
+    let piece = |b: &mut Build, kind: BrushKind, a: f32, e: f32| {
+        let (a, e) = (a.max(floor_y), e.min(y1));
         if e > a + 1e-4 {
             b.cuboid(kind, x0, -t, x1, t, a, e);
             true
@@ -514,17 +558,25 @@ fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
         }
     };
 
-    stueck(b, BrushKind::Glass, 0.0, BAND_LOW);
+    piece(b, BrushKind::Glass, 0.0, BAND_LOW);
     // Das Milchglasband: verdeckt den Rumpf, lässt Kopf und Beine frei. Die
     // Höhen kommen aus der Spielerfigur, nicht aus dem Gefühl - Beine bis
     // 0.82, Rumpf bis 1.60, Augen auf 1.62.
-    if stueck(b, BrushKind::FrostedGlass, BAND_LOW, BAND_HIGH) {
+    if piece(b, BrushKind::FrostedGlass, BAND_LOW, BAND_HIGH) {
         // Zwei schmale Streifen in der Hausfarbe fassen das Band ein.
-        for y in [BAND_LOW.max(unten), BAND_HIGH.min(y1)] {
-            b.cuboid(BrushKind::AccentPanel, x0, -band, x1, band, y - 0.01, y + 0.01);
+        for y in [BAND_LOW.max(floor_y), BAND_HIGH.min(y1)] {
+            b.cuboid(
+                BrushKind::AccentPanel,
+                x0,
+                -band,
+                x1,
+                band,
+                y - 0.01,
+                y + 0.01,
+            );
         }
     }
-    if stueck(b, BrushKind::Glass, BAND_HIGH, y1 - 0.10) {
+    if piece(b, BrushKind::Glass, BAND_HIGH, y1 - 0.10) {
         // Kopfschiene.
         b.cuboid(BrushKind::Trim, x0, -t, x1, t, y1 - 0.10, y1);
     }
@@ -558,7 +610,15 @@ pub fn glass_wall(b: &mut Build, length: f32, door: Option<f32>) {
             glass_bay(b, d, d + DOOR_WIDTH, DOOR_HEIGHT, CEILING);
             // Zarge.
             for x in [d, d + DOOR_WIDTH] {
-                b.cuboid(BrushKind::Trim, x - 0.05, -0.08, x + 0.05, 0.08, 0.0, DOOR_HEIGHT);
+                b.cuboid(
+                    BrushKind::Trim,
+                    x - 0.05,
+                    -0.08,
+                    x + 0.05,
+                    0.08,
+                    0.0,
+                    DOOR_HEIGHT,
+                );
             }
             b.cuboid(
                 BrushKind::Trim,

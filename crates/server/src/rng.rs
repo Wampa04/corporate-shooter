@@ -61,7 +61,7 @@ mod tests {
     use super::Rng;
 
     #[test]
-    fn gleicher_seed_gleiche_folge() {
+    fn same_seed_same_sequence() {
         let mut b = Rng::from_seed(7);
         let mut c = Rng::from_seed(7);
         for _ in 0..64 {
@@ -70,7 +70,7 @@ mod tests {
     }
 
     #[test]
-    fn verschiedene_seeds_verschiedene_folgen() {
+    fn different_seeds_different_sequences() {
         let mut a = Rng::from_seed(1);
         let mut b = Rng::from_seed(2);
         assert_ne!(
@@ -80,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    fn unit_bleibt_im_halboffenen_intervall() {
+    fn unit_stays_in_half_open_interval() {
         let mut rng = Rng::from_seed(42);
         for _ in 0..100_000 {
             let v = rng.unit();
@@ -89,15 +89,15 @@ mod tests {
     }
 
     #[test]
-    fn below_bleibt_im_bereich_und_deckt_ihn_ab() {
+    fn below_stays_in_range_and_covers_it() {
         let mut rng = Rng::from_seed(9);
-        let mut gesehen = [false; 5];
+        let mut seen = [false; 5];
         for _ in 0..1000 {
             let v = rng.below(5);
             assert!(v < 5);
-            gesehen[v] = true;
+            seen[v] = true;
         }
-        assert!(gesehen.iter().all(|&g| g));
+        assert!(seen.iter().all(|&g| g));
         assert_eq!(rng.below(0), 0);
     }
 }

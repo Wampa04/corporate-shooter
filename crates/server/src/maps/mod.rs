@@ -73,7 +73,7 @@ const SERVER_X: f32 = 16.0;
 const SERVER_Z: f32 = -11.0;
 
 /// Baut das Großraumbüro samt Kaffeeküche, Serverraum und Chef-Etage.
-pub fn grossraumbuero() -> MapDesc {
+pub fn open_plan_office() -> MapDesc {
     let mut b = Build::new();
 
     rooms::shell(&mut b);
@@ -172,9 +172,9 @@ mod snapshot_tests {
     /// Sortiert, damit die Reihenfolge der Emission egal ist: ein Umbau darf
     /// Abschnitte umsortieren, ohne dass der Vergleich anschlägt. Genau das
     /// macht diese Fassung zum Beweismittel beim Zerlegen von
-    /// [`super::grossraumbuero`] in Bauteile.
+    /// [`super::open_plan_office`] in Bauteile.
     pub fn canonical_dump() -> String {
-        let map = super::grossraumbuero();
+        let map = super::open_plan_office();
         let mut lines: Vec<String> = map
             .brushes
             .iter()
@@ -200,7 +200,7 @@ mod snapshot_tests {
     /// Kein Test im eigentlichen Sinn, sondern das Werkzeug für den
     /// Vorher-Nachher-Vergleich beim Umbau.
     #[test]
-    fn grundriss_ausgeben() {
+    fn dump_floor_plan() {
         if let Ok(path) = std::env::var("MAP_DUMP") {
             std::fs::write(&path, canonical_dump()).expect("Dump schreiben");
             eprintln!("Grundriss nach {path} geschrieben");
@@ -213,16 +213,16 @@ mod budget_tests {
     use crate::sim::Level;
 
     #[test]
-    fn detail_kostet_die_simulation_nichts() {
+    fn detail_costs_the_simulation_nothing() {
         // Die Karte darf beliebig detailreich werden, solange die Zahl der
         // Boxen, gegen die pro Teilschritt geprüft wird, klein bleibt. Genau
         // dafür ist der grösste Teil der neuen Geometrie Dekoration.
-        let map = super::grossraumbuero();
-        let gesamt = map.brushes.len();
+        let map = super::open_plan_office();
+        let total = map.brushes.len();
         let level = Level::new(map);
 
         eprintln!(
-            "Boxen: {gesamt}, davon massiv {}, schussdicht {}",
+            "Boxen: {total}, davon massiv {}, schussdicht {}",
             level.solid.len(),
             level.opaque.len()
         );

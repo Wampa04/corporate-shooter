@@ -25,7 +25,7 @@ pub const STATE_FLOATS: usize = 13;
 
 /// Der gesamte Zustand des Moduls. Ein WASM-Modul ist eine Instanz, also ist
 /// ein einzelner globaler Zustand hier die ehrliche Abbildung davon.
-struct Welt {
+struct World {
     scratch: Vec<u8>,
     state: Vec<f32>,
     config: Option<GameConfig>,
@@ -33,15 +33,15 @@ struct Welt {
     bounds: Aabb,
 }
 
-static mut WELT: Option<Welt> = None;
+static mut WORLD: Option<World> = None;
 
 /// # Safety
 /// WebAssembly läuft einfädig; gleichzeitige Zugriffe kann es nicht geben.
 #[allow(static_mut_refs)]
-fn welt() -> &'static mut Welt {
+fn world() -> &'static mut World {
     unsafe {
-        if WELT.is_none() {
-            WELT = Some(Welt {
+        if WORLD.is_none() {
+            WORLD = Some(World {
                 scratch: vec![0; SCRATCH],
                 state: vec![0.0; STATE_FLOATS],
                 config: None,
@@ -49,14 +49,14 @@ fn welt() -> &'static mut Welt {
                 bounds: Aabb::new(Vec3::ZERO, Vec3::ZERO),
             });
         }
-        WELT.as_mut().unwrap()
+        WORLD.as_mut().unwrap()
     }
 }
 
 /// Adresse des Puffers, in den JavaScript JSON schreibt.
 #[unsafe(no_mangle)]
 pub extern "C" fn scratch_ptr() -> *mut u8 {
-    welt().scratch.as_mut_ptr()
+    world().scratch.as_mut_ptr()
 }
 
 /// Größe dieses Puffers.
@@ -73,11 +73,11 @@ pub extern "C" fn scratch_len() -> usize {
 /// und liest die Position je Bild ab - ohne Kopieren, ohne Serialisieren.
 #[unsafe(no_mangle)]
 pub extern "C" fn state_ptr() -> *mut f32 {
-    welt().state.as_mut_ptr()
+    world().state.as_mut_ptr()
 }
 
 fn scratch_str(len: usize) -> Option<&'static str> {
-    let w = welt();
+    let w = world();
     if len > w.scratch.len() {
         return None;
     }
@@ -93,7 +93,7 @@ pub extern "C" fn load_level(len: usize) -> i32 {
     let Ok(map) = serde_json::from_str::<MapDesc>(text) else {
         return 0;
     };
-    let w = welt();
+    let w = world();
     // Dieselbe Einstufung wie auf dem Server - es gibt nur eine.
     w.solid = map
         .brushes
@@ -113,14 +113,14 @@ pub extern "C" fn load_config(len: usize) -> i32 {
     };
     match serde_json::from_str::<GameConfig>(text) {
         Ok(config) => {
-            welt().config = Some(config);
+            world().config = Some(config);
             1
         }
         Err(_) => 0,
     }
 }
 
-fn lesen(f: &[f32]) -> MoveState {
+fn read(f: &[f32]) -> MoveState {
     MoveState {
         pos: Vec3::new(f[0], f[1], f[2]),
         vel: Vec3::new(f[3], f[4], f[5]),
@@ -133,7 +133,7 @@ fn lesen(f: &[f32]) -> MoveState {
     }
 }
 
-fn schreiben(f: &mut [f32], s: &MoveState) {
+fn write(f: &mut [f32], s: &MoveState) {
     f[0] = s.pos.x;
     f[1] = s.pos.y;
     f[2] = s.pos.z;
@@ -166,7 +166,7 @@ pub extern "C" fn step(
     prev_buttons: u32,
     alive: u32,
 ) -> i32 {
-    let w = welt();
+    let w = world();
     let Some(config) = w.config.as_ref() else {
         return 0;
     };
@@ -184,7 +184,7 @@ pub extern "C" fn step(
         view_tick: None,
     };
 
-    let mut state = lesen(&w.state);
+    let mut state = read(&w.state);
     sim_core::step(
         &mut state,
         &input,
@@ -194,6 +194,6 @@ pub extern "C" fn step(
         &w.solid,
         &w.bounds,
     );
-    schreiben(&mut w.state, &state);
+    write(&mut w.state, &state);
     1
 }

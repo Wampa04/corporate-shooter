@@ -6,10 +6,10 @@
 
 /** Tastenbits, identisch zu `protocol::message::buttons`. */
 export const BUTTON = {
-  FIRE:   1 << 0,
-  JUMP:   1 << 1,
-  DASH:   1 << 2,
-  HEAL:   1 << 3,
+  FIRE: 1 << 0,
+  JUMP: 1 << 1,
+  DASH: 1 << 2,
+  HEAL: 1 << 3,
   RELOAD: 1 << 4,
 };
 
@@ -19,23 +19,57 @@ const SNAPSHOT_HISTORY = 64;
 /** Abstand zwischen zwei Laufzeitmessungen in Millisekunden. */
 const PING_INTERVAL = 1000;
 
+/**
+ * @typedef {object} Snapshot
+ * @property {number} tick
+ * @property {Array<object>} players
+ * @property {Array<object>} events
+ * @property {object} match
+ * @property {number} [ack_seq] aus `Local`
+ * @property {object} [local] aus `Local`
+ * @property {number} [recvTime] Empfangszeit, `performance.now()`
+ * @property {Map<number, object>} [byId] Spieler nach Id
+ */
+
+/**
+ * Fuehrt den eigenen Stand (`Local`) und den oeffentlichen `Snapshot`
+ * desselben Ticks zu dem Objekt zusammen, mit dem der Rest des Clients
+ * arbeitet: `{tick, ack_seq, players, local, events, match}`.
+ *
+ * Der Server schickt beides getrennt, damit er den Snapshot fuer alle
+ * Empfaenger nur einmal kodieren muss. `Local` kommt immer unmittelbar davor.
+ * Passt der Tick nicht, ist etwas grundsaetzlich schiefgelaufen - dann lieber
+ * einen Snapshot auslassen, als die Vorhersage mit dem Stand eines anderen
+ * Ticks abzugleichen.
+ *
+ * @param {{tick: number, ack_seq: number, local: object} | null} local
+ * @param {Snapshot} snapshot
+ * @returns {Snapshot | null}
+ */
+export function mergeSnapshot(local, snapshot) {
+  if (!local || local.tick !== snapshot.tick) return null;
+  snapshot.ack_seq = local.ack_seq;
+  snapshot.local = local.local;
+  return snapshot;
+}
+
 export class Connection {
   constructor() {
     this.socket = null;
-    this.playerId = null;
-    this.config = null;
-    this.map = null;
 
     /** Ringpuffer der letzten Snapshots, aelteste zuerst. */
     this.snapshots = [];
     /** Zuletzt gemessene Laufzeit in Millisekunden, `null` bis zum ersten Pong. */
     this.ping = null;
 
-    this.onWelcome = () => {};
+    /** @type {(snapshot: Snapshot) => void} */
     this.onSnapshot = () => {};
+    /** @type {() => void} */
     this.onClose = () => {};
 
     this._pingTimer = null;
+    /** Eigener Stand, wartet auf den Snapshot desselben Ticks. */
+    this._local = null;
   }
 
   /**
@@ -65,16 +99,20 @@ export class Connection {
         } catch {
           return; // Unlesbares verwerfen statt die Verbindung zu kappen.
         }
-        this._handle(message, (welcome) => {
-          if (settled) return;
-          settled = true;
-          this._startPinging();
-          resolve(welcome);
-        }, (reason) => {
-          if (settled) return;
-          settled = true;
-          reject(new Error(reason));
-        });
+        this._handle(
+          message,
+          (welcome) => {
+            if (settled) return;
+            settled = true;
+            this._startPinging();
+            resolve(welcome);
+          },
+          (reason) => {
+            if (settled) return;
+            settled = true;
+            reject(new Error(reason));
+          },
+        );
       });
 
       socket.addEventListener("error", () => {
@@ -98,16 +136,21 @@ export class Connection {
   _handle(message, resolve, reject) {
     switch (message.t) {
       case "Welcome":
-        this.playerId = message.d.player_id;
-        this.config = message.d.config;
-        this.map = message.d.map;
-        this.onWelcome(message.d);
         resolve(message.d);
         break;
 
+      case "Local":
+        this._local = message.d;
+        break;
+
       case "Snapshot": {
-        const snapshot = message.d;
+        const snapshot = mergeSnapshot(this._local, message.d);
+        this._local = null;
+        if (!snapshot) break;
         snapshot.recvTime = performance.now();
+        // Einmal je Snapshot statt in jedem Bild: Kamera, HUD, Interpolation
+        // und Vorhersage fragen alle "welcher Spieler ist das?".
+        snapshot.byId = new Map(snapshot.players.map((p) => [p.id, p]));
         this.snapshots.push(snapshot);
         if (this.snapshots.length > SNAPSHOT_HISTORY) this.snapshots.shift();
         this.onSnapshot(snapshot);
@@ -125,11 +168,6 @@ export class Connection {
     }
   }
 
-  /** Verwirft alle gepufferten Snapshots, etwa nach einem langen Tab-Wechsel. */
-  clearHistory() {
-    this.snapshots.length = 0;
-  }
-
   get latest() {
     return this.snapshots[this.snapshots.length - 1] ?? null;
   }
@@ -143,9 +181,7 @@ export class Connection {
     this._stopPinging();
     const send = () => {
       if (this.socket?.readyState !== WebSocket.OPEN) return;
-      this.socket.send(
-        JSON.stringify({ t: "Ping", d: { client_time_ms: performance.now() } }),
-      );
+      this.socket.send(JSON.stringify({ t: "Ping", d: { client_time_ms: performance.now() } }));
     };
     send();
     this._pingTimer = setInterval(send, PING_INTERVAL);
@@ -156,10 +192,5 @@ export class Connection {
       clearInterval(this._pingTimer);
       this._pingTimer = null;
     }
-  }
-
-  close() {
-    this._stopPinging();
-    this.socket?.close();
   }
 }

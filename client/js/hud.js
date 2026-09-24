@@ -14,6 +14,47 @@ const TEAM_CLASS = { Marketing: "marketing", Engineering: "engineering" };
 
 const el = (id) => document.getElementById(id);
 
+/**
+ * Reihenfolge der Rangliste: Abschuesse, dann wenige Tode, dann Name.
+ *
+ * @template {{kills: number, deaths: number, name: string}} T
+ * @param {T[]} players
+ * @returns {T[]}
+ */
+export function rankPlayers(players) {
+  return [...players].sort(
+    (a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name),
+  );
+}
+
+/**
+ * Fingerabdruck einer sortierten Rangliste: aendert er sich nicht, sieht die
+ * Tabelle genauso aus wie beim letzten Mal.
+ *
+ * Die Rangliste wird bei gehaltener Tab-Taste in jedem Bild angefragt. Neu
+ * gebaut wurde sie bisher auch jedes Mal - sechzig- bis hundertvierzigmal je
+ * Sekunde dieselben Zeilen, obwohl sich Abschuesse nur selten aendern.
+ *
+ * @param {Array<{id: number, team: string, name: string, kills: number, deaths: number}>} ranked
+ */
+export function tableKey(ranked) {
+  return ranked.map((p) => `${p.id}|${p.team}|${p.kills}|${p.deaths}|${p.name}`).join("\n");
+}
+
+/** Ein `<span>` mit Text - nie mit HTML, deshalb braucht es kein Escaping. */
+function span(text, className) {
+  const node = document.createElement("span");
+  if (className) node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+/** Spielername in Teamfarbe, oder "jemand", wenn er nicht mehr da ist. */
+function playerTag(player) {
+  if (!player) return span("jemand", "verb");
+  return span(player.name, TEAM_CLASS[player.team]);
+}
+
 export class Hud {
   constructor(config, selfId) {
     this.config = config;
@@ -35,9 +76,10 @@ export class Hud {
     this.reloading = el("reloading");
     this.dash = el("skill-dash");
     this.heal = el("skill-heal");
+    this.dashBar = this.dash.querySelector("i");
+    this.healBar = this.heal.querySelector("i");
     this.killfeed = el("killfeed");
     this.fps = el("fps");
-    this.teamscore = el("teamscore");
     this.scoreMarketing = el("score-marketing");
     this.scoreEngineering = el("score-engineering");
     this.scoreLimit = el("score-limit");
@@ -58,6 +100,27 @@ export class Hud {
 
     this._entries = [];
     this._damageTimer = null;
+    /** Zuletzt gesetzter Wert je Knoten und Eigenschaft, siehe `_set`. */
+    this._shown = new Map();
+    /** Fingerabdruck der zuletzt gebauten Tabelle je `<tbody>`. */
+    this._tableKeys = new WeakMap();
+    this._fpsBuf = [];
+  }
+
+  /**
+   * Setzt einen Anzeigewert, aber nur, wenn er sich geaendert hat.
+   *
+   * `update` laeuft mit jedem Snapshot, `setPing` mit jedem Bild. Meist
+   * steht dort dasselbe wie zuvor; jedes Schreiben in `textContent` oder
+   * `style` loest trotzdem Stil- und Layoutarbeit im Browser aus.
+   */
+  _set(node, prop, value) {
+    let shown = this._shown.get(node);
+    if (!shown) this._shown.set(node, (shown = {}));
+    if (shown[prop] === value) return;
+    shown[prop] = value;
+    if (prop === "text") node.textContent = value;
+    else node.style[prop] = value;
   }
 
   show() {
@@ -68,11 +131,14 @@ export class Hud {
   update(self, local) {
     if (self) {
       const ratio = Math.max(0, Math.min(1, self.health / this.config.max_health));
-      this.healthFill.style.width = `${ratio * 100}%`;
-      this.healthFill.style.backgroundColor =
-        ratio > 0.5 ? "var(--ok)" : ratio > 0.25 ? "#e0a33c" : "var(--danger)";
-      this.healthValue.textContent = String(self.health);
-      this.weaponName.textContent = this.weaponNames.get(self.weapon) ?? "–";
+      this._set(this.healthFill, "width", `${ratio * 100}%`);
+      this._set(
+        this.healthFill,
+        "backgroundColor",
+        ratio > 0.5 ? "var(--ok)" : ratio > 0.25 ? "var(--warn)" : "var(--danger)",
+      );
+      this._set(this.healthValue, "text", String(self.health));
+      this._set(this.weaponName, "text", this.weaponNames.get(self.weapon) ?? "–");
     }
 
     // Welche Anzeige gilt, haengt an der Waffe: Magazin zeigt Zahlen,
@@ -81,48 +147,60 @@ export class Hud {
     // `mag_size` zufaellig null ist - das waere dieselbe Aussage aus zweiter
     // Hand.
     const weapon = self ? this.weaponById.get(self.weapon) : null;
-    const art = weapon?.ammo?.t ?? "Magazine";
+    const kind = weapon?.ammo?.t ?? "Magazine";
 
-    this.ammoBox.classList.toggle("hidden", art !== "Magazine");
-    this.heatBox.classList.toggle("hidden", art !== "Heat");
+    this.ammoBox.classList.toggle("hidden", kind !== "Magazine");
+    this.heatBox.classList.toggle("hidden", kind !== "Heat");
 
-    if (art === "Magazine") {
-      this.ammoCurrent.textContent = String(local.ammo);
-      this.ammoMax.textContent = String(local.mag_size);
+    if (kind === "Magazine") {
+      this._set(this.ammoCurrent, "text", String(local.ammo));
+      this._set(this.ammoMax, "text", String(local.mag_size));
       this.ammoBox.classList.toggle("empty", local.ammo === 0);
-    } else if (art === "Heat") {
-      const heiss = local.heat_lock > 0;
-      this.heatFill.style.width = `${Math.min(1, local.heat) * 100}%`;
-      this.heatBox.classList.toggle("warm", !heiss && local.heat > 0.6);
-      this.heatBox.classList.toggle("ueberhitzt", heiss);
-      this.heatLabel.textContent = heiss
-        ? `Abkühlen ${local.heat_lock.toFixed(1)} s`
-        : "Betriebstemperatur";
+    } else if (kind === "Heat") {
+      const hot = local.heat_lock > 0;
+      this._set(this.heatFill, "width", `${Math.min(1, local.heat) * 100}%`);
+      this.heatBox.classList.toggle("warm", !hot && local.heat > 0.6);
+      this.heatBox.classList.toggle("ueberhitzt", hot);
+      this._set(
+        this.heatLabel,
+        "text",
+        hot ? `Abkühlen ${local.heat_lock.toFixed(1)} s` : "Betriebstemperatur",
+      );
     }
 
-    this.reloading.classList.toggle("hidden", !local.reloading || art !== "Magazine");
+    this.reloading.classList.toggle("hidden", !local.reloading || kind !== "Magazine");
 
-    this._cooldown(this.dash, local.dash_cooldown_remaining, this.config.dash_cooldown);
-    this._cooldown(this.heal, local.heal_cooldown_remaining, this.config.heal_cooldown);
+    this._cooldown(
+      this.dash,
+      this.dashBar,
+      local.dash_cooldown_remaining,
+      this.config.dash_cooldown,
+    );
+    this._cooldown(
+      this.heal,
+      this.healBar,
+      local.heal_cooldown_remaining,
+      this.config.heal_cooldown,
+    );
 
     const dead = self ? !self.alive : false;
     this.respawn.classList.toggle("hidden", !dead);
     if (dead) {
-      this.respawnTimer.textContent = local.respawn_remaining.toFixed(1);
+      this._set(this.respawnTimer, "text", local.respawn_remaining.toFixed(1));
     }
   }
 
-  _cooldown(node, remaining, total) {
+  _cooldown(node, bar, remaining, total) {
     const ready = remaining <= 0;
     node.classList.toggle("ready", ready);
     // Der Balken laeuft von voll nach leer; `total` kann 0 sein, wenn eine
     // Faehigkeit ohne Cooldown konfiguriert ist.
     const fraction = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
-    node.querySelector("i").style.transform = `scaleX(${fraction})`;
+    this._set(bar, "transform", `scaleX(${fraction})`);
   }
 
   setPing(ms) {
-    this.ping.textContent = ms === null ? "–" : Math.round(ms);
+    this._set(this.ping, "text", ms === null ? "–" : String(Math.round(ms)));
   }
 
   /**
@@ -137,16 +215,15 @@ export class Hud {
    * Ausreisser auf 20 fuehlt sich schlechter an als konstante 60.
    */
   setFrameTime(dt) {
-    this._fpsBuf ??= [];
     this._fpsBuf.push(dt);
     if (this._fpsBuf.length < 30) return;
 
-    const mittel = this._fpsBuf.reduce((a, b) => a + b, 0) / this._fpsBuf.length;
-    const schlimmster = Math.max(...this._fpsBuf);
+    const mean = this._fpsBuf.reduce((a, b) => a + b, 0) / this._fpsBuf.length;
+    const worst = Math.max(...this._fpsBuf);
     this._fpsBuf.length = 0;
 
-    const fps = Math.round(1 / mittel);
-    const min = Math.round(1 / schlimmster);
+    const fps = Math.round(1 / mean);
+    const min = Math.round(1 / worst);
     // Nur zeigen, wenn der Ausreisser deutlich unter dem Mittel liegt.
     this.fps.textContent = min < fps * 0.7 ? `${fps} (min ${min})` : String(fps);
   }
@@ -163,19 +240,32 @@ export class Hud {
    * derselben Darstellung liefen sonst frueher oder spaeter auseinander, und
    * ausgerechnet der Endstand ist die Zahl, die am Ende zaehlt.
    */
+  /**
+   * @param {HTMLElement} tbody
+   * @param {Array<{id: number, team: string, name: string, kills: number, deaths: number}>} players
+   */
   _fillTable(tbody, players) {
-    const sorted = [...players].sort(
-      (a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name),
-    );
+    const ranked = rankPlayers(players);
+    const key = tableKey(ranked);
+    if (this._tableKeys.get(tbody) === key) return;
+    this._tableKeys.set(tbody, key);
+
+    const cell = (text, className) => {
+      const td = document.createElement("td");
+      if (className) td.className = className;
+      td.textContent = text;
+      return td;
+    };
     tbody.replaceChildren(
-      ...sorted.map((player) => {
+      ...ranked.map((player) => {
         const row = document.createElement("tr");
         if (player.id === this.selfId) row.className = "self";
-        row.innerHTML =
-          `<td class="${TEAM_CLASS[player.team] ?? ""}">${escapeHtml(player.team)}</td>` +
-          `<td>${escapeHtml(player.name)}</td>` +
-          `<td class="num">${player.kills}</td>` +
-          `<td class="num">${player.deaths}</td>`;
+        row.append(
+          cell(player.team, TEAM_CLASS[player.team]),
+          cell(player.name),
+          cell(String(player.kills), "num"),
+          cell(String(player.deaths), "num"),
+        );
         return row;
       }),
     );
@@ -189,33 +279,33 @@ export class Hud {
    * Zaehler im Browser liefe irgendwann anders als der Server, und dann stuende
    * auf dem Bildschirm eine Zahl, die nichts bedeutet.
    *
-   * @param {object} stand `snapshot.match`
+   * @param {object} state `snapshot.match`
    * @param {Array}  players Spieler desselben Snapshots, fuer den Endstand
    */
-  setMatchState(stand, players) {
-    if (!stand) return;
+  setMatchState(state, players) {
+    if (!state) return;
 
-    this.scoreMarketing.textContent = String(stand.score_marketing);
-    this.scoreEngineering.textContent = String(stand.score_engineering);
+    this._set(this.scoreMarketing, "text", String(state.score_marketing));
+    this._set(this.scoreEngineering, "text", String(state.score_engineering));
     // Die Grenze steht in der Konfiguration, nicht im Snapshot: sie aendert
     // sich nie, und dreissigmal je Sekunde dieselbe Zahl zu schicken waere
     // Verschwendung.
-    this.scoreLimit.textContent = String(this.config.score_limit);
+    this._set(this.scoreLimit, "text", String(this.config.score_limit));
 
-    const vorbei = stand.phase === "Over";
-    this.matchEnd.classList.toggle("hidden", !vorbei);
-    if (!vorbei) return;
+    const over = state.phase === "Over";
+    this.matchEnd.classList.toggle("hidden", !over);
+    if (!over) return;
 
-    this.matchWinner.textContent = stand.winner ?? "Niemand";
-    this.matchWinner.className = TEAM_CLASS[stand.winner] ?? "";
-    this.matchSubtitle.textContent = stand.winner
+    this.matchWinner.textContent = state.winner ?? "Niemand";
+    this.matchWinner.className = TEAM_CLASS[state.winner] ?? "";
+    this.matchSubtitle.textContent = state.winner
       ? "hat das Quartal gewonnen"
       : "das Quartal endet ohne Ergebnis";
-    this.finalMarketing.textContent = String(stand.score_marketing);
-    this.finalEngineering.textContent = String(stand.score_engineering);
+    this.finalMarketing.textContent = String(state.score_marketing);
+    this.finalEngineering.textContent = String(state.score_engineering);
     // Aufgerundet: bei 0.4 Sekunden Rest steht "1", und die Anzeige springt
     // nicht auf 0, waehrend noch etwas kommt.
-    this.matchTimer.textContent = String(Math.ceil(stand.remaining));
+    this._set(this.matchTimer, "text", String(Math.ceil(state.remaining)));
     this._fillTable(this.matchBody, players);
   }
 
@@ -234,24 +324,28 @@ export class Hud {
           const weapon = event.d.weapon ? this.weaponNames.get(event.d.weapon) : null;
           this._addEntry(
             killer
-              ? `${tag(killer)} <span class="verb">hat</span> ${tag(victim)} ` +
-                `<span class="verb">freigestellt${weapon ? ` (${escapeHtml(weapon)})` : ""}</span>`
-              : `${tag(victim)} <span class="verb">hat sich selbst wegrationalisiert</span>`,
+              ? [
+                  playerTag(killer),
+                  " ",
+                  span("hat", "verb"),
+                  " ",
+                  playerTag(victim),
+                  " ",
+                  span(`freigestellt${weapon ? ` (${weapon})` : ""}`, "verb"),
+                ]
+              : [playerTag(victim), " ", span("hat sich selbst wegrationalisiert", "verb")],
             killer?.team,
           );
           break;
         }
         case "Joined":
           this._addEntry(
-            `<span class="${TEAM_CLASS[event.d.team] ?? ""}">${escapeHtml(event.d.name)}</span> ` +
-              `<span class="verb">wurde onboarded</span>`,
+            [span(event.d.name, TEAM_CLASS[event.d.team]), " ", span("wurde onboarded", "verb")],
             event.d.team,
           );
           break;
         case "Left":
-          this._addEntry(
-            `<span class="verb">${escapeHtml(event.d.name)} hat innerlich gekündigt</span>`,
-          );
+          this._addEntry([span(`${event.d.name} hat innerlich gekündigt`, "verb")]);
           break;
         case "Hit":
           // Rueckmeldung nur fuer die eigenen Treffer und die eigenen Wunden.
@@ -261,15 +355,17 @@ export class Hud {
         case "MatchOver": {
           const { winner, score_marketing, score_engineering } = event.d;
           this._addEntry(
-            `<span class="${TEAM_CLASS[winner] ?? ""}">${escapeHtml(winner)}</span> ` +
-              `<span class="verb">gewinnt das Quartal ` +
-              `(${score_marketing}:${score_engineering})</span>`,
+            [
+              span(winner, TEAM_CLASS[winner]),
+              " ",
+              span(`gewinnt das Quartal (${score_marketing}:${score_engineering})`, "verb"),
+            ],
             winner,
           );
           break;
         }
         case "MatchStarted":
-          this._addEntry(`<span class="verb">Neues Quartal, neue Ziele</span>`);
+          this._addEntry([span("Neues Quartal, neue Ziele", "verb")]);
           break;
       }
     }
@@ -281,14 +377,24 @@ export class Hud {
    * Fuer Dinge, die der Client selbst entscheidet - etwa die Lautstaerke.
    */
   notify(text) {
-    this._addEntry(`<span class="verb">${escapeHtml(text)}</span>`);
+    this._addEntry([span(text, "verb")]);
   }
 
-  _addEntry(html, team) {
+  /**
+   * Haengt einen Eintrag an die Killfeed.
+   *
+   * Nimmt Knoten und Text, kein HTML: Namen sind frei waehlbar, und was als
+   * Textknoten im DOM landet, kann kein Markup werden - auch dann nicht, wenn
+   * jemand beim Escapen etwas vergisst.
+   *
+   * @param {Array<Node|string>} parts
+   * @param {string} [team]
+   */
+  _addEntry(parts, team) {
     const node = document.createElement("div");
     node.className = "kill-entry";
-    if (team) node.style.borderLeftColor = `var(--${TEAM_CLASS[team]})`;
-    node.innerHTML = html;
+    if (TEAM_CLASS[team]) node.style.borderLeftColor = `var(--${TEAM_CLASS[team]})`;
+    node.append(...parts);
     this.killfeed.append(node);
     this._entries.push({ node, until: performance.now() + KILLFEED_LIFETIME });
 
@@ -314,22 +420,6 @@ export class Hud {
   _flashDamage() {
     this.damageFlash.classList.add("on");
     clearTimeout(this._damageTimer);
-    this._damageTimer = setTimeout(
-      () => this.damageFlash.classList.remove("on"),
-      60,
-    );
+    this._damageTimer = setTimeout(() => this.damageFlash.classList.remove("on"), 60);
   }
-}
-
-/** Namen sind frei waehlbar und landen im DOM - also escapen. */
-function escapeHtml(text) {
-  return String(text).replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
-  );
-}
-
-function tag(player) {
-  if (!player) return `<span class="verb">jemand</span>`;
-  return `<span class="${TEAM_CLASS[player.team] ?? ""}">${escapeHtml(player.name)}</span>`;
 }

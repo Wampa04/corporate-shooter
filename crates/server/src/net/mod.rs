@@ -8,6 +8,7 @@
 //!
 //! Dazwischen liegt [`crate::sim::SimSet`] und weiß von nichts.
 
+pub mod codec;
 pub mod discovery;
 pub mod ws;
 
@@ -19,8 +20,11 @@ use bevy::ecs::schedule::IntoScheduleConfigs;
 use protocol::{
     GameEvent, InputFrame, LocalState, PlayerId, PlayerState, ServerMessage, Team, Vec3,
 };
-use tokio::sync::mpsc::UnboundedSender;
-use tracing::info;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::error::TrySendError;
+use tracing::{info, warn};
+
+use codec::Encoded;
 
 use crate::sim::{
     Body, Config, EventLog, Inputs, Level, Loadout, Lobby, Player, Rand, SimSet, Skills, Tick,
@@ -35,7 +39,7 @@ pub enum NetEvent {
     Connected {
         id: PlayerId,
         name: String,
-        sink: UnboundedSender<ServerMessage>,
+        sink: Sender<Encoded>,
     },
     Input {
         id: PlayerId,
@@ -56,7 +60,36 @@ pub struct Inbox(pub crossbeam_channel::Receiver<NetEvent>);
 
 /// Ausgänge zu den verbundenen Clients.
 #[derive(Resource, Default)]
-pub struct Clients(pub HashMap<PlayerId, UnboundedSender<ServerMessage>>);
+pub struct Clients(pub HashMap<PlayerId, Sender<Encoded>>);
+
+/// Ergebnis einer Zustellung.
+enum Delivery {
+    /// Angenommen, oder der Client ist ohnehin schon weg (dann folgt das
+    /// `Disconnected` von selbst).
+    Done,
+    /// Die Warteschlange ist voll: der Client liest nicht mehr mit.
+    Stalled,
+}
+
+/// Legt eine kodierte Nachricht in die Warteschlange eines Clients.
+///
+/// Wartet nie: die Simulation darf nicht an einem langsamen Client hängen.
+fn deliver(sink: &Sender<Encoded>, message: Encoded) -> Delivery {
+    match sink.try_send(message) {
+        Ok(()) | Err(TrySendError::Closed(_)) => Delivery::Done,
+        Err(TrySendError::Full(_)) => Delivery::Stalled,
+    }
+}
+
+/// Entfernt einen Client, der nicht mehr mitliest.
+///
+/// Mit dem Sender verschwindet auch das Ende der Warteschlange; die
+/// Schreibaufgabe läuft aus, schließt die Verbindung, und die Leseaufgabe
+/// endet mit ihr.
+fn drop_stalled(world: &mut World, id: PlayerId) {
+    warn!(player = %id, "Client liest nicht mehr mit - getrennt");
+    disconnect_player(world, id);
+}
 
 pub struct NetPlugin {
     pub inbox: crossbeam_channel::Receiver<NetEvent>,
@@ -96,8 +129,12 @@ fn ingest(world: &mut World) {
                 }
             }
             NetEvent::Ping { id, client_time_ms } => {
-                if let Some(sink) = world.resource::<Clients>().0.get(&id) {
-                    let _ = sink.send(ServerMessage::Pong { client_time_ms });
+                let Some(sink) = world.resource::<Clients>().0.get(&id) else {
+                    continue;
+                };
+                let pong = codec::encode(&ServerMessage::Pong { client_time_ms });
+                if let Delivery::Stalled = deliver(sink, pong) {
+                    drop_stalled(world, id);
                 }
             }
             NetEvent::Disconnected { id } => disconnect_player(world, id),
@@ -105,12 +142,7 @@ fn ingest(world: &mut World) {
     }
 }
 
-fn connect_player(
-    world: &mut World,
-    id: PlayerId,
-    name: String,
-    sink: UnboundedSender<ServerMessage>,
-) {
+fn connect_player(world: &mut World, id: PlayerId, name: String, sink: Sender<Encoded>) {
     let config = world.resource::<Config>().0.clone();
 
     // Kleineres Team, damit sich die Abteilungen nicht von selbst entvölkern.
@@ -128,11 +160,11 @@ fn connect_player(
         .filter(|(p, _, v)| v.alive && p.team != team)
         .map(|(_, b, _)| b.pos)
         .collect();
-    let spawn = {
-        let map = world.resource::<Level>().desc.clone();
-        let mut rand = world.resource_mut::<Rand>();
-        choose_spawn(&map, &enemies, &mut rand.0)
-    };
+    // `resource_scope` statt die Karte zu klonen: `Rand` wird veränderlich
+    // gebraucht, während `Level` gelesen wird.
+    let spawn = world.resource_scope(|world, mut rand: Mut<Rand>| {
+        choose_spawn(&world.resource::<Level>().desc, &enemies, &mut rand.0)
+    });
 
     let entity = world
         .spawn(player_bundle(&config, id, name.clone(), team, spawn))
@@ -141,11 +173,15 @@ fn connect_player(
 
     // Willkommensnachricht vor dem ersten Snapshot: der Client braucht Karte
     // und Konfiguration, bevor er Zustände einordnen kann.
-    let _ = sink.send(ServerMessage::Welcome {
-        player_id: id,
-        config,
-        map: world.resource::<Level>().desc.clone(),
-    });
+    // Die Warteschlange ist frisch und leer, voll kann sie hier nicht sein.
+    let _ = deliver(
+        &sink,
+        codec::encode(&ServerMessage::Welcome {
+            player_id: id,
+            config,
+            map: world.resource::<Level>().desc.clone(),
+        }),
+    );
     world.resource_mut::<Clients>().0.insert(id, sink);
     world.resource_mut::<EventLog>().push(GameEvent::Joined {
         id,
@@ -173,16 +209,24 @@ fn disconnect_player(world: &mut World, id: PlayerId) {
     info!(player = %id, %name, "Spieler getrennt");
 }
 
-/// Baut je Client einen Snapshot und verschickt ihn.
+/// Verschickt den Snapshot dieses Ticks.
 ///
-/// Der öffentliche Teil ist für alle gleich; [`LocalState`] wird pro Empfänger
-/// gefüllt, damit fremde Munition und Cooldowns nicht mitgeschickt werden.
+/// Der öffentliche Teil ist für alle gleich und wird genau einmal kodiert;
+/// jeder Client bekommt denselben Puffer. Davor geht je Client ein kleines
+/// [`ServerMessage::Local`] mit dem, was nur ihn angeht - fremde Munition
+/// und Cooldowns bleiben so unter Verschluss.
+///
+/// Früher wurde der ganze Snapshot je Client geklont und in dessen
+/// Schreibaufgabe einzeln serialisiert: bei N Spielern N-mal dieselbe Liste
+/// von N Spielern.
+#[allow(clippy::too_many_arguments)]
 fn broadcast(
     tick: Res<Tick>,
     config: Res<Config>,
     clients: Res<Clients>,
-    runde: Res<crate::sim::matchstate::Match>,
+    current_match: Res<crate::sim::matchstate::Match>,
     mut log: ResMut<EventLog>,
+    mut commands: Commands,
     q: Query<(&Player, &Body, &Vitals, &Loadout, &Skills, &Inputs)>,
 ) {
     if clients.0.is_empty() {
@@ -193,38 +237,40 @@ fn broadcast(
     // Nicht jeder Simulationsschritt wird verschickt. Der Ereignisspeicher
     // bleibt dabei bewusst stehen: was zwischen zwei Snapshots passiert ist,
     // muss mit dem naechsten mitgehen, sonst verschwinden Schuesse und Treffer.
-    if config.snapshot_interval > 1 && tick.0 % config.snapshot_interval as u64 != 0 {
+    if config.snapshot_interval > 1 && !tick.0.is_multiple_of(config.snapshot_interval as u64) {
         return;
     }
 
-    let players: Vec<PlayerState> = q
-        .iter()
-        .map(|(player, body, vitals, loadout, _, _)| PlayerState {
-            id: player.id,
-            name: player.name.clone(),
-            team: player.team,
-            pos: body.pos,
-            yaw: body.yaw,
-            pitch: body.pitch,
-            health: vitals.health,
-            alive: vitals.alive,
-            weapon: loadout.weapon_id(&config),
-            kills: vitals.kills,
-            deaths: vitals.deaths,
-        })
-        .collect();
-
-    let events = std::mem::take(&mut log.0);
+    let snapshot = codec::encode(&ServerMessage::Snapshot {
+        tick: tick.0,
+        players: q
+            .iter()
+            .map(|(player, body, vitals, loadout, _, _)| PlayerState {
+                id: player.id,
+                name: player.name.clone(),
+                team: player.team,
+                pos: body.pos,
+                yaw: body.yaw,
+                pitch: body.pitch,
+                health: vitals.health,
+                alive: vitals.alive,
+                weapon: loadout.weapon_id(&config),
+                kills: vitals.kills,
+                deaths: vitals.deaths,
+            })
+            .collect(),
+        events: std::mem::take(&mut log.0),
+        match_state: current_match.0,
+    });
 
     for (player, body, vitals, loadout, skills, inputs) in &q {
         let Some(sink) = clients.0.get(&player.id) else {
             continue;
         };
         let weapon = loadout.weapon(&config);
-        let message = ServerMessage::Snapshot {
+        let local = codec::encode(&ServerMessage::Local {
             tick: tick.0,
             ack_seq: inputs.ack_seq,
-            players: players.clone(),
             local: LocalState {
                 ammo: loadout.ammo[loadout.index],
                 mag_size: weapon.mag_size(),
@@ -245,12 +291,14 @@ fn broadcast(
                 dash_dir_x: skills.dash_dir.x,
                 dash_dir_z: skills.dash_dir.z,
             },
-            events: events.clone(),
-            // Fuer alle gleich, deshalb kopiert statt je Client gerechnet.
-            match_state: runde.0,
-        };
-        // Fehler bedeutet: die Schreibaufgabe ist bereits beendet. Das
-        // zugehörige `Disconnected` folgt, hier ist nichts zu tun.
-        let _ = sink.send(message);
+        });
+        // Beide oder keiner: ein `Local` ohne seinen Snapshot liefe beim
+        // Client ins Leere, ein Snapshot ohne `Local` ebenso.
+        let stalled = matches!(deliver(sink, local), Delivery::Stalled)
+            || matches!(deliver(sink, snapshot.clone()), Delivery::Stalled);
+        if stalled {
+            let id = player.id;
+            commands.queue(move |world: &mut World| drop_stalled(world, id));
+        }
     }
 }

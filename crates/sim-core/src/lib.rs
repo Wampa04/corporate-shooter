@@ -13,7 +13,6 @@
 
 use protocol::{Aabb, GameConfig, InputFrame, Vec3, buttons};
 
-
 /// Maximale Blickneigung. Knapp unter 90 Grad, damit die Blickrichtung nie
 /// exakt senkrecht wird und die Yaw-Komponente verschwindet.
 const MAX_PITCH: f32 = 1.55;
@@ -39,6 +38,12 @@ const TERMINAL_VELOCITY: f32 = 60.0;
 
 /// Winkel auf `-PI..PI` normieren.
 pub fn wrap_angle(a: f32) -> f32 {
+    // Aus einem nicht-endlichen Winkel wuerde NaN, und NaN zieht sich durch
+    // Geschwindigkeit und Position. Der Server verwirft solche Eingaben schon
+    // vorher; hier steht die letzte Linie, auch fuer das WASM-Modul.
+    if !a.is_finite() {
+        return 0.0;
+    }
     let tau = std::f32::consts::TAU;
     let mut x = a % tau;
     if x > std::f32::consts::PI {
@@ -228,7 +233,6 @@ pub fn move_with_steps(
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Ein Simulationsschritt
 // ---------------------------------------------------------------------------
@@ -276,7 +280,7 @@ pub fn step(
     solid: &[Aabb],
     bounds: &Aabb,
 ) -> StepEvents {
-    let dt = 1.0 / config.tick_rate as f32;
+    let dt = config.tick_dt();
     let mut events = StepEvents::default();
 
     // Zeitgeber laufen auch im Tod weiter.
@@ -293,10 +297,10 @@ pub fn step(
         return events;
     }
 
-    let neu_gedrueckt = |bit: u8| input.pressed(bit) && (prev_buttons & bit) == 0;
+    let newly_pressed = |bit: u8| input.pressed(bit) && (prev_buttons & bit) == 0;
 
     // "Agile Sprint": Schub in Laufrichtung, ohne Eingabe nach vorn.
-    if neu_gedrueckt(buttons::DASH) && state.dash_cooldown <= 0.0 {
+    if newly_pressed(buttons::DASH) && state.dash_cooldown <= 0.0 {
         let wish = wish_direction(state.yaw, input.move_x, input.move_z);
         state.dash_dir = wish
             .try_normalize()
