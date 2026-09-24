@@ -93,8 +93,8 @@ export class Prediction {
       // Umweg des Puffers ist es unabhaengig davon, wie der Server ihn setzt.
       const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), {});
       return new Prediction(instance);
-    } catch (errors) {
-      console.warn("Vorhersage nicht verfuegbar:", errors.message);
+    } catch (error) {
+      console.warn("Vorhersage nicht verfuegbar:", error.message);
       return null;
     }
   }

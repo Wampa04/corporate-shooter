@@ -86,9 +86,16 @@ joinForm.addEventListener("submit", async (event) => {
 
   const connection = new Connection();
   try {
+    // Erst das Vorhersagemodul, dann die Verbindung. Umgekehrt lag zwischen
+    // Willkommen und `start` noch ein `await`: kamen in der Zeit schon
+    // Snapshots an, lief ihr `onSnapshot` ins Leere, und ihre Ereignisse
+    // (die eigene Anmeldung, Treffer, Abschuesse) gingen verloren. Das Modul
+    // laedt ohnehin seit dem Seitenaufruf; `load` scheitert nie, sondern
+    // liefert dann `null`.
+    const prediction = await predictionLoading;
     const welcome = await connection.connect(name);
     joinOverlay.classList.add("hidden");
-    start(connection, welcome, await predictionLoading);
+    start(connection, welcome, prediction);
   } catch (error) {
     joinStatus.className = "status error";
     joinStatus.textContent = error.message;
