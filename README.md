@@ -172,15 +172,18 @@ werden. Eine Schwelle darunter wäre unerreichbar — der Regler könnte fallen,
 aber nie wieder steigen.
 
 Die Stufen, von schön nach schnell: voller Schattenwurf, ohne Schattenwurf,
-dann in zwei Schritten weniger Bildpunkte. Der Schattenwurf fällt zuerst, weil
-er das ganze Stockwerk ein zweites Mal zeichnet und damit unabhängig von der
-Bildgröße kostet; die Auflösung sinkt zuletzt, weil man das sieht. Auf einem
+dann in zwei Schritten weniger Bildpunkte. Der Schattenwurf fällt zuerst, die
+Auflösung sinkt zuletzt, weil man das sieht. Die Schattenkarte selbst wird nur
+einmal gerechnet (die Karte steht still, Figuren werfen keinen Schatten);
+danach kostet der Schattenwurf noch das Abtasten der Karte in jedem Bildpunkt. Auf einem
 Bildschirm mit Pixelverhältnis 1 entfällt die erste Auflösungsstufe, weil sie
 dort nichts änderte.
 
 Gemessen im Prüflauf (SwiftShader, ein und dieselbe Sitzung): 83 ms bei voller
 Stufe, 67 ms ohne Schattenwurf, 50 ms bei 75 Prozent Auflösung - zwölf,
-fünfzehn, zwanzig Bilder je Sekunde.
+fünfzehn, zwanzig Bilder je Sekunde. Das war noch mit einer Schattenkarte, die
+in jedem Bild neu entstand; seit sie nur bei Bedarf gerechnet wird, liegt die
+volle Stufe im selben Prüflauf um 10-17 % schneller.
 
 Gemessen wird der Median, nicht der Mittelwert: ein einzelnes langes Bild -
 eine Speicherbereinigung, die Rückkehr aus einem anderen Tab - sagt nichts
@@ -363,6 +366,22 @@ Die Rust-Version steht in `rust-toolchain.toml` (Bevy 0.19 verlangt
 mindestens 1.95), rustup holt sie von selbst. Das `Dockerfile` nennt dieselbe
 Version noch einmal als `RUST_VERSION`; die CI prüft, dass beide
 übereinstimmen.
+
+### Konventionen
+
+* **Bezeichner englisch, Kommentare deutsch.** Typen, Funktionen, Variablen,
+  Testnamen und Dateinamen sind englisch; Kommentare, Dokumentation und alle
+  Texte, die Spielerinnen und Spieler sehen, bleiben deutsch.
+* **Das Leitungsformat ist englisch** und in `crates/protocol` festgeschrieben.
+  `wire_format.rs` hält die Form fest, auf die sich der Client verlässt, und
+  prüft, dass jede Nachricht auch über MessagePack hin und zurück kommt - damit
+  sich keine JSON-Sonderheit einschleicht.
+* **Ausgehende Nachrichten kodiert nur `net/codec.rs`.** Wer ein anderes Format
+  will, ändert dort eine Zeile.
+* **Formatierung macht das Werkzeug:** rustfmt für Rust, Prettier für die
+  Logik des Clients. Die CI prüft beides.
+* **Zahlen mit Einheit heißen danach** (`_ms`, `_secs`, `_ticks`), Grenzen, die
+  Zeit meinen, werden in Zeit angegeben und bei Bedarf in Ticks umgerechnet.
 
 ### Continuous Integration
 
