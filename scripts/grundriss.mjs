@@ -17,7 +17,9 @@ import { readFileSync } from "node:fs";
 
 const [, , wegA, wegB, mmArg] = process.argv;
 if (!wegA || !wegB) {
-  console.error("Aufruf: node scripts/grundriss.mjs vorher/map.json nachher/map.json [toleranz_mm]");
+  console.error(
+    "Aufruf: node scripts/grundriss.mjs vorher/map.json nachher/map.json [toleranz_mm]",
+  );
   process.exit(2);
 }
 const TOLERANZ = Number(mmArg ?? 0.1) / 1000;
@@ -26,7 +28,10 @@ const a = JSON.parse(readFileSync(wegA, "utf8"));
 const b = JSON.parse(readFileSync(wegB, "utf8"));
 
 let fehler = 0;
-const meldung = (text) => { console.error(`FEHLER: ${text}`); fehler = 1; };
+const meldung = (text) => {
+  console.error(`FEHLER: ${text}`);
+  fehler = 1;
+};
 
 if (a.name !== b.name) meldung(`Name: "${a.name}" -> "${b.name}"`);
 
@@ -45,11 +50,16 @@ if (a.spawns.length !== b.spawns.length) {
 } else {
   let schlimmster = 0;
   for (let i = 0; i < a.spawns.length; i++) {
-    const p = a.spawns[i], q = b.spawns[i];
-    schlimmster = Math.max(schlimmster, Math.abs(p.yaw - q.yaw),
-      ...p.pos.map((v, k) => Math.abs(v - q.pos[k])));
+    const p = a.spawns[i],
+      q = b.spawns[i];
+    schlimmster = Math.max(
+      schlimmster,
+      Math.abs(p.yaw - q.yaw),
+      ...p.pos.map((v, k) => Math.abs(v - q.pos[k])),
+    );
   }
-  if (schlimmster > TOLERANZ) meldung(`Spawnpunkt weicht um ${(schlimmster * 1000).toFixed(3)} mm ab`);
+  if (schlimmster > TOLERANZ)
+    meldung(`Spawnpunkt weicht um ${(schlimmster * 1000).toFixed(3)} mm ab`);
 }
 
 // --- Boxen -----------------------------------------------------------------
@@ -63,20 +73,25 @@ let schlimmster = 0;
 let schlimmsterIndex = -1;
 let artWechsel = 0;
 for (let i = 0; i < a.brushes.length; i++) {
-  const p = a.brushes[i], q = b.brushes[i];
+  const p = a.brushes[i],
+    q = b.brushes[i];
   if (p.kind !== q.kind) {
     if (artWechsel < 5) meldung(`Box ${i}: Art ${p.kind} -> ${q.kind}`);
     artWechsel++;
     continue;
   }
-  const ea = ecken(p.aabb), eb = ecken(q.aabb);
+  const ea = ecken(p.aabb),
+    eb = ecken(q.aabb);
   if (ea.length !== 6 || eb.length !== 6 || ea.some((v) => !Number.isFinite(v))) {
     meldung(`Box ${i}: Ecken nicht lesbar (${JSON.stringify(p.aabb)})`);
     break;
   }
   for (let k = 0; k < 6; k++) {
     const d = Math.abs(ea[k] - eb[k]);
-    if (d > schlimmster) { schlimmster = d; schlimmsterIndex = i; }
+    if (d > schlimmster) {
+      schlimmster = d;
+      schlimmsterIndex = i;
+    }
   }
 }
 if (artWechsel > 5) meldung(`... und ${artWechsel - 5} weitere Artwechsel`);
@@ -84,18 +99,25 @@ if (artWechsel > 5) meldung(`... und ${artWechsel - 5} weitere Artwechsel`);
 if (artWechsel) zaehleArten();
 
 console.log(`${a.brushes.length} Boxen verglichen.`);
-console.log(`groesste Abweichung: ${(schlimmster * 1000).toFixed(4)} mm` +
-  (schlimmsterIndex >= 0 ? ` (Box ${schlimmsterIndex}, ${a.brushes[schlimmsterIndex].kind})` : ""));
+console.log(
+  `groesste Abweichung: ${(schlimmster * 1000).toFixed(4)} mm` +
+    (schlimmsterIndex >= 0
+      ? ` (Box ${schlimmsterIndex}, ${a.brushes[schlimmsterIndex].kind})`
+      : ""),
+);
 
 if (schlimmster > TOLERANZ) {
   meldung(`ueber der Toleranz von ${(TOLERANZ * 1000).toFixed(3)} mm`);
 }
 
 function zaehleArten() {
-  const zaehl = (liste) => liste.reduce((m, x) => m.set(x.kind, (m.get(x.kind) ?? 0) + 1), new Map());
-  const ca = zaehl(a.brushes), cb = zaehl(b.brushes);
+  const zaehl = (liste) =>
+    liste.reduce((m, x) => m.set(x.kind, (m.get(x.kind) ?? 0) + 1), new Map());
+  const ca = zaehl(a.brushes),
+    cb = zaehl(b.brushes);
   for (const art of new Set([...ca.keys(), ...cb.keys()])) {
-    const va = ca.get(art) ?? 0, vb = cb.get(art) ?? 0;
+    const va = ca.get(art) ?? 0,
+      vb = cb.get(art) ?? 0;
     if (va !== vb) console.error(`  ${art}: ${va} -> ${vb}`);
   }
 }

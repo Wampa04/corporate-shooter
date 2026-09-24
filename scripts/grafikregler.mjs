@@ -52,24 +52,29 @@ console.log("Stufenliste");
   // Auf einem gewoehnlichen Bildschirm faellt die 100-Prozent-Stufe weg, weil
   // sie dort dasselbe waere wie die volle.
   const einfach = baueStufen(1);
-  pruefe("Verhaeltnis 1 ergibt drei Stufen", einfach.length === 3,
-    `${einfach.length} statt 3: ${einfach.map((s) => s.name).join(", ")}`);
-  pruefe("keine doppelte Stufe", new Set(einfach.map((s) => s.pixel)).size === 2,
-    "zwei Stufen mit gleicher Aufloesung");
+  pruefe(
+    "Verhaeltnis 1 ergibt drei Stufen",
+    einfach.length === 3,
+    `${einfach.length} statt 3: ${einfach.map((s) => s.name).join(", ")}`,
+  );
+  pruefe(
+    "keine doppelte Stufe",
+    new Set(einfach.map((s) => s.pixel)).size === 2,
+    "zwei Stufen mit gleicher Aufloesung",
+  );
 
   const retina = baueStufen(2);
-  pruefe("Verhaeltnis 2 ergibt vier Stufen", retina.length === 4,
-    `${retina.length} statt 4`);
+  pruefe("Verhaeltnis 2 ergibt vier Stufen", retina.length === 4, `${retina.length} statt 4`);
 
   const hoch = baueStufen(3);
-  pruefe("Verhaeltnis 3 wird auf 2 gedeckelt", hoch[0].pixel === 2,
-    `${hoch[0].pixel} statt 2`);
+  pruefe("Verhaeltnis 3 wird auf 2 gedeckelt", hoch[0].pixel === 2, `${hoch[0].pixel} statt 2`);
 
   for (const liste of [einfach, retina, hoch]) {
-    pruefe(`Stufen werden monoton billiger (dpr ${liste[0].pixel})`,
-      liste.every((s, i) => i === 0 ||
-        (!s.schatten && s.pixel <= liste[i - 1].pixel)),
-      "eine spaetere Stufe kostet mehr als eine fruehere");
+    pruefe(
+      `Stufen werden monoton billiger (dpr ${liste[0].pixel})`,
+      liste.every((s, i) => i === 0 || (!s.schatten && s.pixel <= liste[i - 1].pixel)),
+      "eine spaetere Stufe kostet mehr als eine fruehere",
+    );
   }
 }
 
@@ -85,8 +90,11 @@ console.log("Warmlauf");
   // zu wenig fuer ein Fenster. Ohne Warmlauf schliesst nach zwanzig Bildern
   // eines und die Stufe faellt.
   const wechsel = fuettern(r, gleich(45, 500));
-  pruefe("verworfene Bilder loesen nichts aus", wechsel.length === 0,
-    `${wechsel.length} Wechsel im Warmlauf`);
+  pruefe(
+    "verworfene Bilder loesen nichts aus",
+    wechsel.length === 0,
+    `${wechsel.length} Wechsel im Warmlauf`,
+  );
 }
 
 console.log("Zeitdeckel des Messfensters");
@@ -98,12 +106,17 @@ console.log("Zeitdeckel des Messfensters");
   const NACH_WARMLAUF = 25;
   const r = new Grafikregler(3);
   const wechsel = fuettern(r, gleich(WARMLAUF_BILDER + NACH_WARMLAUF, 100));
-  pruefe("langsame Bilder schliessen das Fenster frueher", wechsel.join(",") === "1",
-    `Verlauf ${wechsel.join(",")} - ohne Zeitdeckel bliebe es leer`);
-  pruefe("die Gegenprobe hat Zaehne",
+  pruefe(
+    "langsame Bilder schliessen das Fenster frueher",
+    wechsel.join(",") === "1",
+    `Verlauf ${wechsel.join(",")} - ohne Zeitdeckel bliebe es leer`,
+  );
+  pruefe(
+    "die Gegenprobe hat Zaehne",
     NACH_WARMLAUF < FENSTER_BILDER && NACH_WARMLAUF >= MIN_BILDER,
     `${NACH_WARMLAUF} Bilder fuellen schon ein volles Fenster - der Deckel ` +
-    "wird gar nicht gebraucht");
+      "wird gar nicht gebraucht",
+  );
 }
 
 console.log("Weg nach unten");
@@ -111,10 +124,8 @@ console.log("Weg nach unten");
   const r = new Grafikregler(3);
   const wechsel = fuettern(r, gleich(WARMLAUF_BILDER + 2000, 100));
   pruefe("faellt bis zur letzten Stufe", r.stufe === 2, `steht auf ${r.stufe}`);
-  pruefe("faellt Stufe um Stufe", wechsel.join(",") === "1,2",
-    `Verlauf ${wechsel.join(",")}`);
-  pruefe("bleibt dann stehen", wechsel.length === 2,
-    `${wechsel.length} Wechsel statt 2`);
+  pruefe("faellt Stufe um Stufe", wechsel.join(",") === "1,2", `Verlauf ${wechsel.join(",")}`);
+  pruefe("bleibt dann stehen", wechsel.length === 2, `${wechsel.length} Wechsel statt 2`);
 }
 
 console.log("Weg nach oben");
@@ -125,8 +136,7 @@ console.log("Weg nach oben");
   const wechsel = fuettern(r, gleich(WARMLAUF_BILDER + FENSTER_BILDER * 40, 8));
   pruefe("war vorher unten", gefallen === 2, `stand auf ${gefallen}`);
   pruefe("steigt wieder auf die volle Stufe", r.stufe === 0, `steht auf ${r.stufe}`);
-  pruefe("steigt Stufe um Stufe", wechsel.join(",") === "1,0",
-    `Verlauf ${wechsel.join(",")}`);
+  pruefe("steigt Stufe um Stufe", wechsel.join(",") === "1,0", `Verlauf ${wechsel.join(",")}`);
 }
 
 console.log("Zurueckhaltung beim Aufsteigen");
@@ -137,13 +147,18 @@ console.log("Zurueckhaltung beim Aufsteigen");
   // oben: mit `ERHOLUNG_FENSTER - 1` waere die Eingabe bei einem Wert von 1
   // leer und der Test bedeutungslos.
   const knapp = fuettern(r, gleich(WARMLAUF_BILDER + FENSTER_BILDER, 8));
-  pruefe("ein einzelnes gutes Fenster genuegt nicht", knapp.length === 0,
-    "stieg schon nach einem Fenster auf");
+  pruefe(
+    "ein einzelnes gutes Fenster genuegt nicht",
+    knapp.length === 0,
+    "stieg schon nach einem Fenster auf",
+  );
   const genug = fuettern(r, gleich(FENSTER_BILDER * ERHOLUNG_FENSTER, 8));
-  pruefe("mehrere gute Fenster genuegen", genug.join(",") === "0",
-    `Verlauf ${genug.join(",")}`);
-  pruefe("die Zurueckhaltung ist mehr als ein Fenster", ERHOLUNG_FENSTER > 1,
-    "ein einziges gutes Fenster genuegt laut Konstante - der Test oben misst nichts");
+  pruefe("mehrere gute Fenster genuegen", genug.join(",") === "0", `Verlauf ${genug.join(",")}`);
+  pruefe(
+    "die Zurueckhaltung ist mehr als ein Fenster",
+    ERHOLUNG_FENSTER > 1,
+    "ein einziges gutes Fenster genuegt laut Konstante - der Test oben misst nichts",
+  );
 }
 
 console.log("Bildschirm mit 60 Hz");
@@ -162,19 +177,28 @@ console.log("Bildschirm mit 60 Hz");
   const gefallen = r.stufe;
   const wechsel = fuettern(r, gleich(WARMLAUF_BILDER + FENSTER_BILDER * 40, HZ60));
   pruefe("war vorher unten", gefallen === 2, `stand auf ${gefallen}`);
-  pruefe("perfekte 60 Bilder je Sekunde holen die volle Stufe zurueck",
-    r.stufe === 0, `steht auf ${r.stufe} nach ${wechsel.length} Aufstiegen`);
-  pruefe("die Schwelle ist auf 60 Hz ueberhaupt erreichbar", KOMFORT_MS >= HZ60,
+  pruefe(
+    "perfekte 60 Bilder je Sekunde holen die volle Stufe zurueck",
+    r.stufe === 0,
+    `steht auf ${r.stufe} nach ${wechsel.length} Aufstiegen`,
+  );
+  pruefe(
+    "die Schwelle ist auf 60 Hz ueberhaupt erreichbar",
+    KOMFORT_MS >= HZ60,
     `${KOMFORT_MS} ms liegen unter den ${HZ60.toFixed(1)} ms, die ein ` +
-    "60-Hz-Bildschirm bestenfalls zulaesst - der Weg nach oben ist dort tot");
+      "60-Hz-Bildschirm bestenfalls zulaesst - der Weg nach oben ist dort tot",
+  );
 
   // Gegenprobe: fuenfzig Bilder je Sekunde bedeuten, dass jedes sechste Bild
   // ausfaellt. Das ist nicht mehr "schnell genug".
   const s50 = new Grafikregler(3);
   fuettern(s50, gleich(WARMLAUF_BILDER + 400, 100));
   const bei50 = fuettern(s50, gleich(WARMLAUF_BILDER + FENSTER_BILDER * 40, 20));
-  pruefe("50 Bilder je Sekunde genuegen dafuer nicht", bei50.length === 0,
-    `${bei50.length} Aufstiege - die Schwelle sitzt zu locker`);
+  pruefe(
+    "50 Bilder je Sekunde genuegen dafuer nicht",
+    bei50.length === 0,
+    `${bei50.length} Aufstiege - die Schwelle sitzt zu locker`,
+  );
 }
 
 console.log("Hysterese");
@@ -189,11 +213,12 @@ console.log("Hysterese");
   const TOT_MS = 23;
   const r = new Grafikregler(3, 1);
   const wechsel = fuettern(r, gleich(WARMLAUF_BILDER + FENSTER_BILDER * 40, TOT_MS));
-  pruefe(`${TOT_MS} ms loest nichts aus`, wechsel.length === 0,
-    `${wechsel.length} Wechsel`);
-  pruefe("der tote Bereich ist breit genug",
+  pruefe(`${TOT_MS} ms loest nichts aus`, wechsel.length === 0, `${wechsel.length} Wechsel`);
+  pruefe(
+    "der tote Bereich ist breit genug",
     KOMFORT_MS <= TOT_MS - 4 && BUDGET_MS >= TOT_MS + 4,
-    `${KOMFORT_MS}..${BUDGET_MS} ms laesst um ${TOT_MS} ms herum zu wenig Luft`);
+    `${KOMFORT_MS}..${BUDGET_MS} ms laesst um ${TOT_MS} ms herum zu wenig Luft`,
+  );
 }
 
 console.log("Kein Pendeln");
@@ -208,8 +233,11 @@ console.log("Kein Pendeln");
     zeiten.push(...gleich(WARMLAUF_BILDER + FENSTER_BILDER * ERHOLUNG_FENSTER, 8));
   }
   const wechsel = fuettern(r, zeiten);
-  pruefe("kommt zur Ruhe", wechsel.length <= MAX_VERSUCHE * 2,
-    `${wechsel.length} Wechsel bei sechzig Wechseln der Last`);
+  pruefe(
+    "kommt zur Ruhe",
+    wechsel.length <= MAX_VERSUCHE * 2,
+    `${wechsel.length} Wechsel bei sechzig Wechseln der Last`,
+  );
   pruefe("bleibt am Ende unten", r.stufe === 1, `steht auf ${r.stufe}`);
 }
 
@@ -225,15 +253,22 @@ console.log("Median statt Mittelwert");
     zeiten.push(1000, ...gleich(FENSTER_BILDER - 1, 8));
   }
   const wechsel = fuettern(r, zeiten);
-  pruefe("ein Ausreisser verhindert den Aufstieg nicht", wechsel.join(",") === "0",
-    `Verlauf ${wechsel.join(",")}`);
+  pruefe(
+    "ein Ausreisser verhindert den Aufstieg nicht",
+    wechsel.join(",") === "0",
+    `Verlauf ${wechsel.join(",")}`,
+  );
 
   // Gegenprobe: waere es der Mittelwert, muesste derselbe Verlauf scheitern.
-  const mittel = zeiten.slice(WARMLAUF_BILDER, WARMLAUF_BILDER + FENSTER_BILDER)
-    .reduce((a, b) => a + b, 0) / FENSTER_BILDER;
-  pruefe("die Gegenprobe hat Zaehne", mittel > KOMFORT_MS,
+  const mittel =
+    zeiten.slice(WARMLAUF_BILDER, WARMLAUF_BILDER + FENSTER_BILDER).reduce((a, b) => a + b, 0) /
+    FENSTER_BILDER;
+  pruefe(
+    "die Gegenprobe hat Zaehne",
+    mittel > KOMFORT_MS,
     `Mittelwert ${mittel.toFixed(1)} ms liegt unter ${KOMFORT_MS} ms - ` +
-    "der Ausreisser ist zu klein, der Test wuerde auch mit Mittelwert bestehen");
+      "der Ausreisser ist zu klein, der Test wuerde auch mit Mittelwert bestehen",
+  );
 }
 
 process.exit(fehler);

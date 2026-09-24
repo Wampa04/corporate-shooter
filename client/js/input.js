@@ -21,11 +21,11 @@ const MOVEMENT_KEYS = {
 };
 
 const BUTTON_KEYS = {
-  Space:      BUTTON.JUMP,
-  ShiftLeft:  BUTTON.DASH,
+  Space: BUTTON.JUMP,
+  ShiftLeft: BUTTON.DASH,
   ShiftRight: BUTTON.DASH,
-  KeyE:       BUTTON.HEAL,
-  KeyR:       BUTTON.RELOAD,
+  KeyE: BUTTON.HEAL,
+  KeyR: BUTTON.RELOAD,
 };
 
 export class InputController {

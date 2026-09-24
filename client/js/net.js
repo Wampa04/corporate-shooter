@@ -6,10 +6,10 @@
 
 /** Tastenbits, identisch zu `protocol::message::buttons`. */
 export const BUTTON = {
-  FIRE:   1 << 0,
-  JUMP:   1 << 1,
-  DASH:   1 << 2,
-  HEAL:   1 << 3,
+  FIRE: 1 << 0,
+  JUMP: 1 << 1,
+  DASH: 1 << 2,
+  HEAL: 1 << 3,
   RELOAD: 1 << 4,
 };
 
@@ -85,16 +85,20 @@ export class Connection {
         } catch {
           return; // Unlesbares verwerfen statt die Verbindung zu kappen.
         }
-        this._handle(message, (welcome) => {
-          if (settled) return;
-          settled = true;
-          this._startPinging();
-          resolve(welcome);
-        }, (reason) => {
-          if (settled) return;
-          settled = true;
-          reject(new Error(reason));
-        });
+        this._handle(
+          message,
+          (welcome) => {
+            if (settled) return;
+            settled = true;
+            this._startPinging();
+            resolve(welcome);
+          },
+          (reason) => {
+            if (settled) return;
+            settled = true;
+            reject(new Error(reason));
+          },
+        );
       });
 
       socket.addEventListener("error", () => {
@@ -163,9 +167,7 @@ export class Connection {
     this._stopPinging();
     const send = () => {
       if (this.socket?.readyState !== WebSocket.OPEN) return;
-      this.socket.send(
-        JSON.stringify({ t: "Ping", d: { client_time_ms: performance.now() } }),
-      );
+      this.socket.send(JSON.stringify({ t: "Ping", d: { client_time_ms: performance.now() } }));
     };
     send();
     this._pingTimer = setInterval(send, PING_INTERVAL);

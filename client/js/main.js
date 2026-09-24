@@ -214,7 +214,8 @@ function start(connection, welcome, prediction) {
 
   input.onLockError = () => {
     if (!running || retryTimer !== null) return; // Beendet oder Versuch laeuft.
-    resumeHint.textContent = "Der Browser gibt die Maus noch nicht frei \u2013 gleich noch einmal \u2026";
+    resumeHint.textContent =
+      "Der Browser gibt die Maus noch nicht frei \u2013 gleich noch einmal \u2026";
     retryTimer = setTimeout(() => {
       retryTimer = null;
       input.requestLock();
@@ -273,8 +274,7 @@ function start(connection, welcome, prediction) {
   };
 
   connection.onClose = () => {
-    disconnectReason.textContent =
-      "Der Server ist nicht mehr erreichbar. Vermutlich ein Meeting.";
+    disconnectReason.textContent = "Der Server ist nicht mehr erreichbar. Vermutlich ein Meeting.";
     disconnectOverlay.classList.remove("hidden");
     stop();
   };
@@ -397,8 +397,13 @@ function start(connection, welcome, prediction) {
     // Der Hoerer sitzt an der Kamera, muss also nach ihrer Drehung gesetzt
     // werden. Die Schritte der Mitspieler kommen aus deren interpolierten
     // Positionen, die `players.update` weiter oben schon gesetzt hat.
-    audio.update(dt, camera, self ? { x: self.pos[0], z: self.pos[2] } : null,
-      local?.on_ground ?? false, players.avatars);
+    audio.update(
+      dt,
+      camera,
+      self ? { x: self.pos[0], z: self.pos[2] } : null,
+      local?.on_ground ?? false,
+      players.avatars,
+    );
 
     renderer.render(scene, camera);
   }

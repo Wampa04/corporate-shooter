@@ -168,8 +168,18 @@ export class Hud {
 
     this.reloading.classList.toggle("hidden", !local.reloading || art !== "Magazine");
 
-    this._cooldown(this.dash, this.dashBar, local.dash_cooldown_remaining, this.config.dash_cooldown);
-    this._cooldown(this.heal, this.healBar, local.heal_cooldown_remaining, this.config.heal_cooldown);
+    this._cooldown(
+      this.dash,
+      this.dashBar,
+      local.dash_cooldown_remaining,
+      this.config.dash_cooldown,
+    );
+    this._cooldown(
+      this.heal,
+      this.healBar,
+      local.heal_cooldown_remaining,
+      this.config.heal_cooldown,
+    );
 
     const dead = self ? !self.alive : false;
     this.respawn.classList.toggle("hidden", !dead);
@@ -404,9 +414,6 @@ export class Hud {
   _flashDamage() {
     this.damageFlash.classList.add("on");
     clearTimeout(this._damageTimer);
-    this._damageTimer = setTimeout(
-      () => this.damageFlash.classList.remove("on"),
-      60,
-    );
+    this._damageTimer = setTimeout(() => this.damageFlash.classList.remove("on"), 60);
   }
 }

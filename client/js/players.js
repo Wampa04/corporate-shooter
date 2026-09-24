@@ -131,7 +131,6 @@ export class PlayerViews {
     this.avatars = new Map();
     /** Zwischenstand der Interpolation, von Bild zu Bild wiederverwendet. */
     this._states = new Map();
-
   }
 
   /**
@@ -307,11 +306,7 @@ function interpolateStates(older, newer, t, result) {
 
     result.set(state.id, {
       ...state,
-      pos: [
-        before.pos[0] + dx * t,
-        before.pos[1] + dy * t,
-        before.pos[2] + dz * t,
-      ],
+      pos: [before.pos[0] + dx * t, before.pos[1] + dy * t, before.pos[2] + dz * t],
       yaw: lerpAngle(before.yaw, state.yaw, t),
       pitch: before.pitch + (state.pitch - before.pitch) * t,
     });

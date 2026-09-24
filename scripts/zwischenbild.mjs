@@ -12,7 +12,7 @@
 // selbst, nicht die Bewegung - die deckt `scripts/gleichlauf.sh` ab.
 import { Prediction } from "../client/js/predict.js";
 
-const SCHRITT = 0.18;   // Strecke je Simulationsschritt bei 5.4 m/s
+const SCHRITT = 0.18; // Strecke je Simulationsschritt bei 5.4 m/s
 const TICK = 1 / 30;
 const BILD = 1 / 120;
 const BILDER = 240;
@@ -27,7 +27,10 @@ function attrappe(speicher) {
       state_ptr: () => 0,
       load_level: () => 1,
       load_config: () => 1,
-      step: () => { speicher[2] -= SCHRITT; return 1; },
+      step: () => {
+        speicher[2] -= SCHRITT;
+        return 1;
+      },
     },
   };
 }
@@ -37,11 +40,7 @@ function laufen({ ausgleich }) {
   const speicher = new Float32Array(16);
   const p = new Prediction(attrappe(speicher));
   p.init({}, { tick_rate: 30 });
-  p.reconcile(
-    { pos: [0, 0, 0], yaw: 0, pitch: 0, alive: true },
-    { on_ground: true },
-    0,
-  );
+  p.reconcile({ pos: [0, 0, 0], yaw: 0, pitch: 0, alive: true }, { on_ground: true }, 0);
 
   const wege = [];
   let vor = null;
@@ -55,9 +54,7 @@ function laufen({ ausgleich }) {
       p.advance({ seq: i, move_x: 0, move_z: 1, yaw: 0, pitch: 0, buttons: 0 }, true);
     }
     // Ohne Ausgleich: der rohe Vorhersagestand, wie er vor dem Einbau war.
-    const q = ausgleich
-      ? p.position(BILD, konto / TICK)
-      : { x: speicher[0], z: speicher[2] };
+    const q = ausgleich ? p.position(BILD, konto / TICK) : { x: speicher[0], z: speicher[2] };
     if (vor) wege.push(Math.hypot(q.x - vor.x, q.z - vor.z));
     vor = { x: q.x, z: q.z };
   }
@@ -66,8 +63,7 @@ function laufen({ ausgleich }) {
 
 function kennzahlen(wege) {
   const mittel = wege.reduce((a, b) => a + b, 0) / wege.length;
-  const streuung = Math.sqrt(
-    wege.reduce((a, b) => a + (b - mittel) ** 2, 0) / wege.length);
+  const streuung = Math.sqrt(wege.reduce((a, b) => a + (b - mittel) ** 2, 0) / wege.length);
   return {
     still: wege.filter((w) => w < 1e-9).length,
     von: wege.length,
@@ -78,10 +74,14 @@ function kennzahlen(wege) {
 const mit = kennzahlen(laufen({ ausgleich: true }));
 const ohne = kennzahlen(laufen({ ausgleich: false }));
 
-console.log(`mit Ausgleich:   ${mit.still}/${mit.von} Bilder ohne Bewegung, ` +
-            `Ungleichmaessigkeit ${mit.gleichmaessigkeit.toFixed(3)}`);
-console.log(`ohne Ausgleich:  ${ohne.still}/${ohne.von} Bilder ohne Bewegung, ` +
-            `Ungleichmaessigkeit ${ohne.gleichmaessigkeit.toFixed(3)}`);
+console.log(
+  `mit Ausgleich:   ${mit.still}/${mit.von} Bilder ohne Bewegung, ` +
+    `Ungleichmaessigkeit ${mit.gleichmaessigkeit.toFixed(3)}`,
+);
+console.log(
+  `ohne Ausgleich:  ${ohne.still}/${ohne.von} Bilder ohne Bewegung, ` +
+    `Ungleichmaessigkeit ${ohne.gleichmaessigkeit.toFixed(3)}`,
+);
 
 let fehler = 0;
 if (mit.still > mit.von * 0.05) {

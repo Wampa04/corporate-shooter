@@ -36,18 +36,30 @@ reichEin(readFileSync(`${dir}/config.json`, "utf8"), x.load_config);
 
 const roh = new Uint32Array(1);
 const alsFloat = new Float32Array(roh.buffer);
-const f32 = (u) => { roh[0] = Number(u) >>> 0; return alsFloat[0]; };
+const f32 = (u) => {
+  roh[0] = Number(u) >>> 0;
+  return alsFloat[0];
+};
 
 // Erst nach dem Laden anlegen: das Parsen der Karte belegt Speicher und kann
 // ihn wachsen lassen, was jede aeltere Sicht entkoppeln wuerde.
 const state = new Float32Array(x.memory.buffer, x.state_ptr(), 13);
 
-const bahn = readFileSync(`${dir}/bahn_rust.txt`, "utf8").trim().split("\n")
-  .map((z) => { const t = z.split(" "); return { lauf: t[0], zustand: t.slice(1) }; });
-const eingaben = readFileSync(`${dir}/eingaben.txt`, "utf8").trim().split("\n")
+const bahn = readFileSync(`${dir}/bahn_rust.txt`, "utf8")
+  .trim()
+  .split("\n")
+  .map((z) => {
+    const t = z.split(" ");
+    return { lauf: t[0], zustand: t.slice(1) };
+  });
+const eingaben = readFileSync(`${dir}/eingaben.txt`, "utf8")
+  .trim()
+  .split("\n")
   .map((z) => z.split(" "));
 
-let schlimmste = 0, schlimmsteStelle = "", fenster = 0;
+let schlimmste = 0,
+  schlimmsteStelle = "",
+  fenster = 0;
 
 for (let start = 0; start + FENSTER < bahn.length; start += FENSTER) {
   // Ein Fenster darf keine Laufgrenze ueberschreiten.

@@ -16,10 +16,19 @@
 // Leben und fremde Spieler bleiben unveraendert serverautoritativ.
 
 /** Reihenfolge der Felder im geteilten Speicher, siehe `crates/predict`. */
-const POS_X = 0, POS_Y = 1, POS_Z = 2;
-const VEL_X = 3, VEL_Y = 4, VEL_Z = 5;
-const YAW = 6, PITCH = 7, ON_GROUND = 8;
-const DASH_TIMER = 9, DASH_DIR_X = 10, DASH_DIR_Z = 11, DASH_COOLDOWN = 12;
+const POS_X = 0,
+  POS_Y = 1,
+  POS_Z = 2;
+const VEL_X = 3,
+  VEL_Y = 4,
+  VEL_Z = 5;
+const YAW = 6,
+  PITCH = 7,
+  ON_GROUND = 8;
+const DASH_TIMER = 9,
+  DASH_DIR_X = 10,
+  DASH_DIR_Z = 11,
+  DASH_COOLDOWN = 12;
 const STATE_FLOATS = 13;
 
 /**
@@ -82,10 +91,7 @@ export class Prediction {
       if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
       // `instantiateStreaming` braucht den richtigen MIME-Typ; ueber den
       // Umweg des Puffers ist es unabhaengig davon, wie der Server ihn setzt.
-      const { instance } = await WebAssembly.instantiate(
-        await antwort.arrayBuffer(),
-        {},
-      );
+      const { instance } = await WebAssembly.instantiate(await antwort.arrayBuffer(), {});
       return new Prediction(instance);
     } catch (fehler) {
       console.warn("Vorhersage nicht verfuegbar:", fehler.message);

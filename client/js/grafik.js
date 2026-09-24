@@ -172,11 +172,7 @@ export class Grafikregler {
       return this._wechsle(this.stufe + 1, median);
     }
 
-    if (
-      median <= KOMFORT_MS &&
-      this.stufe > 0 &&
-      this._abstiege[this.stufe - 1] < MAX_VERSUCHE
-    ) {
+    if (median <= KOMFORT_MS && this.stufe > 0 && this._abstiege[this.stufe - 1] < MAX_VERSUCHE) {
       if (++this._guteFenster >= ERHOLUNG_FENSTER) {
         return this._wechsle(this.stufe - 1, median);
       }

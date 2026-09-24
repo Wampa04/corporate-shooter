@@ -9,7 +9,7 @@ import * as THREE from "../vendor/three.module.min.js";
 /** Farbe der Leuchtspur je Waffe. */
 const TRACER_COLOR = {
   Textmarker: 0xf5e663,
-  Locher:     0xdfe6f0,
+  Locher: 0xdfe6f0,
   Kaffeevollautomat: 0x8a5a2b,
 };
 
@@ -119,7 +119,10 @@ export class Effects {
       () => new THREE.Mesh(this._impactGeometry, fadingMaterial(THREE.MeshBasicMaterial, 0.9)),
     );
     this.bursts = new Pool(scene, MAX_BURSTS, () => {
-      const mesh = new THREE.Mesh(this._burstGeometry, fadingMaterial(THREE.MeshBasicMaterial, 0.55));
+      const mesh = new THREE.Mesh(
+        this._burstGeometry,
+        fadingMaterial(THREE.MeshBasicMaterial, 0.55),
+      );
       mesh.material.color.setHex(0xf1e5c8);
       return mesh;
     });

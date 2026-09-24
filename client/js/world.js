@@ -23,52 +23,52 @@ const BRAND = 0x9fd356;
  */
 const MATERIALS = {
   // Huelle
-  Floor:         { color: 0x767f8b, roughness: 0.95, texture: "carpet" },
-  Ceiling:       { color: 0xeef1f5, roughness: 0.9,  texture: "ceiling" },
-  Wall:          { color: 0xccd3dc, roughness: 0.85 },
-  Glass:         { color: 0xa8dcea, roughness: 0.05, opacity: 0.15, transparent: true },
+  Floor: { color: 0x767f8b, roughness: 0.95, texture: "carpet" },
+  Ceiling: { color: 0xeef1f5, roughness: 0.9, texture: "ceiling" },
+  Wall: { color: 0xccd3dc, roughness: 0.85 },
+  Glass: { color: 0xa8dcea, roughness: 0.05, opacity: 0.15, transparent: true },
   // Milchglasband auf Brusthoehe: verdeckt den Rumpf, laesst Kopf und Beine frei.
-  FrostedGlass:  { color: 0xdfe7ec, roughness: 0.45, opacity: 0.82, transparent: true },
-  Pillar:        { color: 0xd8dee6, roughness: 0.8 },
+  FrostedGlass: { color: 0xdfe7ec, roughness: 0.45, opacity: 0.82, transparent: true },
+  Pillar: { color: 0xd8dee6, roughness: 0.8 },
 
   // Arbeitsplatz
-  Desk:          { color: 0xbb9061, roughness: 0.6 },   // Buche, wie ueberall
-  Worktop:       { color: 0xe4e7ea, roughness: 0.3 },   // helle Platte mit Kante
-  Paper:         { color: 0xf7f5ef, roughness: 0.95 },
-  Mug:           { color: BRAND,    roughness: 0.25 },  // Tasse in Hausfarbe
-  Cubicle:       { color: 0x8e9aa7, roughness: 1.0 },   // Stoffbespannung
-  Monitor:       { color: 0x1b1f25, roughness: 0.25 },
-  Keyboard:      { color: 0x2b3038, roughness: 0.6 },
+  Desk: { color: 0xbb9061, roughness: 0.6 }, // Buche, wie ueberall
+  Worktop: { color: 0xe4e7ea, roughness: 0.3 }, // helle Platte mit Kante
+  Paper: { color: 0xf7f5ef, roughness: 0.95 },
+  Mug: { color: BRAND, roughness: 0.25 }, // Tasse in Hausfarbe
+  Cubicle: { color: 0x8e9aa7, roughness: 1.0 }, // Stoffbespannung
+  Monitor: { color: 0x1b1f25, roughness: 0.25 },
+  Keyboard: { color: 0x2b3038, roughness: 0.6 },
 
   // Buerostuhl: Polster, Schale, Gestell. Anthrazit und Aluminium - die
   // Hausfarbe bleibt den Waenden, Tassen und Leitstreifen vorbehalten.
-  Chair:         { color: 0x3a3f47, roughness: 0.85 },
-  ChairShell:    { color: 0x1e2228, roughness: 0.5 },
-  ChairFrame:    { color: 0x8b929b, roughness: 0.35, metalness: 0.55 },
-  Whiteboard:    { color: 0xffffff, roughness: 0.15 },  // beschreibbar, also glatt
-  Cabinet:       { color: 0xb9c1cb, roughness: 0.45, metalness: 0.35 },
-  Shelf:         { color: 0x9c7852, roughness: 0.7 },
-  Printer:       { color: 0xe6eaee, roughness: 0.5 },
+  Chair: { color: 0x3a3f47, roughness: 0.85 },
+  ChairShell: { color: 0x1e2228, roughness: 0.5 },
+  ChairFrame: { color: 0x8b929b, roughness: 0.35, metalness: 0.55 },
+  Whiteboard: { color: 0xffffff, roughness: 0.15 }, // beschreibbar, also glatt
+  Cabinet: { color: 0xb9c1cb, roughness: 0.45, metalness: 0.35 },
+  Shelf: { color: 0x9c7852, roughness: 0.7 },
+  Printer: { color: 0xe6eaee, roughness: 0.5 },
 
   // Sonderraeume
   CoffeeMachine: { color: 0x3b4149, roughness: 0.35, metalness: 0.5 },
-  ServerRack:    { color: 0x2a2f36, roughness: 0.5,  metalness: 0.3 },
+  ServerRack: { color: 0x2a2f36, roughness: 0.5, metalness: 0.3 },
   // Yuccapalme: Uebertopf, Rand, Erde, Stamm und zwei Gruentoene fuer die
   // Wedel - erst der Unterschied zwischen Krone und Blatt macht sie zur
   // Pflanze statt zum gruenen Kasten.
-  Plant:         { color: 0xb0aa9e, roughness: 0.85 },  // Sichtbeton-Uebertopf
-  PlantRim:      { color: 0xc9c3b7, roughness: 0.7 },
-  Soil:          { color: 0x3b3027, roughness: 1.0 },
-  Stem:          { color: 0x6b5a3e, roughness: 0.9 },
-  Foliage:       { color: 0x4e9e57, roughness: 1.0 },
-  FoliageDark:   { color: 0x35754a, roughness: 1.0 },
+  Plant: { color: 0xb0aa9e, roughness: 0.85 }, // Sichtbeton-Uebertopf
+  PlantRim: { color: 0xc9c3b7, roughness: 0.7 },
+  Soil: { color: 0x3b3027, roughness: 1.0 },
+  Stem: { color: 0x6b5a3e, roughness: 0.9 },
+  Foliage: { color: 0x4e9e57, roughness: 1.0 },
+  FoliageDark: { color: 0x35754a, roughness: 1.0 },
 
   // Dekoration
-  LightPanel:    { color: 0xffffff, roughness: 1.0, emissive: 0xfff4d6 },
-  Vent:          { color: 0x9aa3ad, roughness: 0.6, metalness: 0.4 },
-  Trim:          { color: 0xb6bec8, roughness: 0.6 },
-  AccentPanel:   { color: BRAND,    roughness: 0.75 },
-  FloorStripe:   { color: BRAND,    roughness: 0.85 },
+  LightPanel: { color: 0xffffff, roughness: 1.0, emissive: 0xfff4d6 },
+  Vent: { color: 0x9aa3ad, roughness: 0.6, metalness: 0.4 },
+  Trim: { color: 0xb6bec8, roughness: 0.6 },
+  AccentPanel: { color: BRAND, roughness: 0.75 },
+  FloorStripe: { color: BRAND, roughness: 0.85 },
 };
 
 /** Ersatzdarstellung fuer ein `BrushKind`, das dieser Client noch nicht kennt. */
@@ -229,9 +229,7 @@ export function buildScene(map, { shadows = true } = {}) {
   // fuer die gerechnet wird. Zu weit herunter darf es aber nicht, sonst
   // erscheint die Hausfarbe auf abgewandten Flaechen dunkelgruen statt hell.
   scene.add(new THREE.AmbientLight(0xffffff, lightIntensity("ambient", shadows)));
-  scene.add(
-    new THREE.HemisphereLight(0xf4f8ff, 0x8d959f, lightIntensity("hemisphere", shadows)),
-  );
+  scene.add(new THREE.HemisphereLight(0xf4f8ff, 0x8d959f, lightIntensity("hemisphere", shadows)));
 
   const key = new THREE.DirectionalLight(0xffffff, lightIntensity("key", shadows));
   // Licht und Ziel wandern mit der Mitte des Grundrisses. Der Anbau im Osten
@@ -251,8 +249,7 @@ export function buildScene(map, { shadows = true } = {}) {
   // Halbe Ausdehnung des Grundrisses plus etwas Luft - so wächst die
   // Schattenkamera mit der Karte, statt bei der nächsten Erweiterung wieder
   // zu klein zu sein.
-  const reach =
-    Math.max(size(map.bounds, 0), size(map.bounds, 2)) * 0.5 + 6;
+  const reach = Math.max(size(map.bounds, 0), size(map.bounds, 2)) * 0.5 + 6;
   Object.assign(key.shadow.camera, {
     left: -reach,
     right: reach,

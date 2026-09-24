@@ -382,7 +382,14 @@ export class Audio {
   }
 
   _click(freq) {
-    this._tone({ type: "square", from: freq, to: freq * 0.6, dur: 0.04, peak: 0.1, dest: this.bus });
+    this._tone({
+      type: "square",
+      from: freq,
+      to: freq * 0.6,
+      dur: 0.04,
+      peak: 0.1,
+      dest: this.bus,
+    });
   }
 
   _footstep(pos, lautstaerke) {
@@ -475,10 +482,13 @@ export class Audio {
     // nicht gezeichnet, Schuesse und Schritte der anderen kommen aber weiter
     // an - die Panner stauten sich dann bis zur Rueckkehr. Zeitgeber laufen
     // dort gedrosselt, aber sie laufen.
-    setTimeout(() => {
-      panner.disconnect();
-      this._panners.delete(panner);
-    }, (standzeit + 0.3) * 1000);
+    setTimeout(
+      () => {
+        panner.disconnect();
+        this._panners.delete(panner);
+      },
+      (standzeit + 0.3) * 1000,
+    );
     return panner;
   }
 
