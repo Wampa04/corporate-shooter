@@ -556,8 +556,9 @@ async fn write_loop(
         }
     }
     // Die Simulation hat den Client entfernt. Ein sauberes Ende, falls er
-    // doch noch zuhört.
-    let _ = sink.send(Message::Close(None)).await;
+    // doch noch zuhört - aber mit derselben Frist: ist der Sendepuffer gerade
+    // voll, hinge die Aufgabe sonst hier fest, und mit ihr der Platz.
+    let _ = tokio::time::timeout(SEND_TIMEOUT, sink.send(Message::Close(None))).await;
 }
 
 #[cfg(test)]
