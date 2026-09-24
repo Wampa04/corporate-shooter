@@ -8,9 +8,9 @@ import * as THREE from "../vendor/three.module.min.js";
 
 /** Farbe der Leuchtspur je Waffe. */
 const TRACER_COLOR = {
-  Textmarker: 0xf5e663,
-  Locher: 0xdfe6f0,
-  Kaffeevollautomat: 0x8a5a2b,
+  Highlighter: 0xf5e663,
+  HolePunch: 0xdfe6f0,
+  CoffeeMachine: 0x8a5a2b,
 };
 
 /** Standzeit einer Explosionswolke in Sekunden. */

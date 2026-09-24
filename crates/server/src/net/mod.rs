@@ -224,7 +224,7 @@ fn broadcast(
     tick: Res<Tick>,
     config: Res<Config>,
     clients: Res<Clients>,
-    runde: Res<crate::sim::matchstate::Match>,
+    current_match: Res<crate::sim::matchstate::Match>,
     mut log: ResMut<EventLog>,
     mut commands: Commands,
     q: Query<(&Player, &Body, &Vitals, &Loadout, &Skills, &Inputs)>,
@@ -260,7 +260,7 @@ fn broadcast(
             })
             .collect(),
         events: std::mem::take(&mut log.0),
-        match_state: runde.0,
+        match_state: current_match.0,
     });
 
     for (player, body, vitals, loadout, skills, inputs) in &q {

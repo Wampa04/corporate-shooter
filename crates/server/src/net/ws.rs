@@ -402,32 +402,32 @@ impl Throttle {
 /// Als eigener Typ und nicht als zwei Zeilen am Anfang und Ende: die
 /// Verbindungsbehandlung hat mehrere Ausstiege, und einer davon wurde sonst
 /// unweigerlich vergessen - der Platz bliebe für immer belegt.
-struct Platz(Arc<AtomicUsize>);
+struct Seat(Arc<AtomicUsize>);
 
-impl Drop for Platz {
+impl Drop for Seat {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
-impl Platz {
+impl Seat {
     /// Belegt einen Platz, sofern noch einer frei ist.
-    fn belegen(live: &Arc<AtomicUsize>, max: usize) -> Option<Platz> {
+    fn claim(live: &Arc<AtomicUsize>, max: usize) -> Option<Seat> {
         // Vergleichen und Setzen in einem Zug: zwei gleichzeitige Verbindungen
         // dürfen nicht beide denselben letzten Platz sehen.
-        let belegt = live
+        let claimed = live
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < max).then_some(n + 1)
             })
             .is_ok();
-        belegt.then(|| Platz(Arc::clone(live)))
+        claimed.then(|| Seat(Arc::clone(live)))
     }
 }
 
 async fn handle(socket: WebSocket, state: AppState, peer: SocketAddr) {
     let (mut sink, mut stream) = socket.split();
 
-    let Some(_platz) = Platz::belegen(&state.live, state.max_players) else {
+    let Some(_seat) = Seat::claim(&state.live, state.max_players) else {
         info!(%peer, max = state.max_players, "Verbindung abgewiesen: Server voll");
         let _ = sink
             .send(Message::Text(codec::encode(&ServerMessage::Rejected {
@@ -571,7 +571,7 @@ mod tests {
     };
 
     #[test]
-    fn richtungswechsel_und_nullbreiten_fliegen_raus() {
+    fn direction_overrides_and_zero_widths_are_removed() {
         // U+202E dreht die Killfeed-Zeile um, U+200B macht zwei gleich
         // aussehende Namen verschieden.
         assert_eq!(sanitize_name("Bob\u{202E}nnA"), "BobnnA");
@@ -589,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn eigene_seite_darf_verbinden() {
+    fn own_page_may_connect() {
         assert!(same_origin(&headers(
             Some("http://192.168.1.20:4200"),
             "192.168.1.20:4200"
@@ -603,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn fremde_seite_darf_nicht_verbinden() {
+    fn foreign_page_may_not_connect() {
         assert!(!same_origin(&headers(
             Some("https://boese.example"),
             "192.168.1.20:4200"
@@ -616,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn ehrlicher_client_stoesst_nie_an() {
+    fn honest_client_never_hits_the_limit() {
         // Eine Eingabe je Tick plus ein Ping je Sekunde, zehn Sekunden lang,
         // dazu gelegentlich ein Schub von drei Eingaben in einem Bild.
         let start = Instant::now();
@@ -634,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn flut_wird_gedrosselt_und_dann_getrennt() {
+    fn flood_is_throttled_then_disconnected() {
         let start = Instant::now();
         let mut t = Throttle::for_tick_rate(60, start);
         // Tausend Nachrichten auf einmal: der Eimer ist schnell leer.
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn namen_werden_gekuerzt_und_getrimmt() {
+    fn names_are_truncated_and_trimmed() {
         assert_eq!(
             sanitize_name("  Karin aus dem Controlling  "),
             "Karin aus dem Controlling"[..MAX_NAME_LEN].trim()
@@ -663,19 +663,19 @@ mod tests {
     }
 
     #[test]
-    fn leere_und_unbrauchbare_namen_bekommen_ersatz() {
+    fn empty_and_unusable_names_get_fallback() {
         assert_eq!(sanitize_name(""), FALLBACK_NAME);
         assert_eq!(sanitize_name("   "), FALLBACK_NAME);
         assert_eq!(sanitize_name("\n\t\r"), FALLBACK_NAME);
     }
 
     #[test]
-    fn steuerzeichen_fliegen_raus() {
+    fn control_characters_are_removed() {
         assert_eq!(sanitize_name("Bo\u{7}b\nRoss"), "BobRoss");
     }
 
     #[test]
-    fn umlaute_bleiben_erhalten() {
+    fn umlauts_are_kept() {
         assert_eq!(sanitize_name("Jürgen Groß"), "Jürgen Groß");
     }
 }

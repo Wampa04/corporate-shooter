@@ -137,8 +137,8 @@ export class Audio {
           // Die eigene Waffe laeuft nicht durch den Panner: sie klebt an der
           // Kamera, und ein Klang, der im Kopf herumwandert, wirkt falsch.
           const pos = d.shooter === selfId ? null : d.tracers[0]?.from;
-          if (d.weapon === "Locher") this._shotLocher(pos);
-          else if (d.weapon === "Kaffeevollautomat") this._shotKaffee(pos);
+          if (d.weapon === "HolePunch") this._shotLocher(pos);
+          else if (d.weapon === "CoffeeMachine") this._shotKaffee(pos);
           else this._shotTextmarker(pos);
           break;
         }

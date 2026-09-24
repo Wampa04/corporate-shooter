@@ -395,8 +395,8 @@ impl Plugin for SimPlugin {
             .init_resource::<PendingDamage>()
             .init_resource::<EventLog>()
             .init_resource::<Lobby>()
-            .insert_resource(matchstate::Match::neu())
-            .init_resource::<projectiles::NaechsteId>()
+            .insert_resource(matchstate::Match::new())
+            .init_resource::<projectiles::NextProjectileId>()
             .add_systems(
                 Update,
                 (

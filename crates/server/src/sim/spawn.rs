@@ -57,21 +57,21 @@ pub fn choose_spawn(map: &MapDesc, enemies: &[Vec3], rng: &mut Rng) -> SpawnPoin
 pub fn respawn_players(
     config: Res<Config>,
     level: Res<Level>,
-    runde: Res<super::matchstate::Match>,
+    current_match: Res<super::matchstate::Match>,
     mut rand: ResMut<super::Rand>,
     mut events: ResMut<EventLog>,
     mut q: Query<(&Player, &mut Body, &mut Vitals, &mut Loadout, &mut Skills)>,
 ) {
     // In der Pause steigt niemand ein: der Endstand soll stehen bleiben.
-    if !runde.laeuft() {
+    if !current_match.is_running() {
         return;
     }
 
     // Fast immer steht niemand zum Einstieg an. Dann nichts einsammeln.
-    let niemand_wartet = q
+    let nobody_waiting = q
         .iter()
         .all(|(_, _, vitals, _, _)| vitals.alive || vitals.respawn_timer > 0.0);
-    if niemand_wartet {
+    if nobody_waiting {
         return;
     }
 
@@ -88,7 +88,7 @@ pub fn respawn_players(
     // waehlen aus denselben drei sichersten Punkten - beim Neustart einer Runde
     // steigen also acht Leute auf drei Stellen ein. Auch im gewoehnlichen Spiel
     // konnten zwei, die im selben Tick starben, aufeinander landen.
-    let mut belegt: Vec<Vec3> = Vec::new();
+    let mut claimed: Vec<Vec3> = Vec::new();
 
     for (player, mut body, mut vitals, mut loadout, mut skills) in &mut q {
         if vitals.alive || vitals.respawn_timer > 0.0 {
@@ -101,10 +101,10 @@ pub fn respawn_players(
             .iter()
             .filter(|(team, _)| *team != player.team)
             .map(|(_, pos)| *pos)
-            .chain(belegt.iter().copied())
+            .chain(claimed.iter().copied())
             .collect();
         let spawn = choose_spawn(&level.desc, &enemies, &mut rand.0);
-        belegt.push(spawn.pos);
+        claimed.push(spawn.pos);
 
         body.pos = spawn.pos;
         body.vel = Vec3::ZERO;

@@ -400,17 +400,17 @@ pub enum OfficeStyle {
     /// Schreibtisch quer vor der Aussenwand, Aktenschrank, Whiteboard.
     /// Deckung steht hier hoch und schmal - man verschwindet dahinter ganz
     /// oder gar nicht.
-    Akten,
+    Files,
     /// Schreibtisch in der Nordecke, ein niedriges Sideboard quer durch den
     /// Raum, davor zwei Besucherstühle. Deckung liegt hier niedrig und breit:
     /// man geht dahinter in Deckung, sieht aber weiter über sie hinweg.
-    Besprechung,
+    Meeting,
 }
 
 /// Einzelbüro mit Fenster zum Flur. Die Einrichtung hängt am [`OfficeStyle`].
 pub fn single_office(b: &mut Build, w: f32, d: f32, style: OfficeStyle) {
     match style {
-        OfficeStyle::Akten => {
+        OfficeStyle::Files => {
             // Der Schreibtisch steht quer vor der Aussenwand, die Person sitzt
             // dahinter und sieht zur Tür - so herum wie jeder, der ein eigenes
             // Büro bekommt, seinen Tisch stellt.
@@ -431,7 +431,7 @@ pub fn single_office(b: &mut Build, w: f32, d: f32, style: OfficeStyle) {
             whiteboard(b, w - 2.6, d * 0.5 - 0.2, 2.4, true);
             plant_at(b, At::floor(w - 0.55, -d * 0.5 + 0.55), PlantSize::Yucca);
         }
-        OfficeStyle::Besprechung => {
+        OfficeStyle::Meeting => {
             // Der Schreibtisch steht in der Nordecke und schaut nach Süden,
             // quer zum anderen Büro. Wer aus dem Flur hereinkommt, sieht die
             // Person also von der Seite statt frontal.
@@ -605,42 +605,35 @@ pub fn east_wing(b: &mut Build) {
     }
 
     // Längswand zum Flur, je Raum ein Stück mit Tür.
-    let raeume = [
+    let rooms = [
         (WING_SOUTH, OFFICE_A_Z0),
         (OFFICE_A_Z0, OFFICE_B_Z0),
         (OFFICE_B_Z0, OFFICE_B_Z1),
     ];
-    for (z0, z1) in raeume {
-        let laenge = z1 - z0;
+    for (z0, z1) in rooms {
+        let length = z1 - z0;
         b.place(At::floor(CORRIDOR_EAST, z0).facing(Dir::East), |b| {
             // Die Tür sitzt zum Flurende hin, nicht mittig: so steht man beim
             // Eintreten nicht sofort im Schussfeld des Schreibtischs.
-            glass_wall(b, laenge, Some(laenge - DOOR_WIDTH - 0.6))
+            glass_wall(b, length, Some(length - DOOR_WIDTH - 0.6))
         });
     }
 
     // Besprechungsraum und zwei Einzelbüros. Dieselbe Funktion, zweimal
     // aufgerufen - aber mit verschiedener Einrichtung, damit die beiden Räume
     // sich nicht gleich spielen.
-    let tiefe = WING_EAST - CORRIDOR_EAST;
+    let depth = WING_EAST - CORRIDOR_EAST;
     b.place(
         At::floor(CORRIDOR_EAST, (WING_SOUTH + OFFICE_A_Z0) * 0.5),
-        |b| meeting_room(b, tiefe, OFFICE_A_Z0 - WING_SOUTH),
+        |b| meeting_room(b, depth, OFFICE_A_Z0 - WING_SOUTH),
     );
     b.place(
         At::floor(CORRIDOR_EAST, (OFFICE_A_Z0 + OFFICE_B_Z0) * 0.5),
-        |b| single_office(b, tiefe, OFFICE_B_Z0 - OFFICE_A_Z0, OfficeStyle::Akten),
+        |b| single_office(b, depth, OFFICE_B_Z0 - OFFICE_A_Z0, OfficeStyle::Files),
     );
     b.place(
         At::floor(CORRIDOR_EAST, (OFFICE_B_Z0 + OFFICE_B_Z1) * 0.5),
-        |b| {
-            single_office(
-                b,
-                tiefe,
-                OFFICE_B_Z1 - OFFICE_B_Z0,
-                OfficeStyle::Besprechung,
-            )
-        },
+        |b| single_office(b, depth, OFFICE_B_Z1 - OFFICE_B_Z0, OfficeStyle::Meeting),
     );
 
     // Flur: Leitstreifen, Leuchten, Sockelleisten, Beschilderung.

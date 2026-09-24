@@ -61,7 +61,7 @@ impl History {
 
     /// Positionen zum Zeitpunkt `view_tick`, gebrochen zwischen zwei Ständen.
     ///
-    /// `jetzt` ist die Snapshot-Nummer des laufenden Ticks. `None`, wenn nicht
+    /// `now` ist die Snapshot-Nummer des laufenden Ticks. `None`, wenn nicht
     /// zurückgespult werden soll: ohne Angabe des Clients, bei zu wenig
     /// Aufzeichnung oder wenn der gewünschte Zeitpunkt ohnehin der aktuelle
     /// ist.
@@ -71,52 +71,56 @@ impl History {
     /// sich.
     pub fn at(
         &self,
-        jetzt: u64,
+        now: u64,
         view_tick: Option<f64>,
         max_rewind: u64,
     ) -> Option<Vec<(PlayerId, Vec3)>> {
-        let gewuenscht = view_tick?;
-        if !gewuenscht.is_finite() {
+        let requested = view_tick?;
+        if !requested.is_finite() {
             return None;
         }
 
         // Auf das erlaubte Fenster begrenzen. Nach oben, weil kein Client die
         // Zukunft gesehen haben kann; nach unten wegen der Notwehr oben.
-        let aeltester = jetzt.saturating_sub(max_rewind) as f64;
-        let ziel = gewuenscht.clamp(aeltester, jetzt as f64);
+        let oldest = now.saturating_sub(max_rewind) as f64;
+        let target = requested.clamp(oldest, now as f64);
 
         // Weniger als einen halben Tick zurück lohnt nicht: das Ergebnis wäre
         // dasselbe wie der aktuelle Stand, nur mit mehr Rechnerei.
-        if jetzt as f64 - ziel < 0.5 {
+        if now as f64 - target < 0.5 {
             return None;
         }
 
-        let vorher = self.frames.iter().rev().find(|f| (f.tick as f64) <= ziel)?;
-        let nachher = self
+        let before = self
             .frames
             .iter()
-            .find(|f| (f.tick as f64) >= ziel)
-            .unwrap_or(vorher);
+            .rev()
+            .find(|f| (f.tick as f64) <= target)?;
+        let after = self
+            .frames
+            .iter()
+            .find(|f| (f.tick as f64) >= target)
+            .unwrap_or(before);
 
-        let spanne = (nachher.tick as f64) - (vorher.tick as f64);
-        let t = if spanne > 0.0 {
-            ((ziel - vorher.tick as f64) / spanne) as f32
+        let span = (after.tick as f64) - (before.tick as f64);
+        let t = if span > 0.0 {
+            ((target - before.tick as f64) / span) as f32
         } else {
             0.0
         };
 
         Some(
-            vorher
+            before
                 .positions
                 .iter()
                 .map(|(id, pos)| {
-                    let ziel_pos = nachher
+                    let target_pos = after
                         .positions
                         .iter()
                         .find(|(other, _)| other == id)
                         .map(|(_, p)| *p)
                         .unwrap_or(*pos);
-                    (*id, pos.lerp(ziel_pos, t))
+                    (*id, pos.lerp(target_pos, t))
                 })
                 .collect(),
         )
@@ -151,7 +155,7 @@ mod tests {
     use super::max_rewind_ticks;
 
     #[test]
-    fn rueckspulgrenze_haengt_an_der_zeit_nicht_am_takt() {
+    fn rewind_limit_depends_on_time_not_tick_rate() {
         assert_eq!(max_rewind_ticks(60), 24);
         assert_eq!(max_rewind_ticks(30), 12);
         // Vorher waeren das 24 Sekunden gewesen.

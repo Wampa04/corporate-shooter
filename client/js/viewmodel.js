@@ -233,8 +233,8 @@ function buildWhiteboard() {
  * vergass, bekam kommentarlos den Vorgabewert.
  */
 const WEAPONS = {
-  Textmarker: { build: buildTextmarker, recoil: 0.035 },
-  Locher: { build: buildLocher, recoil: 0.12 },
+  Highlighter: { build: buildTextmarker, recoil: 0.035 },
+  HolePunch: { build: buildLocher, recoil: 0.12 },
   // `offset` ruecht sperrige Modelle ins Bild. Die Ruhelage ist auf eine
   // Pistole ausgelegt; ein Klemmbrett, ein Bruehkopf und eine halbe
   // Wandtafel haben ihre Masse woanders und ragen sonst unten aus dem Bild.
@@ -243,7 +243,7 @@ const WEAPONS = {
   Email: { build: buildEmail, recoil: 0.06, offset: [-0.03, 0.07, 0.0] },
   // Wenig Rueckstoss je Schuss, aber sechzehn Schuss je Sekunde - in der
   // Summe zittert die Waffe dauernd.
-  Kaffeevollautomat: { build: buildKaffee, recoil: 0.022, offset: [-0.05, 0.05, -0.02] },
+  CoffeeMachine: { build: buildKaffee, recoil: 0.022, offset: [-0.05, 0.05, -0.02] },
   // Weit nach links und oben: das Whiteboard soll die Sicht wirklich
   // einschraenken, sonst waere es ein Schild ohne Preis.
   Whiteboard: { build: buildWhiteboard, recoil: 0, offset: [-0.19, 0.16, -0.02] },

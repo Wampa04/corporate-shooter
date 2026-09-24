@@ -123,7 +123,7 @@ pub fn damage_at(
 #[allow(clippy::too_many_arguments)]
 pub fn fire_weapons(
     config: Res<Config>,
-    runde: Res<super::matchstate::Match>,
+    current_match: Res<super::matchstate::Match>,
     level: Res<Level>,
     tick: Res<Tick>,
     history: Res<History>,
@@ -131,7 +131,7 @@ pub fn fire_weapons(
     mut events: ResMut<EventLog>,
     mut pending: ResMut<PendingDamage>,
     mut commands: Commands,
-    mut naechste: ResMut<projectiles::NaechsteId>,
+    mut next: ResMut<projectiles::NextProjectileId>,
     all: Query<(Entity, &Player, &Body, &Vitals)>,
     mut shooters: Query<(Entity, &Player, &Body, &Vitals, &Inputs, &mut Loadout)>,
 ) {
@@ -142,7 +142,7 @@ pub fn fire_weapons(
     // Bewegung: Schuesse sagt der Client nicht voraus, Bewegung schon - eine
     // Bewegungssperre, die er nicht kennt, waere bei jedem Abgleich ein
     // sichtbarer Ruck.
-    if !runde.laeuft() {
+    if !current_match.is_running() {
         return;
     }
 
@@ -192,7 +192,7 @@ pub fn fire_weapons(
 
         // Das Whiteboard schiesst nicht. Es wirkt, indem man es haelt - der
         // Schaden wird in `resolve_deaths` abgehalten.
-        if !weapon.schiesst() {
+        if !weapon.fires() {
             continue;
         }
 
@@ -252,25 +252,25 @@ pub fn fire_weapons(
         // Lag-Kompensation: die Gegner dorthin zurücksetzen, wo der Schütze
         // sie gesehen hat. Nur die Gegner - die eigene Position ist aktuell
         // und bleibt es, und Geometrie bewegt sich ohnehin nicht.
-        let zurueckgespult = history
+        let rewound = history
             .at(
                 tick.snapshot_tick(),
                 inputs.current.view_tick,
                 history::max_rewind_ticks(config.tick_rate),
             )
-            .map(|damals| {
-                let mut kopie = targets.clone();
-                for ziel in &mut kopie {
-                    if let Some((_, pos)) = damals.iter().find(|(id, _)| *id == ziel.id) {
-                        ziel.aabb = player_aabb(*pos, half);
+            .map(|then| {
+                let mut copy = targets.clone();
+                for candidate in &mut copy {
+                    if let Some((_, pos)) = then.iter().find(|(id, _)| *id == candidate.id) {
+                        candidate.aabb = player_aabb(*pos, half);
                     }
                     // Wer damals noch nicht dabei war, bleibt an seinem
                     // aktuellen Platz - das ist der einzige Stand, den es von
                     // ihm gibt.
                 }
-                kopie
+                copy
             });
-        let ziele: &[Target] = zurueckgespult.as_deref().unwrap_or(&targets);
+        let candidates: &[Target] = rewound.as_deref().unwrap_or(&targets);
 
         match weapon.kind {
             WeaponKind::Hitscan {
@@ -288,7 +288,7 @@ pub fn fire_weapons(
                         dir,
                         range,
                         &level.opaque,
-                        ziele,
+                        candidates,
                         player.id,
                         player.team,
                     );
@@ -328,9 +328,9 @@ pub fn fire_weapons(
                 // zu kompensieren - der Schuetze hat ohnehin vorgehalten.
                 projectiles::spawn(
                     &mut commands,
-                    &mut naechste,
+                    &mut next,
                     &mut events,
-                    projectiles::Neu {
+                    projectiles::Launch {
                         owner: player.id,
                         owner_entity: shooter_entity,
                         team: player.team,
@@ -355,7 +355,7 @@ pub fn resolve_deaths(
     config: Res<Config>,
     mut pending: ResMut<PendingDamage>,
     mut events: ResMut<EventLog>,
-    mut runde: ResMut<super::matchstate::Match>,
+    mut current_match: ResMut<super::matchstate::Match>,
     mut q: Query<(&Player, &Body, &Loadout, &mut Vitals)>,
 ) {
     let mut deaths: Vec<(Entity, Team)> = Vec::new();
@@ -368,7 +368,7 @@ pub fn resolve_deaths(
             continue; // Bereits durch ein früheres Projektil desselben Ticks erledigt.
         }
 
-        let amount = nach_schild(&config, body, loadout, hit.pos, hit.amount);
+        let amount = after_shield(&config, body, loadout, hit.pos, hit.amount);
         vitals.health = vitals.health.saturating_sub(amount);
         let victim_id = victim.id;
         events.push(GameEvent::Hit {
@@ -406,8 +406,8 @@ pub fn resolve_deaths(
         // In der Pause zaehlt nichts mehr. Geschossen wird dort ohnehin
         // nicht; die Abfrage steht trotzdem hier, damit die Regel an der
         // Stelle sichtbar ist, an der sie gilt.
-        if runde.laeuft() {
-            runde.0.add_score(team);
+        if current_match.is_running() {
+            current_match.0.add_score(team);
         }
     }
 }
@@ -419,34 +419,34 @@ pub fn resolve_deaths(
 /// von seiner Mitte dorthin sagt genau, welche Seite getroffen wurde. Das
 /// funktioniert für Hitscan und für eine Explosion gleichermaßen, und es
 /// braucht kein zusätzliches Feld im [`DamageEvent`].
-fn nach_schild(
+fn after_shield(
     config: &Config,
     body: &Body,
     loadout: &Loadout,
-    einschlag: Vec3,
-    schaden: u16,
+    impact_pos: Vec3,
+    raw_damage: u16,
 ) -> u16 {
     let WeaponKind::Shield { block, arc_deg } = config.weapons[loadout.index].kind else {
-        return schaden;
+        return raw_damage;
     };
 
-    let mitte = body.pos + Vec3::Y * (config.player_height * 0.5);
-    let Some(zum_treffer) = (einschlag - mitte).try_normalize() else {
+    let center = body.pos + Vec3::Y * (config.player_height * 0.5);
+    let Some(to_hit) = (impact_pos - center).try_normalize() else {
         // Einschlag genau in der Koerpermitte - keine Richtung, kein Schutz.
-        return schaden;
+        return raw_damage;
     };
 
     // Nur waagerecht: ein Schild schuetzt zur Seite, nicht nach oben.
-    let vorn = look_direction(body.yaw, 0.0);
-    let waagerecht = Vec3::new(zum_treffer.x, 0.0, zum_treffer.z);
-    let Some(waagerecht) = waagerecht.try_normalize() else {
-        return schaden;
+    let front = look_direction(body.yaw, 0.0);
+    let horizontal = Vec3::new(to_hit.x, 0.0, to_hit.z);
+    let Some(horizontal) = horizontal.try_normalize() else {
+        return raw_damage;
     };
 
-    if vorn.dot(waagerecht) < arc_deg.to_radians().cos() {
-        return schaden;
+    if front.dot(horizontal) < arc_deg.to_radians().cos() {
+        return raw_damage;
     }
-    let uebrig = (schaden as f32 * (1.0 - block)).round() as u16;
+    let left_over = (raw_damage as f32 * (1.0 - block)).round() as u16;
     // Mindestens 1: ein Schild soll schuetzen, nicht unverwundbar machen.
-    uebrig.max(1)
+    left_over.max(1)
 }

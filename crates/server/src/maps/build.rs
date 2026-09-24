@@ -190,45 +190,45 @@ impl Build {
 mod tests {
     use super::*;
 
-    fn erste(b: Build) -> Aabb {
+    fn first(b: Build) -> Aabb {
         b.finish()[0].aabb
     }
 
     #[test]
-    fn drehung_haelt_boxen_achsenparallel() {
+    fn rotation_keeps_boxes_axis_aligned() {
         // Eine flache, längliche Box - bei falscher Drehung fielen Breite und
         // Tiefe auf.
-        let ecken = |dir: Dir| {
+        let corners = |dir: Dir| {
             let mut b = Build::new();
             b.place(At::floor(0.0, 0.0).facing(dir), |b| {
                 b.cuboid(BrushKind::Desk, -0.1, -0.5, 0.1, 0.5, 0.0, 1.0);
             });
-            let a = erste(b);
+            let a = first(b);
             (a.min.x, a.min.z, a.max.x, a.max.z)
         };
 
-        assert_eq!(ecken(Dir::North), (-0.1, -0.5, 0.1, 0.5));
-        assert_eq!(ecken(Dir::South), (-0.1, -0.5, 0.1, 0.5));
+        assert_eq!(corners(Dir::North), (-0.1, -0.5, 0.1, 0.5));
+        assert_eq!(corners(Dir::South), (-0.1, -0.5, 0.1, 0.5));
         // Um 90 Grad gedreht tauschen Breite und Tiefe die Achsen.
-        assert_eq!(ecken(Dir::East), (-0.5, -0.1, 0.5, 0.1));
-        assert_eq!(ecken(Dir::West), (-0.5, -0.1, 0.5, 0.1));
+        assert_eq!(corners(Dir::East), (-0.5, -0.1, 0.5, 0.1));
+        assert_eq!(corners(Dir::West), (-0.5, -0.1, 0.5, 0.1));
     }
 
     #[test]
-    fn drehung_verschiebt_aussermittige_teile_richtig() {
+    fn rotation_moves_off_center_parts_correctly() {
         // Eine Box vor dem Nullpunkt (lokal -Z) muss bei East nach +X wandern:
         // "vorne" folgt der Blickrichtung.
         let mut b = Build::new();
         b.place(At::floor(0.0, 0.0).facing(Dir::East), |b| {
             b.centered(BrushKind::Mug, 0.0, -1.0, 0.2, 0.2, 0.0, 0.1);
         });
-        let a = erste(b);
+        let a = first(b);
         assert!((a.min.x - 0.9).abs() < 1e-5, "min.x = {}", a.min.x);
         assert!((a.min.z - -0.1).abs() < 1e-5, "min.z = {}", a.min.z);
     }
 
     #[test]
-    fn verschachtelte_platzierung_verkettet_sich() {
+    fn nested_placement_chains() {
         // Ein Bauteil in einem Bauteil: erst 10 nach +X, dort um 90 Grad
         // gedreht, und darin nochmals 2 nach vorne.
         let mut b = Build::new();
@@ -237,14 +237,14 @@ mod tests {
                 b.centered(BrushKind::Mug, 0.0, 0.0, 0.2, 0.2, 0.0, 0.1);
             });
         });
-        let a = erste(b);
+        let a = first(b);
         // Lokales -Z zeigt nach +X, also liegt die Tasse bei x = 12.
         assert!((a.min.x - 11.9).abs() < 1e-5, "min.x = {}", a.min.x);
         assert!((a.min.z - -0.1).abs() < 1e-5, "min.z = {}", a.min.z);
     }
 
     #[test]
-    fn hoehen_stapeln_sich() {
+    fn heights_stack() {
         // Der Grund, aus dem es `on` gibt: Möbel auf der Chef-Etage werden
         // beschrieben, als stünden sie auf dem Boden.
         let mut b = Build::new();
@@ -253,21 +253,21 @@ mod tests {
                 b.centered(BrushKind::Mug, 0.0, 0.0, 0.1, 0.1, 0.0, 0.1);
             });
         });
-        let a = erste(b);
+        let a = first(b);
         assert!((a.min.y - 1.95).abs() < 1e-5, "min.y = {}", a.min.y);
     }
 
     #[test]
-    fn rahmen_wird_nach_dem_bauteil_wiederhergestellt() {
+    fn frame_is_restored_after_the_part() {
         let mut b = Build::new();
         b.place(At::floor(5.0, 5.0).facing(Dir::South).on(3.0), |_| {});
         b.centered(BrushKind::Mug, 0.0, 0.0, 0.1, 0.1, 0.0, 0.1);
-        let a = erste(b);
+        let a = first(b);
         assert_eq!((a.min.x, a.min.y, a.min.z), (-0.05, 0.0, -0.05));
     }
 
     #[test]
-    fn drehungen_verketten_sich_modulo_vier() {
+    fn rotations_chain_modulo_four() {
         assert_eq!(Dir::East.then(Dir::East), Dir::South);
         assert_eq!(Dir::South.then(Dir::West), Dir::East);
         assert_eq!(Dir::West.then(Dir::West), Dir::South);

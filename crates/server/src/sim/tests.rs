@@ -104,17 +104,17 @@ fn vitals(app: &App, entity: Entity) -> Vitals {
 
 /// Sammelt die Ereignisse aller Ticks ein - `EventLog` wird sonst nur von der
 /// Netzwerkschicht geleert und würde über den ganzen Lauf anwachsen.
-/// Wie viele Ticks `sekunden` entsprechen.
+/// Wie viele Ticks `seconds` entsprechen.
 ///
 /// Tests sollen an der Zeit haengen, nicht an der Taktrate: "zwei Sekunden
 /// laufen" bleibt zwei Sekunden, ob der Server mit 30 oder 60 Hz rechnet.
-fn ticks(app: &App, sekunden: f32) -> u32 {
-    (app.world().resource::<Config>().tick_rate as f32 * sekunden).round() as u32
+fn ticks(app: &App, seconds: f32) -> u32 {
+    (app.world().resource::<Config>().tick_rate as f32 * seconds).round() as u32
 }
 
-/// Laesst die Simulation `sekunden` lang laufen.
-fn run_s(app: &mut App, sekunden: f32) -> Vec<GameEvent> {
-    let n = ticks(app, sekunden);
+/// Laesst die Simulation `seconds` lang laufen.
+fn run_s(app: &mut App, seconds: f32) -> Vec<GameEvent> {
+    let n = ticks(app, seconds);
     run(app, n)
 }
 
@@ -122,13 +122,13 @@ fn run(app: &mut App, ticks: u32) -> Vec<GameEvent> {
     let mut collected = Vec::new();
     for _ in 0..ticks {
         // Wie ein echter Client: je Tick eine Eingabe.
-        let gehalten: Vec<(Entity, InputFrame)> = app
+        let held: Vec<(Entity, InputFrame)> = app
             .world_mut()
             .query::<(Entity, &Held)>()
             .iter(app.world())
             .map(|(e, h)| (e, h.0))
             .collect();
-        for (entity, mut frame) in gehalten {
+        for (entity, mut frame) in held {
             let mut inputs = app.world_mut().get_mut::<Inputs>(entity).unwrap();
             frame.seq = inputs.ack_seq + inputs.pending_len() as u32 + 1;
             inputs.push(frame);
@@ -151,7 +151,7 @@ fn forward() -> InputFrame {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn spieler_faellt_auf_den_boden_und_bleibt_liegen() {
+fn player_falls_to_floor_and_stays() {
     let mut app = app_with(GameConfig::default(), arena());
     let p = add_player(
         &mut app,
@@ -174,7 +174,7 @@ fn spieler_faellt_auf_den_boden_und_bleibt_liegen() {
 }
 
 #[test]
-fn yaw_null_laeuft_nach_minus_z() {
+fn yaw_zero_walks_towards_minus_z() {
     // Die Konvention muss mit Three.js uebereinstimmen, sonst laufen die
     // Spieler im Client seitwaerts.
     let mut app = app_with(GameConfig::default(), arena());
@@ -193,7 +193,7 @@ fn yaw_null_laeuft_nach_minus_z() {
 }
 
 #[test]
-fn spieler_laeuft_nicht_aus_dem_spielfeld() {
+fn player_does_not_leave_the_arena() {
     let mut app = app_with(GameConfig::default(), arena());
     let p = add_player(
         &mut app,
@@ -216,7 +216,7 @@ fn spieler_laeuft_nicht_aus_dem_spielfeld() {
 }
 
 #[test]
-fn wand_stoppt_den_spieler() {
+fn wall_stops_the_player() {
     let mut map = arena();
     map.brushes.push(Brush::new(
         BrushKind::Wall,
@@ -239,7 +239,7 @@ fn wand_stoppt_den_spieler() {
 
 /// Testarena mit Aussenwaenden genau auf der Spielfeldgrenze - so wie im
 /// echten Grossraumbuero.
-fn arena_mit_aussenwaenden() -> MapDesc {
+fn arena_with_outer_walls() -> MapDesc {
     let mut map = arena();
     let (hx, hz, h) = (20.0f32, 20.0f32, 3.4f32);
     let t = 0.4;
@@ -257,13 +257,13 @@ fn arena_mit_aussenwaenden() -> MapDesc {
 }
 
 #[test]
-fn spieler_kommt_von_der_aussenwand_wieder_los() {
+fn player_gets_free_from_outer_wall() {
     // Regression: eine Aussenwand faellt mit der Spielfeldgrenze zusammen, der
     // Spieler steht also unvermeidlich *beruehrend* daran - und Beruehrung
     // gilt als Ueberlappung. Wurde die Kollision nach der Bewegungsrichtung
     // aufgeloest, landete der Schritt von der Wand weg hinter der Wand, die
     // Spielfeldgrenze zog sofort zurueck, und man klebte dauerhaft fest.
-    let mut app = app_with(GameConfig::default(), arena_mit_aussenwaenden());
+    let mut app = app_with(GameConfig::default(), arena_with_outer_walls());
     let p = add_player(
         &mut app,
         1,
@@ -282,10 +282,10 @@ fn spieler_kommt_von_der_aussenwand_wieder_los() {
         },
     );
     run_s(&mut app, 1.0);
-    let an_der_wand = body(&app, p).pos.x;
+    let at_wall = body(&app, p).pos.x;
     assert!(
-        an_der_wand < -19.0,
-        "Spieler hat die Wand nicht erreicht: x = {an_der_wand}"
+        at_wall < -19.0,
+        "Spieler hat die Wand nicht erreicht: x = {at_wall}"
     );
 
     set_input(
@@ -298,19 +298,19 @@ fn spieler_kommt_von_der_aussenwand_wieder_los() {
     );
     run(&mut app, 60);
 
-    let danach = body(&app, p).pos.x;
+    let after = body(&app, p).pos.x;
     assert!(
-        danach > an_der_wand + 5.0,
-        "Spieler klebt an der Wand fest: von {an_der_wand} nach {danach}"
+        after > at_wall + 5.0,
+        "Spieler klebt an der Wand fest: von {at_wall} nach {after}"
     );
 }
 
 #[test]
-fn spieler_wird_nie_hinter_eine_wand_geschoben() {
+fn player_is_never_pushed_behind_a_wall() {
     // Aus jeder Richtung gegen jede Aussenwand laufen und pruefen, dass der
     // Spieler im Spielfeld bleibt.
     for (mx, mz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
-        let mut app = app_with(GameConfig::default(), arena_mit_aussenwaenden());
+        let mut app = app_with(GameConfig::default(), arena_with_outer_walls());
         let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
         set_input(
             &mut app,
@@ -340,8 +340,8 @@ fn spieler_wird_nie_hinter_eine_wand_geschoben() {
 }
 
 #[test]
-fn spieler_bleibt_unter_der_decke() {
-    let mut app = app_with(GameConfig::default(), arena_mit_aussenwaenden());
+fn player_stays_below_ceiling() {
+    let mut app = app_with(GameConfig::default(), arena_with_outer_walls());
     let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     set_input(
         &mut app,
@@ -364,7 +364,7 @@ fn spieler_bleibt_unter_der_decke() {
 }
 
 #[test]
-fn agile_sprint_tunnelt_nicht_durch_duenne_trennwand() {
+fn agile_sprint_does_not_tunnel_through_thin_partition() {
     // Ein Dash legt 16 m/s * 1/30 s = 0.53 m pro Tick zurueck, mehr als die
     // Wand dick ist. Ohne Teilschritte in der Kollision waere sie durchlaessig.
     let mut map = arena();
@@ -401,10 +401,10 @@ fn agile_sprint_tunnelt_nicht_durch_duenne_trennwand() {
 }
 
 #[test]
-fn treppe_zur_chef_etage_ist_begehbar() {
+fn stairs_to_executive_floor_are_walkable() {
     // Gegen die echte Karte: die Chef-Etage darf nicht nur per Sprung
     // erreichbar sein.
-    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+    let mut app = app_with(GameConfig::default(), crate::maps::open_plan_office());
     let p = add_player(
         &mut app,
         1,
@@ -436,7 +436,7 @@ fn treppe_zur_chef_etage_ist_begehbar() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn agile_sprint_hat_cooldown() {
+fn agile_sprint_has_cooldown() {
     let mut app = app_with(GameConfig::default(), arena());
     let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
 
@@ -465,7 +465,7 @@ fn agile_sprint_hat_cooldown() {
 }
 
 #[test]
-fn dauerhaft_gedrueckte_taste_loest_nur_einmal_aus() {
+fn held_key_triggers_only_once() {
     let mut app = app_with(GameConfig::default(), arena());
     let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     set_input(
@@ -490,7 +490,7 @@ fn count_dashes(events: &[GameEvent]) -> usize {
 }
 
 #[test]
-fn wellness_tag_verpufft_nicht_bei_voller_gesundheit() {
+fn wellness_day_is_not_wasted_at_full_health() {
     let mut app = app_with(GameConfig::default(), arena());
     let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     set_input(
@@ -511,7 +511,7 @@ fn wellness_tag_verpufft_nicht_bei_voller_gesundheit() {
 }
 
 #[test]
-fn wellness_tag_heilt_und_deckelt_bei_maximum() {
+fn wellness_day_heals_and_caps_at_maximum() {
     let mut app = app_with(GameConfig::default(), arena());
     let p = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     app.world_mut().get_mut::<Vitals>(p).unwrap().health = 10;
@@ -554,14 +554,14 @@ fn wellness_tag_heilt_und_deckelt_bei_maximum() {
 // ---------------------------------------------------------------------------
 
 /// Schuetze im Ursprung blickt nach -Z, Ziel steht 5 m davor.
-fn duell(map: MapDesc, target_team: Team) -> (App, Entity, Entity) {
+fn duel(map: MapDesc, target_team: Team) -> (App, Entity, Entity) {
     let mut app = app_with(precise_config(), map);
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(&mut app, 2, target_team, Vec3::new(0.0, 0.0, -5.0), 0.0);
     (app, shooter, target)
 }
 
-fn halte_feuer(app: &mut App, shooter: Entity, sekunden: f32) -> Vec<GameEvent> {
+fn hold_fire(app: &mut App, shooter: Entity, seconds: f32) -> Vec<GameEvent> {
     set_input(
         app,
         shooter,
@@ -570,14 +570,14 @@ fn halte_feuer(app: &mut App, shooter: Entity, sekunden: f32) -> Vec<GameEvent> 
             ..Default::default()
         },
     );
-    run_s(app, sekunden)
+    run_s(app, seconds)
 }
 
 #[test]
-fn textmarker_trifft_und_toetet() {
-    let (mut app, shooter, target) = duell(arena(), Team::Marketing);
+fn highlighter_hits_and_kills() {
+    let (mut app, shooter, target) = duel(arena(), Team::Marketing);
 
-    let events = halte_feuer(&mut app, shooter, 2.0);
+    let events = hold_fire(&mut app, shooter, 2.0);
 
     assert!(vitals(&app, target).deaths >= 1, "Ziel hat ueberlebt");
     assert_eq!(vitals(&app, shooter).kills, vitals(&app, target).deaths);
@@ -589,10 +589,10 @@ fn textmarker_trifft_und_toetet() {
 }
 
 #[test]
-fn kein_beschuss_der_eigenen_abteilung() {
-    let (mut app, shooter, target) = duell(arena(), Team::Engineering);
+fn no_friendly_fire() {
+    let (mut app, shooter, target) = duel(arena(), Team::Engineering);
 
-    let events = halte_feuer(&mut app, shooter, 2.0);
+    let events = hold_fire(&mut app, shooter, 2.0);
 
     assert_eq!(
         vitals(&app, target).health,
@@ -605,15 +605,15 @@ fn kein_beschuss_der_eigenen_abteilung() {
 }
 
 #[test]
-fn whiteboard_haelt_den_schuss_auf() {
+fn whiteboard_blocks_the_shot() {
     let mut map = arena();
     map.brushes.push(Brush::new(
         BrushKind::Whiteboard,
         Aabb::new(Vec3::new(-1.5, 0.15, -2.6), Vec3::new(1.5, 2.05, -2.5)),
     ));
-    let (mut app, shooter, target) = duell(map, Team::Marketing);
+    let (mut app, shooter, target) = duel(map, Team::Marketing);
 
-    halte_feuer(&mut app, shooter, 1.35);
+    hold_fire(&mut app, shooter, 1.35);
 
     assert_eq!(
         vitals(&app, target).health,
@@ -623,7 +623,7 @@ fn whiteboard_haelt_den_schuss_auf() {
 }
 
 #[test]
-fn yuccapalme_haelt_keinen_schuss_auf() {
+fn yucca_palm_blocks_no_shot() {
     // Bewusstes Gegenstueck zum Whiteboard: die Palme steht im Weg, ist aber
     // keine Deckung.
     let mut map = arena();
@@ -631,9 +631,9 @@ fn yuccapalme_haelt_keinen_schuss_auf() {
         BrushKind::Plant,
         Aabb::new(Vec3::new(-1.5, 0.0, -2.6), Vec3::new(1.5, 2.05, -2.5)),
     ));
-    let (mut app, shooter, target) = duell(map, Team::Marketing);
+    let (mut app, shooter, target) = duel(map, Team::Marketing);
 
-    halte_feuer(&mut app, shooter, 1.35);
+    hold_fire(&mut app, shooter, 1.35);
 
     assert!(
         vitals(&app, target).health < 100,
@@ -642,7 +642,7 @@ fn yuccapalme_haelt_keinen_schuss_auf() {
 }
 
 #[test]
-fn schuss_nach_hinten_trifft_nicht() {
+fn shot_backwards_misses() {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(
@@ -653,21 +653,21 @@ fn schuss_nach_hinten_trifft_nicht() {
         0.0,
     );
 
-    halte_feuer(&mut app, shooter, 1.35);
+    hold_fire(&mut app, shooter, 1.35);
 
     assert_eq!(vitals(&app, target).health, 100);
 }
 
 #[test]
-fn magazin_leert_sich_und_laedt_automatisch_nach() {
+fn magazine_empties_and_reloads_automatically() {
     let config = precise_config();
-    let mag = config.weapon(protocol::WeaponId::Textmarker).mag_size();
+    let mag = config.weapon(protocol::WeaponId::Highlighter).mag_size();
     let mut app = app_with(config, arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
 
     // Genau so lange feuern, dass das Magazin leer wird (Kadenz 0.09 s bei
     // 1/30 s Tick: drei Ticks je Schuss).
-    let events = halte_feuer(&mut app, shooter, mag as f32 * 0.1);
+    let events = hold_fire(&mut app, shooter, mag as f32 * 0.1);
     let shots = events
         .iter()
         .filter(|e| matches!(e, GameEvent::Shot { .. }))
@@ -687,12 +687,12 @@ fn magazin_leert_sich_und_laedt_automatisch_nach() {
 }
 
 #[test]
-fn locher_schrotflinte_feuert_nicht_automatisch() {
+fn hole_punch_shotgun_is_not_automatic() {
     let mut config = precise_config();
     for weapon in &mut config.weapons {
         weapon.set_spread(0.0);
     }
-    let slot = config.weapon(protocol::WeaponId::Locher).slot;
+    let slot = config.weapon(protocol::WeaponId::HolePunch).slot;
     let mut app = app_with(config, arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
 
@@ -726,9 +726,9 @@ fn locher_schrotflinte_feuert_nicht_automatisch() {
 }
 
 #[test]
-fn locher_verschiesst_alle_schrotkugeln() {
+fn hole_punch_fires_all_pellets() {
     let mut config = precise_config();
-    let desc = config.weapon(protocol::WeaponId::Locher).clone();
+    let desc = config.weapon(protocol::WeaponId::HolePunch).clone();
     for weapon in &mut config.weapons {
         weapon.set_spread(0.0);
     }
@@ -765,23 +765,23 @@ fn locher_verschiesst_alle_schrotkugeln() {
 }
 
 #[test]
-fn waffenwechsel_ersetzt_kein_nachladen() {
+fn weapon_switch_does_not_replace_reload() {
     let config = precise_config();
-    let locher_slot = config.weapon(protocol::WeaponId::Locher).slot;
-    let textmarker_slot = config.weapon(protocol::WeaponId::Textmarker).slot;
+    let hole_punch_slot = config.weapon(protocol::WeaponId::HolePunch).slot;
+    let highlighter_slot = config.weapon(protocol::WeaponId::Highlighter).slot;
     let mut app = app_with(config, arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
 
-    halte_feuer(&mut app, shooter, 1.0);
-    let vorher = ammo_of_slot(&app, shooter, textmarker_slot);
-    assert!(vorher < 30, "es wurde nicht geschossen");
+    hold_fire(&mut app, shooter, 1.0);
+    let before = ammo_of_slot(&app, shooter, highlighter_slot);
+    assert!(before < 30, "es wurde nicht geschossen");
 
     // Hin- und zurueckwechseln.
     set_input(
         &mut app,
         shooter,
         InputFrame {
-            weapon_slot: locher_slot,
+            weapon_slot: hole_punch_slot,
             ..Default::default()
         },
     );
@@ -790,15 +790,15 @@ fn waffenwechsel_ersetzt_kein_nachladen() {
         &mut app,
         shooter,
         InputFrame {
-            weapon_slot: textmarker_slot,
+            weapon_slot: highlighter_slot,
             ..Default::default()
         },
     );
     run_s(&mut app, 0.67);
 
     assert_eq!(
-        ammo_of_slot(&app, shooter, textmarker_slot),
-        vorher,
+        ammo_of_slot(&app, shooter, highlighter_slot),
+        before,
         "Waffenwechsel hat heimlich nachgeladen"
     );
 }
@@ -814,9 +814,9 @@ fn ammo_of_slot(app: &App, entity: Entity, slot: u8) -> u16 {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn toter_spieler_steigt_nach_der_wartezeit_wieder_ein() {
-    let (mut app, shooter, target) = duell(arena(), Team::Marketing);
-    halte_feuer(&mut app, shooter, 2.0);
+fn dead_player_respawns_after_delay() {
+    let (mut app, shooter, target) = duel(arena(), Team::Marketing);
+    hold_fire(&mut app, shooter, 2.0);
     assert!(!vitals(&app, target).alive, "Ziel lebt noch");
 
     set_input(&mut app, shooter, InputFrame::default());
@@ -834,7 +834,7 @@ fn toter_spieler_steigt_nach_der_wartezeit_wieder_ein() {
 }
 
 #[test]
-fn toter_spieler_kann_nicht_schiessen() {
+fn dead_player_cannot_shoot() {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     app.world_mut().get_mut::<Vitals>(shooter).unwrap().alive = false;
@@ -843,13 +843,13 @@ fn toter_spieler_kann_nicht_schiessen() {
         .unwrap()
         .respawn_timer = 999.0;
 
-    let events = halte_feuer(&mut app, shooter, 1.0);
+    let events = hold_fire(&mut app, shooter, 1.0);
 
     assert!(!events.iter().any(|e| matches!(e, GameEvent::Shot { .. })));
 }
 
 #[test]
-fn respawn_meidet_die_naehe_von_gegnern() {
+fn respawn_avoids_enemies() {
     let mut map = arena();
     map.spawns = vec![
         SpawnPoint {
@@ -892,12 +892,12 @@ fn respawn_meidet_die_naehe_von_gegnern() {
 }
 
 #[test]
-fn spieler_loest_sich_von_der_westwand_der_echten_karte() {
+fn player_gets_free_from_west_wall_of_real_map() {
     // Regression aus dem End-to-End-Test: an der Aussenwand des
     // Grossraumbueros war jede Bewegung nach Osten blockiert, weil die
     // beruehrte Wand auch auf der Y-Achse "aufgeloest" wurde und den Spieler
     // nach unten schob, worauf die Spielfeldgrenze ihn zurueckklemmte.
-    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+    let mut app = app_with(GameConfig::default(), crate::maps::open_plan_office());
     let p = add_player(
         &mut app,
         1,
@@ -930,14 +930,14 @@ fn spieler_loest_sich_von_der_westwand_der_echten_karte() {
 }
 
 #[test]
-fn stuhl_haelt_den_spieler_nicht_fest() {
+fn chair_does_not_trap_the_player() {
     // Der Bürostuhl besteht aus zwölf Boxen, von denen nur das Sitzpolster
     // massiv ist. Der Grund steht in `maps::parts::office_chair`: die
     // Kollisionsauflösung schiebt einen Spieler nacheinander aus jeder
     // überlappenden Box, ohne zwischendurch neu zu prüfen - zwischen dünnen
     // Stuhlbeinen bliebe er zappelnd hängen. Dieser Test hält die Entscheidung
     // fest.
-    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+    let mut app = app_with(GameConfig::default(), crate::maps::open_plan_office());
 
     // Mitten in eine Tischinsel, dort stehen vier Stühle dicht beieinander.
     let p = add_player(
@@ -959,27 +959,27 @@ fn stuhl_haelt_den_spieler_nicht_fest() {
     );
     let start = body(&app, p).pos;
     run(&mut app, 60);
-    let ende = body(&app, p).pos;
+    let end = body(&app, p).pos;
 
-    let strecke = (ende - start).length();
+    let distance = (end - start).length();
     assert!(
-        strecke > 1.5,
-        "Spieler steckt zwischen den Stühlen fest: nur {strecke:.2} m in zwei Sekunden"
+        distance > 1.5,
+        "Spieler steckt zwischen den Stühlen fest: nur {distance:.2} m in zwei Sekunden"
     );
     assert!(
-        ende.y.abs() < 0.6,
+        end.y.abs() < 0.6,
         "Spieler wurde von der Stuhlgeometrie nach oben gedrückt: y = {}",
-        ende.y
+        end.y
     );
 }
 
 #[test]
-fn spawnpunkte_stecken_nicht_in_der_geometrie() {
+fn spawn_points_are_not_inside_geometry() {
     // Eine neue Wand mitten durch einen Spawnpunkt ist der klassische Fehler
     // beim Erweitern einer Karte - und er fällt erst auf, wenn jemand darin
     // steckt.
     let config = GameConfig::default();
-    let map = crate::maps::grossraumbuero();
+    let map = crate::maps::open_plan_office();
     let half =
         crate::sim::movement::player_half_extents(config.player_radius, config.player_height);
 
@@ -988,11 +988,11 @@ fn spawnpunkte_stecken_nicht_in_der_geometrie() {
         // den Füßen auf dem Chef-Podest - berührt sie, und Berührung ist in
         // f32 nicht von einer Überlappung zu unterscheiden. Gesucht sind
         // Spawnpunkte, die *in* der Geometrie stecken.
-        let luft = Vec3::splat(0.001);
+        let air = Vec3::splat(0.001);
         let center = spawn.pos + Vec3::Y * (config.player_height * 0.5);
         let me = Aabb {
-            min: center - half + luft,
-            max: center + half - luft,
+            min: center - half + air,
+            max: center + half - air,
         };
         for brush in &map.brushes {
             if !brush.kind.blocks_movement() {
@@ -1010,10 +1010,10 @@ fn spawnpunkte_stecken_nicht_in_der_geometrie() {
 }
 
 #[test]
-fn ostfluegel_ist_begehbar() {
+fn east_wing_is_walkable() {
     // Der Anbau hängt an einer einzigen, sieben Meter breiten Öffnung in der
     // alten Aussenwand. Ist die zu, ist ein Viertel der Karte tot.
-    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+    let mut app = app_with(GameConfig::default(), crate::maps::open_plan_office());
     let p = add_player(
         &mut app,
         1,
@@ -1044,10 +1044,10 @@ fn ostfluegel_ist_begehbar() {
 
 /// Ein einzelner Schuss, dann `ticks` Ticks weiter.
 ///
-/// Fuer Waffen, bei denen es auf den Zeitpunkt ankommt: `halte_feuer` haelt
+/// Fuer Waffen, bei denen es auf den Zeitpunkt ankommt: `hold_fire` haelt
 /// die Taste, und bei einer Waffe mit Einzelschuss faellt der zweite Schuss
 /// dann nie - die Flankenerkennung sieht nur den ersten.
-fn ein_schuss(app: &mut App, shooter: Entity, ticks: u32) -> Vec<GameEvent> {
+fn single_shot(app: &mut App, shooter: Entity, ticks: u32) -> Vec<GameEvent> {
     set_input(
         app,
         shooter,
@@ -1062,7 +1062,7 @@ fn ein_schuss(app: &mut App, shooter: Entity, ticks: u32) -> Vec<GameEvent> {
 }
 
 /// Setzt einen Spieler auf eine Waffe, ohne den Umweg ueber die Zifferntaste.
-fn nimm_waffe(app: &mut App, entity: Entity, id: protocol::WeaponId) {
+fn equip(app: &mut App, entity: Entity, id: protocol::WeaponId) {
     let index = app
         .world()
         .resource::<Config>()
@@ -1074,7 +1074,7 @@ fn nimm_waffe(app: &mut App, entity: Entity, id: protocol::WeaponId) {
 }
 
 #[test]
-fn die_email_braucht_zeit_bis_zum_ziel() {
+fn email_takes_time_to_reach_target() {
     // Der Unterschied zu allem bisherigen: der Schaden faellt nicht im Tick des
     // Abschusses an. Genau das macht die Waffe aus - wer sie benutzt, muss
     // vorhalten, und wer getroffen wird, kann ausweichen.
@@ -1087,17 +1087,17 @@ fn die_email_braucht_zeit_bis_zum_ziel() {
         Vec3::new(0.0, 0.0, -12.0),
         0.0,
     );
-    nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
+    equip(&mut app, shooter, protocol::WeaponId::Email);
 
-    let sofort = ein_schuss(&mut app, shooter, 1);
+    let immediate = single_shot(&mut app, shooter, 1);
     assert!(
-        sofort
+        immediate
             .iter()
             .any(|e| matches!(e, GameEvent::Launched { .. })),
         "kein Abschuss gemeldet"
     );
     assert!(
-        !sofort.iter().any(|e| matches!(e, GameEvent::Hit { .. })),
+        !immediate.iter().any(|e| matches!(e, GameEvent::Hit { .. })),
         "die E-Mail trifft im Tick des Abschusses - dann ist sie Hitscan mit Umweg"
     );
     assert_eq!(
@@ -1107,9 +1107,9 @@ fn die_email_braucht_zeit_bis_zum_ziel() {
     );
 
     // Zwoelf Meter bei 22 m/s sind gut eine halbe Sekunde.
-    let spaeter = run_s(&mut app, 1.2);
+    let later = run_s(&mut app, 1.2);
     assert!(
-        spaeter.iter().any(|e| matches!(e, GameEvent::Burst { .. })),
+        later.iter().any(|e| matches!(e, GameEvent::Burst { .. })),
         "die E-Mail ist nie zerplatzt"
     );
     assert!(
@@ -1119,7 +1119,7 @@ fn die_email_braucht_zeit_bis_zum_ziel() {
 }
 
 #[test]
-fn der_umkreisschaden_faellt_mit_dem_abstand() {
+fn splash_damage_falls_off_with_distance() {
     // Zwei Ziele, beide **neben** der Flugbahn, in verschiedenem Abstand zum
     // Einschlag. Beide neben der Bahn ist der Punkt: die erste Fassung stellte
     // eines direkt in den Weg, und dann bekam es Aufschlag *plus* Umkreis. Der
@@ -1127,28 +1127,28 @@ fn der_umkreisschaden_faellt_mit_dem_abstand() {
     // Unterschied kam allein vom Direkttreffer.
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
-    let nah = add_player(
+    let near_target = add_player(
         &mut app,
         2,
         Team::Marketing,
         Vec3::new(1.0, 0.0, -13.0),
         0.0,
     );
-    let fern = add_player(
+    let far_target = add_player(
         &mut app,
         3,
         Team::Marketing,
         Vec3::new(2.9, 0.0, -13.0),
         0.0,
     );
-    nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
+    equip(&mut app, shooter, protocol::WeaponId::Email);
 
-    let mut events = ein_schuss(&mut app, shooter, 1);
+    let mut events = single_shot(&mut app, shooter, 1);
     events.extend(run_s(&mut app, 2.0));
 
     // Wo es zerplatzt ist, entscheidet die Flugbahn - der Test rechnet sie
     // nicht nach, sondern liest den Ort aus dem Ereignis.
-    let einschlag = events
+    let impact = events
         .iter()
         .find_map(|e| match e {
             GameEvent::Burst { pos, .. } => Some(*pos),
@@ -1156,13 +1156,13 @@ fn der_umkreisschaden_faellt_mit_dem_abstand() {
         })
         .expect("die E-Mail ist nie zerplatzt");
 
-    let abstand = |e: Entity| {
+    let distance_to = |e: Entity| {
         let p = body(&app, e).pos + Vec3::Y * (GameConfig::default().player_height * 0.5);
-        (p - einschlag).length()
+        (p - impact).length()
     };
     let max = app.world().resource::<Config>().max_health;
-    let schaden_nah = max - vitals(&app, nah).health;
-    let schaden_fern = max - vitals(&app, fern).health;
+    let damage_near = max - vitals(&app, near_target).health;
+    let damage_far = max - vitals(&app, far_target).health;
 
     // Ein Direkttreffer erzeugt *zwei* Treffermeldungen: Aufschlag und Umkreis.
     // Genau eine je Ziel heisst also: beide standen daneben.
@@ -1171,64 +1171,61 @@ fn der_umkreisschaden_faellt_mit_dem_abstand() {
     // groesser als der Aufschlag, und die erste Fassung dieser Pruefung hat
     // deshalb faelschlich Alarm geschlagen.
     for (name, id) in [("nah", 2u32), ("fern", 3)] {
-        let treffer = events
+        let hit = events
             .iter()
             .filter(|e| matches!(e, GameEvent::Hit { target, .. } if target.0 == id))
             .count();
         assert_eq!(
-            treffer, 1,
-            "{name} hat {treffer} Treffermeldungen - bei zwei war es ein Direkttreffer, \
+            hit, 1,
+            "{name} hat {hit} Treffermeldungen - bei zwei war es ein Direkttreffer, \
              und dann misst der Test nicht den Umkreis"
         );
     }
     assert!(
-        abstand(nah) < abstand(fern),
+        distance_to(near_target) < distance_to(far_target),
         "die Ziele stehen nicht wie gedacht: {:.2} m gegen {:.2} m",
-        abstand(nah),
-        abstand(fern)
+        distance_to(near_target),
+        distance_to(far_target)
     );
+    assert!(damage_near > 0 && damage_far > 0, "nicht beide im Umkreis");
     assert!(
-        schaden_nah > 0 && schaden_fern > 0,
-        "nicht beide im Umkreis"
-    );
-    assert!(
-        schaden_fern < schaden_nah,
-        "gleicher Schaden nah und fern ({schaden_nah} auf {:.2} m / {schaden_fern} auf {:.2} m) \
+        damage_far < damage_near,
+        "gleicher Schaden nah und fern ({damage_near} auf {:.2} m / {damage_far} auf {:.2} m) \
          - das ist kein Umkreis",
-        abstand(nah),
-        abstand(fern)
+        distance_to(near_target),
+        distance_to(far_target)
     );
 }
 
 #[test]
-fn die_email_verschont_das_eigene_team() {
+fn email_spares_own_team() {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
-    let kollege = add_player(
+    let colleague = add_player(
         &mut app,
         2,
         Team::Engineering,
         Vec3::new(0.0, 0.0, -12.0),
         0.0,
     );
-    nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
+    equip(&mut app, shooter, protocol::WeaponId::Email);
 
-    ein_schuss(&mut app, shooter, 1);
+    single_shot(&mut app, shooter, 1);
     run_s(&mut app, 2.0);
 
     assert_eq!(
-        vitals(&app, kollege).health,
+        vitals(&app, colleague).health,
         app.world().resource::<Config>().max_health,
         "die E-Mail ging an die eigene Abteilung"
     );
 }
 
 #[test]
-fn die_minigun_ueberhitzt_und_kuehlt_wieder_ab() {
+fn minigun_overheats_and_cools_down() {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -8.0), 0.0);
-    nimm_waffe(&mut app, shooter, protocol::WeaponId::Kaffeevollautomat);
+    equip(&mut app, shooter, protocol::WeaponId::CoffeeMachine);
     let index = app.world().get::<Loadout>(shooter).unwrap().index;
 
     // Dauerfeuer, bis die Sperre greift. Gemessen wird die **Sperre**, nicht
@@ -1236,99 +1233,99 @@ fn die_minigun_ueberhitzt_und_kuehlt_wieder_ab() {
     // Sekunde nach dem Ueberhitzen nachsieht, findet die Hitze laengst wieder
     // unter eins. Genau daran ist die erste Fassung dieses Tests gescheitert -
     // sie hat den Mechanismus fuer kaputt erklaert, obwohl er stimmte.
-    let mut schuesse = 0usize;
-    let mut zeit = 0.0f32;
-    let scheibe = 0.25;
-    while zeit < 4.0 {
-        let ev = halte_feuer(&mut app, shooter, scheibe);
-        schuesse += ev
+    let mut shot_count = 0usize;
+    let mut time = 0.0f32;
+    let slab = 0.25;
+    while time < 4.0 {
+        let ev = hold_fire(&mut app, shooter, slab);
+        shot_count += ev
             .iter()
             .filter(|e| matches!(e, GameEvent::Shot { .. }))
             .count();
-        zeit += scheibe;
+        time += slab;
         if app.world().get::<Loadout>(shooter).unwrap().heat_lock[index] > 0.0 {
             break;
         }
     }
 
-    assert!(zeit < 4.0, "in vier Sekunden Dauerfeuer nicht ueberhitzt");
+    assert!(time < 4.0, "in vier Sekunden Dauerfeuer nicht ueberhitzt");
     // Feste Grenzen, nicht aus den Konstanten abgeleitet: sie sind die
     // eigentliche Aussage. Ueberhitzt die Waffe nach fuenf Schuss, ist sie
     // unbrauchbar; ueberhitzt sie nach hundert, ist die Ueberhitzung ein
     // Geruecht. Der erste Ansatz lag bei einundfuenfzig.
     assert!(
-        (15..=45).contains(&schuesse),
-        "{schuesse} Schuss bis zur Ueberhitzung - das ist keine Minigun mit Zwangspause"
+        (15..=45).contains(&shot_count),
+        "{shot_count} Schuss bis zur Ueberhitzung - das ist keine Minigun mit Zwangspause"
     );
     assert!(
-        (1.0..=2.5).contains(&zeit),
-        "nach {zeit:.2} s ueberhitzt - zu frueh oder zu spaet"
+        (1.0..=2.5).contains(&time),
+        "nach {time:.2} s ueberhitzt - zu frueh oder zu spaet"
     );
 
     // Waehrend der Sperre faellt kein Schuss. Das Beobachtungsfenster kommt
     // aus der tatsaechlich verbleibenden Sperre: waere sie kuerzer als ein
     // festes Fenster, praefte der Test ihr Ende statt sie selbst.
-    let rest = app.world().get::<Loadout>(shooter).unwrap().heat_lock[index];
+    let lock_left = app.world().get::<Loadout>(shooter).unwrap().heat_lock[index];
     assert!(
-        rest > 0.3,
-        "die Sperre ist mit {rest} s zu kurz, um sie zu beobachten"
+        lock_left > 0.3,
+        "die Sperre ist mit {lock_left} s zu kurz, um sie zu beobachten"
     );
-    let gesperrt = halte_feuer(&mut app, shooter, rest * 0.6);
+    let locked = hold_fire(&mut app, shooter, lock_left * 0.6);
     assert!(
-        !gesperrt.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
+        !locked.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
         "die Sperre haelt nicht"
     );
 
     // Danach geht es weiter.
     set_input(&mut app, shooter, InputFrame::default());
     run_s(&mut app, 4.0);
-    let kalt = app.world().get::<Loadout>(shooter).unwrap().clone();
-    assert_eq!(kalt.heat_lock[index], 0.0, "die Sperre laeuft nicht ab");
+    let cold = app.world().get::<Loadout>(shooter).unwrap().clone();
+    assert_eq!(cold.heat_lock[index], 0.0, "die Sperre laeuft nicht ab");
     assert!(
-        kalt.heat[index] < 0.05,
+        cold.heat[index] < 0.05,
         "kuehlt nicht ab: {}",
-        kalt.heat[index]
+        cold.heat[index]
     );
 
-    let wieder = halte_feuer(&mut app, shooter, 0.5);
+    let again = hold_fire(&mut app, shooter, 0.5);
     assert!(
-        wieder.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
+        again.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
         "nach dem Abkuehlen faellt kein Schuss mehr"
     );
 }
 
 #[test]
-fn kurze_feuerstoesse_ueberhitzen_nicht() {
+fn short_bursts_do_not_overheat() {
     // Die Gegenprobe zur Ueberhitzung: waere sie zu streng, waere die Waffe
     // unbenutzbar - und ein Test, der nur "ueberhitzt irgendwann" prueft,
     // bestuende auch dann.
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -8.0), 0.0);
-    nimm_waffe(&mut app, shooter, protocol::WeaponId::Kaffeevollautomat);
+    equip(&mut app, shooter, protocol::WeaponId::CoffeeMachine);
     let index = app.world().get::<Loadout>(shooter).unwrap().index;
 
     for _ in 0..6 {
-        halte_feuer(&mut app, shooter, 0.5);
+        hold_fire(&mut app, shooter, 0.5);
         set_input(&mut app, shooter, InputFrame::default());
         run_s(&mut app, 1.0);
     }
 
-    let stand = app.world().get::<Loadout>(shooter).unwrap().clone();
+    let state = app.world().get::<Loadout>(shooter).unwrap().clone();
     assert_eq!(
-        stand.heat_lock[index], 0.0,
+        state.heat_lock[index], 0.0,
         "halbe Sekunde Feuer und eine Sekunde Pause ueberhitzen - so ist die Waffe unbrauchbar"
     );
 }
 
 #[test]
-fn das_whiteboard_haelt_von_vorn_auf_und_von_hinten_nicht() {
+fn whiteboard_blocks_from_front_not_from_behind() {
     let max = GameConfig::default().max_health;
 
     // Der Schuetze steht im Ursprung und blickt nach -Z, das Ziel 5 m davor.
     // Blickt das Ziel zurueck (yaw = PI), haelt das Whiteboard; blickt es weg
     // (yaw = 0), trifft es ungebremst.
-    let messe = |ziel_yaw: f32, mit_schild: bool| {
+    let measure = |target_yaw: f32, with_shield: bool| {
         let mut app = app_with(precise_config(), arena());
         let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
         let target = add_player(
@@ -1336,51 +1333,51 @@ fn das_whiteboard_haelt_von_vorn_auf_und_von_hinten_nicht() {
             2,
             Team::Marketing,
             Vec3::new(0.0, 0.0, -5.0),
-            ziel_yaw,
+            target_yaw,
         );
-        if mit_schild {
-            nimm_waffe(&mut app, target, protocol::WeaponId::Whiteboard);
+        if with_shield {
+            equip(&mut app, target, protocol::WeaponId::Whiteboard);
         }
         // Das Ziel haelt seine Blickrichtung, sonst dreht es die Bewegung weg.
         set_input(
             &mut app,
             target,
             InputFrame {
-                yaw: ziel_yaw,
+                yaw: target_yaw,
                 ..Default::default()
             },
         );
-        halte_feuer(&mut app, shooter, 0.35);
+        hold_fire(&mut app, shooter, 0.35);
         max - vitals(&app, target).health
     };
 
-    let ohne = messe(std::f32::consts::PI, false);
-    let von_vorn = messe(std::f32::consts::PI, true);
-    let von_hinten = messe(0.0, true);
+    let without = measure(std::f32::consts::PI, false);
+    let from_front = measure(std::f32::consts::PI, true);
+    let from_behind = measure(0.0, true);
 
     assert!(
-        ohne > 0,
+        without > 0,
         "ohne Schild kam gar kein Schaden an - der Test misst nichts"
     );
     assert!(
-        von_vorn < ohne,
-        "das Whiteboard haelt nichts ab: {von_vorn} statt weniger als {ohne}"
+        from_front < without,
+        "das Whiteboard haelt nichts ab: {from_front} statt weniger als {without}"
     );
-    assert!(von_vorn > 0, "das Whiteboard macht unverwundbar");
+    assert!(from_front > 0, "das Whiteboard macht unverwundbar");
     assert!(
-        von_hinten >= ohne,
-        "das Whiteboard schuetzt auch den Ruecken: {von_hinten} gegen {ohne} ohne Schild"
+        from_behind >= without,
+        "das Whiteboard schuetzt auch den Ruecken: {from_behind} gegen {without} ohne Schild"
     );
 }
 
 #[test]
-fn das_whiteboard_schiesst_nicht() {
+fn whiteboard_does_not_fire() {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
-    nimm_waffe(&mut app, shooter, protocol::WeaponId::Whiteboard);
+    equip(&mut app, shooter, protocol::WeaponId::Whiteboard);
 
-    let events = halte_feuer(&mut app, shooter, 1.5);
+    let events = hold_fire(&mut app, shooter, 1.5);
 
     assert!(
         !events.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
@@ -1399,7 +1396,7 @@ fn das_whiteboard_schiesst_nicht() {
 
 /// Konfiguration mit kurzer Runde und kurzer Pause, damit ein Test nicht
 /// dreissig Abschuesse simulieren muss.
-fn runden_config(limit: u32, pause: f32) -> GameConfig {
+fn match_config(limit: u32, pause: f32) -> GameConfig {
     GameConfig {
         score_limit: limit,
         intermission: pause,
@@ -1412,7 +1409,7 @@ fn runden_config(limit: u32, pause: f32) -> GameConfig {
     }
 }
 
-fn runde(app: &App) -> protocol::MatchState {
+fn current_match(app: &App) -> protocol::MatchState {
     app.world().resource::<matchstate::Match>().0
 }
 
@@ -1421,7 +1418,7 @@ fn runde(app: &App) -> protocol::MatchState {
 /// Bewusst nicht "feuere pauschal zweieinhalb Sekunden": eine kurze Pause
 /// waere in dieser Zeit schon wieder abgelaufen, und der Test praefte den
 /// Zustand *nach* dem Neustart statt den beim Rundenende.
-fn ein_abschuss(app: &mut App, shooter: Entity) -> Vec<GameEvent> {
+fn single_kill(app: &mut App, shooter: Entity) -> Vec<GameEvent> {
     set_input(
         app,
         shooter,
@@ -1445,22 +1442,22 @@ fn ein_abschuss(app: &mut App, shooter: Entity) -> Vec<GameEvent> {
 }
 
 #[test]
-fn punktegrenze_beendet_die_runde() {
-    let mut app = app_with(runden_config(1, 10.0), arena());
+fn score_limit_ends_the_match() {
+    let mut app = app_with(match_config(1, 10.0), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
 
-    let events = ein_abschuss(&mut app, shooter);
+    let events = single_kill(&mut app, shooter);
 
-    let stand = runde(&app);
-    assert_eq!(stand.phase, protocol::Phase::Over, "Runde laeuft weiter");
-    assert_eq!(stand.winner, Some(Team::Engineering), "falscher Sieger");
-    assert_eq!(stand.score_engineering, 1);
-    assert_eq!(stand.score_marketing, 0);
+    let state = current_match(&app);
+    assert_eq!(state.phase, protocol::Phase::Over, "Runde laeuft weiter");
+    assert_eq!(state.winner, Some(Team::Engineering), "falscher Sieger");
+    assert_eq!(state.score_engineering, 1);
+    assert_eq!(state.score_marketing, 0);
     assert!(
-        stand.remaining > 0.0,
+        state.remaining > 0.0,
         "die Pause laeuft nicht: {}",
-        stand.remaining
+        state.remaining
     );
     assert!(
         events
@@ -1471,44 +1468,44 @@ fn punktegrenze_beendet_die_runde() {
 }
 
 #[test]
-fn ein_punkt_unter_der_grenze_laeuft_die_runde_weiter() {
+fn one_point_below_limit_match_continues() {
     // Die Gegenprobe zum Test darueber. Ohne sie prueft der nur, dass
     // irgendwann irgendetwas passiert - eine Grenze von "immer" bestuende ihn
     // genauso.
-    let mut app = app_with(runden_config(2, 10.0), arena());
+    let mut app = app_with(match_config(2, 10.0), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
 
-    ein_abschuss(&mut app, shooter);
+    single_kill(&mut app, shooter);
 
-    let stand = runde(&app);
+    let state = current_match(&app);
     assert_eq!(
-        stand.score_engineering, 1,
+        state.score_engineering, 1,
         "Punkt nicht oder doppelt gebucht"
     );
     assert_eq!(
-        stand.phase,
+        state.phase,
         protocol::Phase::Running,
         "Runde bei 1 von 2 Punkten schon vorbei"
     );
-    assert_eq!(stand.winner, None);
+    assert_eq!(state.winner, None);
 }
 
 #[test]
-fn nach_der_pause_faengt_alles_von_vorn_an() {
-    let mut app = app_with(runden_config(1, 0.5), arena());
+fn after_intermission_everything_restarts() {
+    let mut app = app_with(match_config(1, 0.5), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
 
-    ein_abschuss(&mut app, shooter);
-    assert_eq!(runde(&app).phase, protocol::Phase::Over);
+    single_kill(&mut app, shooter);
+    assert_eq!(current_match(&app).phase, protocol::Phase::Over);
 
     let events = run_s(&mut app, 0.9);
 
-    let stand = runde(&app);
-    assert_eq!(stand.phase, protocol::Phase::Running, "Pause endet nicht");
-    assert_eq!(stand.winner, None, "Sieger nicht zurueckgesetzt");
-    assert_eq!((stand.score_engineering, stand.score_marketing), (0, 0));
+    let state = current_match(&app);
+    assert_eq!(state.phase, protocol::Phase::Running, "Pause endet nicht");
+    assert_eq!(state.winner, None, "Sieger nicht zurueckgesetzt");
+    assert_eq!((state.score_engineering, state.score_marketing), (0, 0));
     assert!(
         events.iter().any(|e| matches!(e, GameEvent::MatchStarted)),
         "kein MatchStarted gemeldet"
@@ -1527,29 +1524,29 @@ fn nach_der_pause_faengt_alles_von_vorn_an() {
 }
 
 #[test]
-fn punkte_bleiben_wenn_der_schuetze_geht() {
+fn points_stay_when_shooter_leaves() {
     // Der eigentliche Grund, warum die Teampunkte in einer eigenen Ressource
     // stehen und nicht je Tick aus den Spielern summiert werden. Wuerden sie
     // summiert, naehme ein Spieler beim Verlassen die Punkte seines Teams mit.
-    let mut app = app_with(runden_config(5, 10.0), arena());
+    let mut app = app_with(match_config(5, 10.0), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
 
-    ein_abschuss(&mut app, shooter);
-    assert_eq!(runde(&app).score_engineering, 1);
+    single_kill(&mut app, shooter);
+    assert_eq!(current_match(&app).score_engineering, 1);
 
     app.world_mut().despawn(shooter);
     run_s(&mut app, 0.5);
 
     assert_eq!(
-        runde(&app).score_engineering,
+        current_match(&app).score_engineering,
         1,
         "der Punkt ist mit dem Spieler verschwunden"
     );
 }
 
 #[test]
-fn in_der_pause_steigt_niemand_ein() {
+fn nobody_respawns_during_intermission() {
     // Der Endstand soll stehen bleiben, nicht von Wiedereinsteigern
     // durchkreuzt werden.
     //
@@ -1557,19 +1554,19 @@ fn in_der_pause_steigt_niemand_ein() {
     // beobachtet wird - sonst prueft er die Wartezeit statt die Sperre. Genau
     // daran ist die erste Fassung gescheitert: sie wartete 0.3 s bei drei
     // Sekunden Wiedereinstiegszeit und haette den Wegfall der Sperre nie
-    // bemerkt. `runden_config` setzt die Wartezeit deshalb auf 0.1 s.
-    let mut app = app_with(runden_config(1, 2.0), arena());
+    // bemerkt. `match_config` setzt die Wartezeit deshalb auf 0.1 s.
+    let mut app = app_with(match_config(1, 2.0), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
 
-    ein_abschuss(&mut app, shooter);
-    assert_eq!(runde(&app).phase, protocol::Phase::Over);
+    single_kill(&mut app, shooter);
+    assert_eq!(current_match(&app).phase, protocol::Phase::Over);
 
-    let wartezeit = app.world().resource::<Config>().respawn_delay;
+    let wait = app.world().resource::<Config>().respawn_delay;
     run_s(&mut app, 1.0);
     assert!(
-        1.0 > wartezeit * 2.0,
-        "der Test wartet nicht laenger als die Wiedereinstiegszeit ({wartezeit} s) \
+        1.0 > wait * 2.0,
+        "der Test wartet nicht laenger als die Wiedereinstiegszeit ({wait} s) \
          und prueft damit nur diese statt die Sperre"
     );
     assert!(
@@ -1579,35 +1576,39 @@ fn in_der_pause_steigt_niemand_ein() {
 }
 
 #[test]
-fn in_der_pause_faellt_kein_schuss() {
-    let mut app = app_with(runden_config(1, 10.0), arena());
+fn no_shots_during_intermission() {
+    let mut app = app_with(match_config(1, 10.0), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
 
-    ein_abschuss(&mut app, shooter);
-    assert_eq!(runde(&app).phase, protocol::Phase::Over);
+    single_kill(&mut app, shooter);
+    assert_eq!(current_match(&app).phase, protocol::Phase::Over);
 
     // Zweites Ziel, das in der Pause lebendig danebensteht.
-    let zweites = add_player(&mut app, 3, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
-    let vorher = vitals(&app, zweites).health;
+    let second_target = add_player(&mut app, 3, Team::Marketing, Vec3::new(0.0, 0.0, -5.0), 0.0);
+    let before = vitals(&app, second_target).health;
 
-    let events = halte_feuer(&mut app, shooter, 2.0);
+    let events = hold_fire(&mut app, shooter, 2.0);
 
     assert!(
         !events.iter().any(|e| matches!(e, GameEvent::Shot { .. })),
         "in der Pause wurde geschossen"
     );
     assert_eq!(
-        vitals(&app, zweites).health,
-        vorher,
+        vitals(&app, second_target).health,
+        before,
         "in der Pause wurde Schaden gemacht"
     );
-    assert_eq!(runde(&app).score_engineering, 1, "in der Pause gepunktet");
+    assert_eq!(
+        current_match(&app).score_engineering,
+        1,
+        "in der Pause gepunktet"
+    );
     let _ = target;
 }
 
 #[test]
-fn gleichzeitiger_wiedereinstieg_belegt_verschiedene_punkte() {
+fn simultaneous_respawn_uses_different_points() {
     // Beim Neustart einer Runde steigen alle im selben Tick ein. Rechneten sie
     // alle mit demselben Bild, waehlten sie aus denselben drei sichersten
     // Punkten - acht Leute auf drei Stellen. Auch im gewoehnlichen Spiel
@@ -1624,8 +1625,8 @@ fn gleichzeitiger_wiedereinstieg_belegt_verschiedene_punkte() {
         })
         .collect();
 
-    let mut app = app_with(runden_config(30, 1.0), map);
-    let spieler: Vec<Entity> = (0..4)
+    let mut app = app_with(match_config(30, 1.0), map);
+    let players: Vec<Entity> = (0..4)
         .map(|i| {
             add_player(
                 &mut app,
@@ -1642,7 +1643,7 @@ fn gleichzeitiger_wiedereinstieg_belegt_verschiedene_punkte() {
         .collect();
 
     // Alle im selben Tick faellig machen.
-    for e in &spieler {
+    for e in &players {
         let mut v = app.world_mut().get_mut::<Vitals>(*e).unwrap();
         v.alive = false;
         v.health = 0;
@@ -1650,7 +1651,7 @@ fn gleichzeitiger_wiedereinstieg_belegt_verschiedene_punkte() {
     }
     run(&mut app, 2);
 
-    let mut orte: Vec<String> = spieler
+    let mut places: Vec<String> = players
         .iter()
         .map(|e| {
             let p = body(&app, *e).pos;
@@ -1658,18 +1659,18 @@ fn gleichzeitiger_wiedereinstieg_belegt_verschiedene_punkte() {
             format!("{:.2}/{:.2}", p.x, p.z)
         })
         .collect();
-    let anzahl = orte.len();
-    orte.sort();
-    orte.dedup();
+    let room_count = places.len();
+    places.sort();
+    places.dedup();
     assert_eq!(
-        orte.len(),
-        anzahl,
-        "zwei Spieler stehen auf demselben Spawnpunkt: {orte:?}"
+        places.len(),
+        room_count,
+        "zwei Spieler stehen auf demselben Spawnpunkt: {places:?}"
     );
 }
 
 #[test]
-fn raeume_des_ostfluegels_sind_durch_ihre_tuer_betretbar() {
+fn east_wing_rooms_are_enterable_through_their_doors() {
     // Ein Raum, in den man nicht hineinkommt, sieht im Grundriss völlig normal
     // aus. Genau das war hier der Fall, und zwar bei allen drei Räumen: das
     // Oberlicht über jeder Tür wurde mit y0 = 2.10 gebaut, aber `glass_bay`
@@ -1677,20 +1678,20 @@ fn raeume_des_ostfluegels_sind_durch_ihre_tuer_betretbar() {
     // immer auf 0.90 bis 3.30 - mitten in die Türöffnung. Offen blieben neun
     // Zentimeter über dem Boden.
     //
-    // `ostfluegel_ist_begehbar` hat das nicht gemerkt: der Test läuft in den
+    // `east_wing_is_walkable` hat das nicht gemerkt: der Test läuft in den
     // *Flur*, und der war frei.
     //
     // Die Tür sitzt zum Nordende jedes Raums hin: 0.6 m Wand hinter ihr, dann
     // 1.1 m Öffnung. Ihre Mitte liegt also 1.15 m vor der Nordkante - nicht in
     // festem Abstand zur Südkante, denn der Besprechungsraum ist zwei Meter
     // länger als die Büros.
-    let tuer_mitte = |nordkante: f32| nordkante - 1.15;
+    let door_center = |north_edge: f32| north_edge - 1.15;
     for (name, z) in [
-        ("Besprechungsraum", tuer_mitte(-2.2)),
-        ("Aktenbüro", tuer_mitte(2.0)),
-        ("Besprechungsecke", tuer_mitte(6.2)),
+        ("Besprechungsraum", door_center(-2.2)),
+        ("Aktenbüro", door_center(2.0)),
+        ("Besprechungsecke", door_center(6.2)),
     ] {
-        let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+        let mut app = app_with(GameConfig::default(), crate::maps::open_plan_office());
         let p = add_player(&mut app, 1, Team::Engineering, Vec3::new(21.6, 0.0, z), 0.0);
         set_input(
             &mut app,
@@ -1712,15 +1713,15 @@ fn raeume_des_ostfluegels_sind_durch_ihre_tuer_betretbar() {
 }
 
 #[test]
-fn die_beiden_einzelbueros_sind_verschieden_eingerichtet() {
+fn the_two_single_offices_are_furnished_differently() {
     // Gegenprobe zur Einrichtung: vorher rief `east_wing` zweimal dieselbe
     // Funktion mit denselben Werten auf. Wer das versehentlich zurückbaut,
     // merkt es sonst nur beim Spielen.
-    let map = crate::maps::grossraumbuero();
+    let map = crate::maps::open_plan_office();
 
     // Alles im Ostflügel östlich des Flurs, je Raum nach Art gezählt.
-    let inventar = |z0: f32, z1: f32| {
-        let mut arten: Vec<String> = map
+    let inventory = |z0: f32, z1: f32| {
+        let mut kinds: Vec<String> = map
             .brushes
             .iter()
             .filter(|b| {
@@ -1729,53 +1730,53 @@ fn die_beiden_einzelbueros_sind_verschieden_eingerichtet() {
             })
             .map(|b| format!("{:?}", b.kind))
             .collect();
-        arten.sort();
-        arten
+        kinds.sort();
+        kinds
     };
 
-    let akten = inventar(-2.2, 2.0);
-    let besprechung = inventar(2.0, 6.2);
+    let files = inventory(-2.2, 2.0);
+    let meeting = inventory(2.0, 6.2);
 
-    assert!(!akten.is_empty(), "im Aktenbüro steht gar nichts");
+    assert!(!files.is_empty(), "im Aktenbüro steht gar nichts");
     assert!(
-        !besprechung.is_empty(),
+        !meeting.is_empty(),
         "in der Besprechungsecke steht gar nichts"
     );
     assert_ne!(
-        akten, besprechung,
+        files, meeting,
         "beide Einzelbüros enthalten genau dasselbe - sie spielen sich gleich"
     );
 }
 
 #[test]
-fn milchglasband_haelt_den_schuss_auf() {
+fn frosted_glass_band_blocks_shots() {
     // Das Band auf Brusthöhe ist Glas, keine Deko. Wäre es dekorativ, hätte
     // jede verglaste Wand einen kugeldurchlässigen Schlitz auf genau der Höhe,
     // auf die man zielt.
-    let map = crate::maps::grossraumbuero();
+    let map = crate::maps::open_plan_office();
     let level = Level::new(map);
 
     // Waagerechter Strahl auf Brusthöhe quer durch die Trennwand des
     // nördlichen Einzelbüros.
-    let von = Vec3::new(21.5, 1.2, 4.0);
-    let treffer = level
+    let from = Vec3::new(21.5, 1.2, 4.0);
+    let hit = level
         .opaque
         .iter()
-        .filter_map(|a| a.ray_intersection(von, Vec3::X, 8.0))
+        .filter_map(|a| a.ray_intersection(from, Vec3::X, 8.0))
         .fold(f32::INFINITY, f32::min);
 
     assert!(
-        treffer.is_finite() && treffer < 2.0,
-        "Schuss auf Brusthöhe geht durch die Glaswand hindurch: {treffer}"
+        hit.is_finite() && hit < 2.0,
+        "Schuss auf Brusthöhe geht durch die Glaswand hindurch: {hit}"
     );
 }
 
 #[test]
-fn fluegeltreppe_fuehrt_auf_die_chef_etage() {
+fn wing_stairs_lead_to_executive_floor() {
     // Die Treppe im Anbau ist der zweite Ausgang. Endete sie vor einer Wand,
     // wäre der ganze Flügel eine Sackgasse - und genau das war sie, bis der
     // Durchgang auf Podesthöhe dazukam.
-    let mut app = app_with(GameConfig::default(), crate::maps::grossraumbuero());
+    let mut app = app_with(GameConfig::default(), crate::maps::open_plan_office());
     let p = add_player(
         &mut app,
         1,
@@ -1820,7 +1821,7 @@ fn fluegeltreppe_fuehrt_auf_die_chef_etage() {
 ///
 /// Liefert (App, Schuetze, Ziel, gesehener Tick, Blickwinkel auf die damalige
 /// Position).
-fn nachlaufendes_ziel(verzoegerung_ticks: u64) -> (App, Entity, Entity, f64, f32) {
+fn trailing_target(delay_ticks: u64) -> (App, Entity, Entity, f64, f32) {
     let mut app = app_with(precise_config(), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(&mut app, 2, Team::Marketing, Vec3::new(0.0, 0.0, -6.0), 0.0);
@@ -1841,32 +1842,32 @@ fn nachlaufendes_ziel(verzoegerung_ticks: u64) -> (App, Entity, Entity, f64, f32
     // Diesen Stand sieht der Schuetze - und zwar erst spaeter. Die Nummer ist
     // die, die der Snapshot mit dieser Position traegt: `broadcast` liest den
     // Zaehler nach `finish_tick`, also so, wie er jetzt steht.
-    let gesehen = app.world().resource::<Tick>().0;
-    let damals = body(&app, target).pos;
+    let seen = app.world().resource::<Tick>().0;
+    let then = body(&app, target).pos;
 
     // Erst jetzt vergeht die Verzoegerung; das Ziel laeuft dabei weiter.
-    run(&mut app, verzoegerung_ticks as u32);
+    run(&mut app, delay_ticks as u32);
 
     // Der Schuetze zielt auf die Stelle, an der er das Ziel sieht.
     // yaw = 0 blickt nach -Z; positives X liegt bei negativem yaw.
-    let winkel = (damals.x).atan2(-damals.z);
-    (app, shooter, target, gesehen as f64, -winkel)
+    let angle = (then.x).atan2(-then.z);
+    (app, shooter, target, seen as f64, -angle)
 }
 
 #[test]
-fn ohne_kompensation_geht_der_schuss_ins_leere() {
+fn without_compensation_shot_misses() {
     // Erst der Gegenbeweis: ohne Angabe des gesehenen Ticks wertet der Server
     // gegen den aktuellen Stand aus, und wer auf die Vergangenheit zielt,
     // trifft nichts. Ohne diesen Test wuesste man nicht, ob der naechste
     // ueberhaupt etwas beweist.
-    let (mut app, shooter, target, _gesehen, winkel) = nachlaufendes_ziel(6);
+    let (mut app, shooter, target, _seen, angle) = trailing_target(6);
 
     set_input(
         &mut app,
         shooter,
         InputFrame {
             buttons: buttons::FIRE,
-            yaw: winkel,
+            yaw: angle,
             view_tick: None,
             ..Default::default()
         },
@@ -1881,16 +1882,16 @@ fn ohne_kompensation_geht_der_schuss_ins_leere() {
 }
 
 #[test]
-fn mit_kompensation_trifft_der_schuss_auf_die_gesehene_stelle() {
-    let (mut app, shooter, target, gesehen, winkel) = nachlaufendes_ziel(6);
+fn with_compensation_shot_hits_seen_position() {
+    let (mut app, shooter, target, seen, angle) = trailing_target(6);
 
     set_input(
         &mut app,
         shooter,
         InputFrame {
             buttons: buttons::FIRE,
-            yaw: winkel,
-            view_tick: Some(gesehen),
+            yaw: angle,
+            view_tick: Some(seen),
             ..Default::default()
         },
     );
@@ -1903,19 +1904,19 @@ fn mit_kompensation_trifft_der_schuss_auf_die_gesehene_stelle() {
 }
 
 #[test]
-fn rueckspulen_ist_gedeckelt() {
+fn rewind_is_capped() {
     // Der gewuenschte Zeitpunkt kommt vom Client. Ohne Deckel koennte jemand
     // behaupten, er habe den Stand von vor einer Minute gesehen, und Gegner
     // dort erschiessen, wo sie laengst nicht mehr sind.
-    let (mut app, shooter, target, _gesehen, winkel) =
-        nachlaufendes_ziel(history::max_rewind_ticks(GameConfig::default().tick_rate) + 20);
+    let (mut app, shooter, target, _seen, angle) =
+        trailing_target(history::max_rewind_ticks(GameConfig::default().tick_rate) + 20);
 
     set_input(
         &mut app,
         shooter,
         InputFrame {
             buttons: buttons::FIRE,
-            yaw: winkel,
+            yaw: angle,
             // Weit jenseits des Erlaubten.
             view_tick: Some(-1000.0),
             ..Default::default()
@@ -1935,7 +1936,7 @@ fn rueckspulen_ist_gedeckelt() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn jede_eingabe_wird_genau_einmal_simuliert() {
+fn every_input_is_simulated_exactly_once() {
     // Der Kern der Vorhersage. Der Client sagt jede gesendete Eingabe voraus;
     // fuehrt der Server nur einen Teil davon aus, laeuft er weg und wird bei
     // jedem Abgleich sichtbar zurueckgezogen - genau einen Simulationsschritt
@@ -1950,8 +1951,8 @@ fn jede_eingabe_wird_genau_einmal_simuliert() {
     app.world_mut().entity_mut(p).remove::<Held>();
 
     let start = body(&app, p).pos;
-    let schritte = 6;
-    for i in 0..schritte {
+    let steps = 6;
+    for i in 0..steps {
         send_input(
             &mut app,
             p,
@@ -1966,19 +1967,19 @@ fn jede_eingabe_wird_genau_einmal_simuliert() {
     // Genug Ticks, damit die Warteschlange sicher abgearbeitet ist.
     run(&mut app, 10);
 
-    let strecke = (body(&app, p).pos - start).length();
-    let erwartet = app.world().resource::<Config>().walk_speed
+    let distance = (body(&app, p).pos - start).length();
+    let expected = app.world().resource::<Config>().walk_speed
         * app.world().resource::<Config>().tick_dt()
-        * schritte as f32;
+        * steps as f32;
 
     assert!(
-        (strecke - erwartet).abs() < 0.02,
-        "{schritte} Eingaben haetten {erwartet:.2} m ergeben muessen, gelaufen sind {strecke:.2} m"
+        (distance - expected).abs() < 0.02,
+        "{steps} Eingaben haetten {expected:.2} m ergeben muessen, gelaufen sind {distance:.2} m"
     );
 }
 
 #[test]
-fn bestaetigt_wird_nur_was_simuliert_wurde() {
+fn only_simulated_inputs_are_acknowledged() {
     // Der Client streicht alles Bestaetigte aus seiner Wiedervorlage.
     // Bestaetigte der Server etwas, das er nie ausgefuehrt hat, fehlte dieser
     // Schritt danach fuer immer - und genau das war der Fehler.
@@ -2015,42 +2016,42 @@ fn bestaetigt_wird_nur_was_simuliert_wurde() {
 }
 
 #[test]
-fn oefter_senden_macht_nicht_schneller() {
+fn sending_more_often_is_not_faster() {
     // Ohne Grenze bewegte sich schneller, wer oefter sendet - der einfachste
     // Cheat ueberhaupt.
     let mut app = app_with(GameConfig::default(), arena());
-    let ehrlich = add_player(
+    let honest = add_player(
         &mut app,
         1,
         Team::Engineering,
         Vec3::new(-5.0, 0.0, 0.0),
         0.0,
     );
-    let flink = add_player(&mut app, 2, Team::Marketing, Vec3::new(5.0, 0.0, 0.0), 0.0);
-    app.world_mut().entity_mut(ehrlich).remove::<Held>();
-    app.world_mut().entity_mut(flink).remove::<Held>();
+    let quick = add_player(&mut app, 2, Team::Marketing, Vec3::new(5.0, 0.0, 0.0), 0.0);
+    app.world_mut().entity_mut(honest).remove::<Held>();
+    app.world_mut().entity_mut(quick).remove::<Held>();
 
-    let (start_e, start_f) = (body(&app, ehrlich).pos, body(&app, flink).pos);
-    let vorwaerts = |seq| InputFrame {
+    let (start_e, start_f) = (body(&app, honest).pos, body(&app, quick).pos);
+    let forward_input = |seq| InputFrame {
         seq,
         move_z: 1.0,
         ..Default::default()
     };
 
     for tick in 0..40u32 {
-        send_input(&mut app, ehrlich, vorwaerts(tick + 1));
+        send_input(&mut app, honest, forward_input(tick + 1));
         // Der Flinke sendet viermal so oft.
         for k in 0..4 {
-            send_input(&mut app, flink, vorwaerts(tick * 4 + k + 1));
+            send_input(&mut app, quick, forward_input(tick * 4 + k + 1));
         }
         run(&mut app, 1);
     }
 
-    let strecke_e = (body(&app, ehrlich).pos - start_e).length();
-    let strecke_f = (body(&app, flink).pos - start_f).length();
+    let distance_honest = (body(&app, honest).pos - start_e).length();
+    let distance_quick = (body(&app, quick).pos - start_f).length();
     assert!(
-        strecke_f <= strecke_e * 1.15,
-        "Vielsender kam {strecke_f:.2} m weit, ehrlicher Sender nur {strecke_e:.2} m"
+        distance_quick <= distance_honest * 1.15,
+        "Vielsender kam {distance_quick:.2} m weit, ehrlicher Sender nur {distance_honest:.2} m"
     );
 }
 
@@ -2067,9 +2068,9 @@ fn send_next(app: &mut App, entity: Entity, mut frame: InputFrame) {
 
 /// Wechselt auf den Locher und wartet die Wechselverzoegerung ab. Danach
 /// sendet der Spieler nichts mehr von selbst.
-fn locher_bereit() -> (App, Entity) {
+fn hole_punch_ready() -> (App, Entity) {
     let config = precise_config();
-    let slot = config.weapon(protocol::WeaponId::Locher).slot;
+    let slot = config.weapon(protocol::WeaponId::HolePunch).slot;
     let mut app = app_with(config, arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     set_input(
@@ -2095,7 +2096,7 @@ fn count_shots(events: &[GameEvent]) -> usize {
 }
 
 #[test]
-fn unendlicher_blickwinkel_verschiebt_den_spieler_nicht() {
+fn infinite_view_angle_does_not_move_the_player() {
     // JSON kennt kein NaN und kein Unendlich - `1e39` passt aber in ein f64
     // und wird beim Einlesen als f32 zu Unendlich. Daraus wurde NaN, und der
     // Spieler landete in einer Ecke der Karte.
@@ -2109,7 +2110,7 @@ fn unendlicher_blickwinkel_verschiebt_den_spieler_nicht() {
     );
     app.world_mut().entity_mut(p).remove::<Held>();
     run(&mut app, 30);
-    let vorher = body(&app, p).pos;
+    let before = body(&app, p).pos;
 
     for _ in 0..3 {
         send_next(
@@ -2127,18 +2128,18 @@ fn unendlicher_blickwinkel_verschiebt_den_spieler_nicht() {
     let b = body(&app, p);
     assert!(b.pos.is_finite() && b.yaw.is_finite(), "{b:?}");
     assert!(
-        (b.pos - vorher).length() < 0.5,
-        "Spieler ist von {vorher:?} nach {:?} gesprungen",
+        (b.pos - before).length() < 0.5,
+        "Spieler ist von {before:?} nach {:?} gesprungen",
         b.pos
     );
 }
 
 #[test]
-fn locher_feuert_nicht_weiter_wenn_keine_eingaben_kommen() {
+fn hole_punch_stops_firing_without_inputs() {
     // Ein Rahmen mit gedrueckter Taste, danach Funkstille. Die Taste gilt
     // nicht als "gerade gedrueckt", nur weil nichts Neues kommt - sonst wird
     // aus der Einzelschusswaffe ein Automat.
-    let (mut app, shooter) = locher_bereit();
+    let (mut app, shooter) = hole_punch_ready();
     send_next(
         &mut app,
         shooter,
@@ -2152,10 +2153,10 @@ fn locher_feuert_nicht_weiter_wenn_keine_eingaben_kommen() {
 }
 
 #[test]
-fn tastendruck_im_ersten_rahmen_eines_schubs_geht_nicht_verloren() {
+fn press_in_first_frame_of_burst_is_not_lost() {
     // Kommen drei Rahmen in einem Tick an, wertet die Waffe nur den Stand am
     // Ende aus. Ein kurzer Klick im ersten Rahmen darf trotzdem nicht fehlen.
-    let (mut app, shooter) = locher_bereit();
+    let (mut app, shooter) = hole_punch_ready();
     send_next(
         &mut app,
         shooter,
@@ -2171,15 +2172,15 @@ fn tastendruck_im_ersten_rahmen_eines_schubs_geht_nicht_verloren() {
 }
 
 #[test]
-fn verlauf_ist_nach_der_snapshot_nummer_verschluesselt() {
+fn history_is_keyed_by_snapshot_number() {
     // Der Client beruft sich auf `snapshot.tick`. Unter genau dieser Nummer
     // muss der Verlauf die Positionen fuehren, die im Snapshot standen - sonst
     // spult der Server um einen Tick daneben.
     let mut app = app_with(GameConfig::default(), arena());
-    let ziel = add_player(&mut app, 2, Team::Marketing, Vec3::ZERO, 0.0);
+    let mover = add_player(&mut app, 2, Team::Marketing, Vec3::ZERO, 0.0);
     set_input(
         &mut app,
-        ziel,
+        mover,
         InputFrame {
             move_x: 1.0,
             ..Default::default()
@@ -2189,36 +2190,36 @@ fn verlauf_ist_nach_der_snapshot_nummer_verschluesselt() {
 
     // Was der Snapshot dieses Ticks traegt: `broadcast` laeuft nach
     // `finish_tick` und liest `Tick` so, wie er jetzt steht.
-    let nummer = app.world().resource::<Tick>().0;
-    let gezeigt = body(&app, ziel).pos;
+    let number = app.world().resource::<Tick>().0;
+    let shown = body(&app, mover).pos;
 
     run(&mut app, 1);
 
-    let damals = app
+    let then = app
         .world()
         .resource::<history::History>()
         .at(
             app.world().resource::<Tick>().snapshot_tick(),
-            Some(nummer as f64),
+            Some(number as f64),
             history::max_rewind_ticks(GameConfig::default().tick_rate),
         )
         .expect("Verlauf muss den Stand kennen");
-    let pos = damals
+    let pos = then
         .iter()
         .find(|(id, _)| *id == PlayerId(2))
         .map(|(_, p)| *p)
         .unwrap();
     assert!(
-        (pos - gezeigt).length() < 1e-4,
-        "Verlauf zu Tick {nummer}: {pos:?}, im Snapshot stand {gezeigt:?}"
+        (pos - shown).length() < 1e-4,
+        "Verlauf zu Tick {number}: {pos:?}, im Snapshot stand {shown:?}"
     );
 }
 
 #[test]
-fn email_zaehlt_auch_wenn_der_absender_schon_weg_ist() {
+fn email_counts_even_after_sender_left() {
     // Die E-Mail fliegt eine halbe Sekunde. Wer in der Zeit das Spiel
     // verlaesst, hat den Abschuss trotzdem verdient - zumindest sein Team.
-    let mut app = app_with(runden_config(5, 10.0), arena());
+    let mut app = app_with(match_config(5, 10.0), arena());
     let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
     let target = add_player(
         &mut app,
@@ -2228,9 +2229,9 @@ fn email_zaehlt_auch_wenn_der_absender_schon_weg_ist() {
         0.0,
     );
     app.world_mut().get_mut::<Vitals>(target).unwrap().health = 1;
-    nimm_waffe(&mut app, shooter, protocol::WeaponId::Email);
+    equip(&mut app, shooter, protocol::WeaponId::Email);
 
-    ein_schuss(&mut app, shooter, 1);
+    single_shot(&mut app, shooter, 1);
     app.world_mut().despawn(shooter);
     let events = run_s(&mut app, 1.2);
 
@@ -2244,5 +2245,9 @@ fn email_zaehlt_auch_wenn_der_absender_schon_weg_ist() {
         )),
         "die E-Mail hat nicht getoetet"
     );
-    assert_eq!(runde(&app).score_engineering, 1, "Punkt ging verloren");
+    assert_eq!(
+        current_match(&app).score_engineering,
+        1,
+        "Punkt ging verloren"
+    );
 }

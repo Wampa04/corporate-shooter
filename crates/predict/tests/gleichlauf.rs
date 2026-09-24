@@ -25,14 +25,14 @@ use sim_core::MoveState;
 /// Mehrere davon, weil eine einzige umherwandernde Bahn zu wenig berührt. Ein
 /// erster Versuch mit nur einer Bahn quer durchs Grossraumbüro übersah eine
 /// geänderte Stufenhöhe vollständig - sie lief nie über eine Stufe.
-pub struct Lauf {
+pub struct Run {
     pub name: &'static str,
     pub start: [f32; 3],
-    pub muster: fn(u32) -> (f32, f32, f32, u8),
+    pub pattern: fn(u32) -> (f32, f32, f32, u8),
 }
 
 /// Umherwandern im Grossraum, mit Sprüngen und Sprints.
-fn wandern(i: u32) -> (f32, f32, f32, u8) {
+fn walk(i: u32) -> (f32, f32, f32, u8) {
     let t = i as f32;
     let mut b = 0u8;
     if i.is_multiple_of(97) {
@@ -46,7 +46,7 @@ fn wandern(i: u32) -> (f32, f32, f32, u8) {
 
 /// Geradewegs die Treppe zur Chef-Etage hinauf. Prüft das Stufensteigen -
 /// der Pfad, den die erste Fassung dieses Tests nie berührt hat.
-fn treppe(i: u32) -> (f32, f32, f32, u8) {
+fn stairs(i: u32) -> (f32, f32, f32, u8) {
     // `move_z = -1` läuft nach +Z, dorthin steigt die Treppe.
     let b = if i.is_multiple_of(130) {
         buttons::DASH
@@ -58,7 +58,7 @@ fn treppe(i: u32) -> (f32, f32, f32, u8) {
 
 /// Gegen die Westwand rennen und daran entlang. Prüft das Auflösen an Wänden
 /// und die Spielfeldgrenze.
-fn wand(i: u32) -> (f32, f32, f32, u8) {
+fn wall(i: u32) -> (f32, f32, f32, u8) {
     let b = if i.is_multiple_of(80) {
         buttons::JUMP
     } else {
@@ -72,7 +72,7 @@ fn wand(i: u32) -> (f32, f32, f32, u8) {
 }
 
 /// Durch den Durchgang in den Ostflügel und dort in die Räume.
-fn fluegel(i: u32) -> (f32, f32, f32, u8) {
+fn wing(i: u32) -> (f32, f32, f32, u8) {
     let t = i as f32;
     let b = if i.is_multiple_of(110) {
         buttons::DASH
@@ -82,27 +82,27 @@ fn fluegel(i: u32) -> (f32, f32, f32, u8) {
     (1.0, (t * 0.02).sin(), (t * 0.004).sin() * 0.6, b)
 }
 
-pub fn laeufe() -> Vec<Lauf> {
+pub fn runs() -> Vec<Run> {
     vec![
-        Lauf {
+        Run {
             name: "wandern",
             start: [-7.0, 0.0, -3.0],
-            muster: wandern,
+            pattern: walk,
         },
-        Lauf {
+        Run {
             name: "treppe",
             start: [9.8, 0.0, 0.5],
-            muster: treppe,
+            pattern: stairs,
         },
-        Lauf {
+        Run {
             name: "wand",
             start: [-18.0, 0.0, -4.3],
-            muster: wand,
+            pattern: wall,
         },
-        Lauf {
+        Run {
             name: "fluegel",
             start: [17.0, 0.0, -2.5],
-            muster: fluegel,
+            pattern: wing,
         },
     ]
 }
@@ -110,7 +110,7 @@ pub fn laeufe() -> Vec<Lauf> {
 pub const TICKS: u32 = 400;
 
 /// Der volle Zustand als Bitmuster - verlustfrei über die Sprachgrenze.
-fn zustand_bits(s: &MoveState) -> Vec<String> {
+fn state_bits(s: &MoveState) -> Vec<String> {
     [
         s.pos.x,
         s.pos.y,
@@ -132,7 +132,7 @@ fn zustand_bits(s: &MoveState) -> Vec<String> {
 }
 
 #[test]
-fn rust_bahn_aufzeichnen() {
+fn record_rust_path() {
     let Ok(dir) = std::env::var("PREDICT_FIXTURES") else {
         eprintln!("PREDICT_FIXTURES nicht gesetzt - übersprungen");
         return;
@@ -151,18 +151,18 @@ fn rust_bahn_aufzeichnen() {
         .map(|b| b.aabb)
         .collect();
 
-    let mut bahn = Vec::new();
-    let mut eingaben = Vec::new();
+    let mut path = Vec::new();
+    let mut input_log = Vec::new();
 
-    for lauf in laeufe() {
+    for run in runs() {
         let mut state = MoveState {
-            pos: protocol::Vec3::new(lauf.start[0], lauf.start[1], lauf.start[2]),
+            pos: protocol::Vec3::new(run.start[0], run.start[1], run.start[2]),
             ..Default::default()
         };
         let mut prev = 0u8;
 
         for i in 0..TICKS {
-            let (move_x, move_z, yaw, btn) = (lauf.muster)(i);
+            let (move_x, move_z, yaw, btn) = (run.pattern)(i);
             let input = InputFrame {
                 seq: i,
                 move_x,
@@ -179,14 +179,14 @@ fn rust_bahn_aufzeichnen() {
 
             // Den vollen Zustand mitschreiben: das Node-Skript setzt darauf
             // auf, statt die ganze Bahn am Stück nachzurechnen.
-            bahn.push(format!("{} {}", lauf.name, zustand_bits(&state).join(" ")));
+            path.push(format!("{} {}", run.name, state_bits(&state).join(" ")));
             // Als Bitmuster: JavaScript rechnet `Math.sin` in f64, Rust in f32.
             // Berechnete man die Folge doppelt, vergliche man am Ende die
             // Sinusimplementierungen statt der Bewegung - genau daran ist der
             // erste Versuch gescheitert.
-            eingaben.push(format!(
+            input_log.push(format!(
                 "{} {} {} {} {}",
-                lauf.start
+                run.start
                     .iter()
                     .map(|v| v.to_bits().to_string())
                     .collect::<Vec<_>>()
@@ -199,10 +199,10 @@ fn rust_bahn_aufzeichnen() {
         }
     }
 
-    std::fs::write(format!("{dir}/bahn_rust.txt"), bahn.join("\n")).unwrap();
-    std::fs::write(format!("{dir}/eingaben.txt"), eingaben.join("\n")).unwrap();
+    std::fs::write(format!("{dir}/bahn_rust.txt"), path.join("\n")).unwrap();
+    std::fs::write(format!("{dir}/eingaben.txt"), input_log.join("\n")).unwrap();
     eprintln!(
         "{} Bahnen a {TICKS} Schritte nach {dir}/bahn_rust.txt geschrieben",
-        laeufe().len()
+        runs().len()
     );
 }

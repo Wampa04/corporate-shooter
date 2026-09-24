@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WeaponId {
     /// Textmarker-Pistole: hohe Kadenz, wenig Schaden, streut leicht.
-    Textmarker,
+    Highlighter,
     /// Locher-Schrotflinte: mehrere Projektile, kurze Reichweite, hoher Schaden.
-    Locher,
+    HolePunch,
     /// Passiv-aggressive E-Mail: fliegt langsam, zerplatzt im Umkreis.
     Email,
     /// Kaffeevollautomat-Minigun: kein Magazin, dafür Überhitzung.
-    Kaffeevollautomat,
+    CoffeeMachine,
     /// Whiteboard: schießt nicht, hält aber Schaden von vorn ab.
     Whiteboard,
 }
@@ -124,7 +124,7 @@ impl WeaponDesc {
     }
 
     /// `true`, wenn die Waffe überhaupt schießt.
-    pub fn schiesst(&self) -> bool {
+    pub fn fires(&self) -> bool {
         !matches!(self.kind, WeaponKind::Shield { .. })
     }
 
@@ -206,7 +206,7 @@ impl Default for GameConfig {
             intermission: 12.0,
             weapons: vec![
                 WeaponDesc {
-                    id: WeaponId::Textmarker,
+                    id: WeaponId::Highlighter,
                     slot: 1,
                     name: "Textmarker-Pistole".into(),
                     damage: 9,
@@ -225,7 +225,7 @@ impl Default for GameConfig {
                     },
                 },
                 WeaponDesc {
-                    id: WeaponId::Locher,
+                    id: WeaponId::HolePunch,
                     slot: 2,
                     name: "Locher-Schrotflinte".into(),
                     damage: 13,
@@ -267,7 +267,7 @@ impl Default for GameConfig {
                     },
                 },
                 WeaponDesc {
-                    id: WeaponId::Kaffeevollautomat,
+                    id: WeaponId::CoffeeMachine,
                     slot: 4,
                     name: "Kaffeevollautomat-Minigun".into(),
                     damage: 7,

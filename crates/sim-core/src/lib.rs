@@ -297,10 +297,10 @@ pub fn step(
         return events;
     }
 
-    let neu_gedrueckt = |bit: u8| input.pressed(bit) && (prev_buttons & bit) == 0;
+    let newly_pressed = |bit: u8| input.pressed(bit) && (prev_buttons & bit) == 0;
 
     // "Agile Sprint": Schub in Laufrichtung, ohne Eingabe nach vorn.
-    if neu_gedrueckt(buttons::DASH) && state.dash_cooldown <= 0.0 {
+    if newly_pressed(buttons::DASH) && state.dash_cooldown <= 0.0 {
         let wish = wish_direction(state.yaw, input.move_x, input.move_z);
         state.dash_dir = wish
             .try_normalize()

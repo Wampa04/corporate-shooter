@@ -191,7 +191,7 @@ fn main() -> anyhow::Result<()> {
         "--intermission muss eine nicht-negative Zahl sein"
     );
 
-    let map = maps::grossraumbuero();
+    let map = maps::open_plan_office();
 
     if let Some(dir) = &args.dump_map {
         let config = config_from(&args);
@@ -255,14 +255,14 @@ mod tests {
     use protocol::GameConfig;
 
     #[test]
-    fn kommandozeile_ist_wohlgeformt() {
+    fn command_line_is_well_formed() {
         // Faengt widerspruechliche Attribute ab, die sonst erst zur Laufzeit
         // beim ersten Aufruf auffallen wuerden.
         Args::command().debug_assert();
     }
 
     #[test]
-    fn vorgaben_ohne_argumente() {
+    fn defaults_without_arguments() {
         let args = Args::parse_from(["server"]);
         assert_eq!(args.port, 4200);
         assert_eq!(args.tick_rate, 60);
@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn kommandozeile_und_default_stimmen_ueberein() {
+    fn command_line_matches_default() {
         // Der Server nimmt seine Werte von der Kommandozeile, die Tests von
         // `GameConfig::default()`. Laufen die beiden auseinander, laufen Tests
         // und Server mit verschiedenen Zahlen - und die Tests bleiben gruen,
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn rundeneinstellungen_lassen_sich_setzen() {
+    fn match_settings_can_be_set() {
         let args = Args::parse_from(["server", "--score-limit", "5", "--intermission", "2.5"]);
         let config = config_from(&args);
         assert_eq!(config.score_limit, 5);
@@ -295,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn no_mdns_laesst_sich_setzen_und_ausdruecklich_abwaehlen() {
+    fn no_mdns_can_be_set_and_explicitly_unset() {
         // Ohne den Wert bleibt es eine gewoehnliche Schaltflagge ...
         assert!(Args::parse_from(["server", "--no-mdns"]).no_mdns);
         // ... mit Wert laesst es sich abwaehlen. Das braucht es, weil dieselbe
@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn argumente_werden_uebernommen() {
+    fn arguments_are_applied() {
         let args = Args::parse_from([
             "server",
             "--port",

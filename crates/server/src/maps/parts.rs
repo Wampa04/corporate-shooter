@@ -58,12 +58,12 @@ pub fn counter_run(
     b.cuboid(kind, -hw, -depth, hw, 0.0, 0.0, height);
     worktop(b, -hw, -depth, hw, 0.0, height);
 
-    if let Some(oben) = over {
+    if let Some(overhang) = over {
         b.cuboid(
             kind,
-            -oben * 0.5,
+            -overhang * 0.5,
             -WALL_CABINET_DEPTH,
-            oben * 0.5,
+            overhang * 0.5,
             0.0,
             WALL_CABINET_Y0,
             WALL_CABINET_Y1,
@@ -538,7 +538,7 @@ fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
     if y0 <= 0.0 {
         b.cuboid(BrushKind::Trim, x0, -t, x1, t, 0.0, 0.10);
     }
-    let unten = y0.max(0.10);
+    let floor_y = y0.max(0.10);
 
     // Jedes der drei Bänder wird auf [unten, y1] beschnitten und nur gebaut,
     // wenn davon etwas übrig bleibt.
@@ -548,8 +548,8 @@ fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
     // gebaut, aber Milchglasband und Oberglas fragten y0 gar nicht - sie
     // standen immer auf 0.90 bis 3.30, also mitten in der Türöffnung. Von
     // aussen sah die Tür normal aus, nur durchgehen konnte man nicht.
-    let stueck = |b: &mut Build, kind: BrushKind, a: f32, e: f32| {
-        let (a, e) = (a.max(unten), e.min(y1));
+    let piece = |b: &mut Build, kind: BrushKind, a: f32, e: f32| {
+        let (a, e) = (a.max(floor_y), e.min(y1));
         if e > a + 1e-4 {
             b.cuboid(kind, x0, -t, x1, t, a, e);
             true
@@ -558,13 +558,13 @@ fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
         }
     };
 
-    stueck(b, BrushKind::Glass, 0.0, BAND_LOW);
+    piece(b, BrushKind::Glass, 0.0, BAND_LOW);
     // Das Milchglasband: verdeckt den Rumpf, lässt Kopf und Beine frei. Die
     // Höhen kommen aus der Spielerfigur, nicht aus dem Gefühl - Beine bis
     // 0.82, Rumpf bis 1.60, Augen auf 1.62.
-    if stueck(b, BrushKind::FrostedGlass, BAND_LOW, BAND_HIGH) {
+    if piece(b, BrushKind::FrostedGlass, BAND_LOW, BAND_HIGH) {
         // Zwei schmale Streifen in der Hausfarbe fassen das Band ein.
-        for y in [BAND_LOW.max(unten), BAND_HIGH.min(y1)] {
+        for y in [BAND_LOW.max(floor_y), BAND_HIGH.min(y1)] {
             b.cuboid(
                 BrushKind::AccentPanel,
                 x0,
@@ -576,7 +576,7 @@ fn glass_bay(b: &mut Build, x0: f32, x1: f32, y0: f32, y1: f32) {
             );
         }
     }
-    if stueck(b, BrushKind::Glass, BAND_HIGH, y1 - 0.10) {
+    if piece(b, BrushKind::Glass, BAND_HIGH, y1 - 0.10) {
         // Kopfschiene.
         b.cuboid(BrushKind::Trim, x0, -t, x1, t, y1 - 0.10, y1);
     }
