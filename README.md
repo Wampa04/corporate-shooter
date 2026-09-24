@@ -342,9 +342,22 @@ Zahlen). Er hat bereits zwei
 Fehler gefunden, die den Unit-Tests entgangen waren — es lohnt sich, ihn
 laufen zu lassen.
 
-Vom Browser-Client ist die Logik ohne Three.js und DOM getestet (die
-`scripts/*.mjs`); Darstellung und Bedienung nicht. Änderungen daran gehören im
-Browser angesehen; die Konsole muss dabei fehlerfrei bleiben.
+Für den Browser-Client gibt es Prüfwerkzeuge, aber weiterhin keinen
+Build-Schritt — der Server liefert `client/` so aus, wie es im Repository liegt:
+
+```sh
+npm ci           # ESLint, Prettier, TypeScript (nur zur Prüfung)
+npm run check    # Lint, Format, Typprüfung (JSDoc) und Tests
+npm run format   # formatieren
+```
+
+Die Typprüfung liest die JSDoc-Kommentare; `client/vendor/three.module.min.d.ts`
+verweist dafür auf die Typen von three.js. Getestet ist die Logik ohne Three.js
+und DOM (`scripts/*.mjs`); Darstellung und Bedienung nicht. Änderungen daran
+gehören im Browser angesehen; die Konsole muss dabei fehlerfrei bleiben.
+
+Prettier lässt die Modelldaten (`viewmodel.js`, `parts.js`, `figur.js`) sowie
+HTML und CSS aus: eine Zeile je Bauteil liest sich dort besser als zehn.
 
 Die Rust-Version steht in `rust-toolchain.toml` (Bevy 0.19 verlangt
 mindestens 1.95), rustup holt sie von selbst. Das `Dockerfile` nennt dieselbe
@@ -353,18 +366,19 @@ Version noch einmal als `RUST_VERSION`; die CI prüft, dass beide
 
 ### Continuous Integration
 
-`.github/workflows/image.yml` läuft bei jedem Push und Pull Request in drei
+`.github/workflows/image.yml` läuft bei jedem Push und Pull Request in vier
 Jobs:
 
 1. **Format und Lints** — `cargo fmt --check`, `cargo clippy -D warnings`
    (auch für das WASM-Ziel), gleiche Rust-Version in `rust-toolchain.toml`
    und `Dockerfile`, Prüfsummen der mitgelieferten Bibliotheken.
-2. **Tests** — `cargo test --workspace --locked`, der Gleichlauf von Rust
-   und WebAssembly (auch für das eingecheckte `predict.wasm`) und die
-   Prüfläufe der Client-Logik.
-3. **Image** — bauen, starten und prüfen, dass es den Client ausliefert.
+2. **Tests** — `cargo test --workspace --locked` und der Gleichlauf von Rust
+   und WebAssembly (auch für das eingecheckte `predict.wasm`).
+3. **Client** — ESLint, Prettier, Typprüfung und Tests der Client-Logik
+   (`npm run check`).
+4. **Image** — bauen, starten und prüfen, dass es den Client ausliefert.
 
-Die dritte Stufe hängt an den ersten beiden: aus rotem Code entsteht erst gar
+Das Image hängt an den drei Prüfjobs: aus rotem Code entsteht erst gar
 kein Image. Veröffentlicht wird nur vom Standardbranch und von `v*`-Tags, nach
 `ghcr.io/<repo>`. Die Actions sind auf Commit-SHAs festgenagelt; Dependabot
 hält sie und die Cargo-Abhängigkeiten aktuell.

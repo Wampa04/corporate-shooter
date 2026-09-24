@@ -20,6 +20,18 @@ const SNAPSHOT_HISTORY = 64;
 const PING_INTERVAL = 1000;
 
 /**
+ * @typedef {object} Snapshot
+ * @property {number} tick
+ * @property {Array<object>} players
+ * @property {Array<object>} events
+ * @property {object} match
+ * @property {number} [ack_seq] aus `Local`
+ * @property {object} [local] aus `Local`
+ * @property {number} [recvTime] Empfangszeit, `performance.now()`
+ * @property {Map<number, object>} [byId] Spieler nach Id
+ */
+
+/**
  * Fuehrt den eigenen Stand (`Local`) und den oeffentlichen `Snapshot`
  * desselben Ticks zu dem Objekt zusammen, mit dem der Rest des Clients
  * arbeitet: `{tick, ack_seq, players, local, events, match}`.
@@ -31,8 +43,8 @@ const PING_INTERVAL = 1000;
  * Ticks abzugleichen.
  *
  * @param {{tick: number, ack_seq: number, local: object} | null} local
- * @param {{tick: number}} snapshot
- * @returns {object | null}
+ * @param {Snapshot} snapshot
+ * @returns {Snapshot | null}
  */
 export function mergeSnapshot(local, snapshot) {
   if (!local || local.tick !== snapshot.tick) return null;
@@ -50,7 +62,9 @@ export class Connection {
     /** Zuletzt gemessene Laufzeit in Millisekunden, `null` bis zum ersten Pong. */
     this.ping = null;
 
+    /** @type {(snapshot: Snapshot) => void} */
     this.onSnapshot = () => {};
+    /** @type {() => void} */
     this.onClose = () => {};
 
     this._pingTimer = null;

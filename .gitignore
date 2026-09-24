@@ -5,3 +5,6 @@
 
 # Lokale Konfiguration. Die Vorlage dazu ist .env.example.
 .env
+
+# Werkzeuge fuer den Client (package.json)
+node_modules/

@@ -17,3 +17,12 @@ README.md
 **/*.rs.bk
 **/*.pdb
 .DS_Store
+
+# Pruefwerkzeuge fuer den Client, nicht Teil des Images
+node_modules/
+package.json
+package-lock.json
+jsconfig.json
+eslint.config.js
+.prettierrc.json
+.prettierignore

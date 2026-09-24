@@ -54,6 +54,7 @@ export class InputController {
     this._latched = 0;
     this._slots = new Set(weapons.map((w) => w.slot));
 
+    /** @type {(locked: boolean) => void} */
     this.onLockChange = () => {};
     this.onLockError = () => {};
 

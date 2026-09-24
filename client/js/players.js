@@ -105,9 +105,9 @@ function makeNameTag(name, color) {
 /** Eine Figur samt Namensschild. */
 function makeAvatar(state) {
   const color = teamColor(state.team);
-  const figur = baueFigur(color);
-  figur.schild = makeNameTag(state.name, color);
-  figur.wurzel.add(figur.schild);
+  const schild = makeNameTag(state.name, color);
+  const figur = { ...baueFigur(color), schild };
+  figur.wurzel.add(schild);
   return figur;
 }
 
@@ -123,7 +123,8 @@ export class PlayerViews {
     this.delayMs = Math.max(INTERPOLATION_MS, (2 * 1000) / tickRate);
     /**
      * @type {Map<number, {group: THREE.Group, figur: object, team: string,
-     *                     name: string, lauf: {phase: number, ausschlag: number}}>}
+     *                     name: string, lauf: {phase: number, ausschlag: number},
+     *                     gesehen: boolean}>}
      *
      * `audio.js` liest diese Karte fuer die Schritte der Mitspieler und
      * verlaesst sich auf `group.position` und `group.visible`.
@@ -171,6 +172,8 @@ export class PlayerViews {
           team: state.team,
           name: state.name,
           lauf: ruhe(),
+          /** Ob die Figur schon einmal stand - erst dann gibt es eine Strecke. */
+          gesehen: false,
         };
         this.scene.add(entry.group);
         this.avatars.set(id, entry);
@@ -240,9 +243,12 @@ export class PlayerViews {
     if (!entry) return;
     this.scene.remove(entry.group);
     entry.group.traverse((object) => {
-      object.geometry?.dispose();
-      object.material?.map?.dispose();
-      object.material?.dispose();
+      // Netze und Sprites haben Geometrie und Material, die Gruppen dazwischen
+      // nicht - daher die Fragezeichen und der Umweg ueber `any`.
+      const o = /** @type {any} */ (object);
+      o.geometry?.dispose();
+      o.material?.map?.dispose();
+      o.material?.dispose();
     });
     this.avatars.delete(id);
   }

@@ -49,11 +49,11 @@ const RESUME_HINT = "Klicken, um weiterzuspielen.";
  */
 const LOCK_RETRY_MS = 1300;
 
-const canvas = document.getElementById("viewport");
+const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("viewport"));
 const joinOverlay = document.getElementById("join");
 const joinForm = document.getElementById("join-form");
 const joinStatus = document.getElementById("join-status");
-const nameField = document.getElementById("name");
+const nameField = /** @type {HTMLInputElement} */ (document.getElementById("name"));
 const resumeOverlay = document.getElementById("resume");
 const resumeHint = document.getElementById("resume-hint");
 const disconnectOverlay = document.getElementById("disconnected");
@@ -414,7 +414,7 @@ function start(connection, welcome, prediction) {
   // Augenschein, und der taugt nicht als Beleg. Ohne den Schalter existiert
   // das Objekt nicht.
   if (params.get("messen") === "1") {
-    window.__messen = {
+    /** @type {any} */ (window).__messen = {
       kamera: () => camera.position,
       vorhergesagt: () => prediction?.position() ?? null,
       server: () => {

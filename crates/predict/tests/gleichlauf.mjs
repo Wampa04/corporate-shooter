@@ -18,7 +18,9 @@ const FENSTER = 12;
 const GRENZE = 0.001;
 
 const { instance } = await WebAssembly.instantiate(readFileSync(wasmPfad), {});
-const x = instance.exports;
+// Die Exporte sind reine Funktionen und ein Speicher; ihre Form steht in
+// crates/predict/src/lib.rs, nicht in einer Typbeschreibung.
+const x = /** @type {any} */ (instance.exports);
 
 function reichEin(text, fn) {
   const bytes = new TextEncoder().encode(text);

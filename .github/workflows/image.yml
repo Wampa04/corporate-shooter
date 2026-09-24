@@ -124,29 +124,46 @@ jobs:
       - name: Gleichlauf Rust und WebAssembly
         run: scripts/gleichlauf.sh
 
-      # Vorhergesagt wird mit der Tickrate, gezeichnet mit der Bildrate. Ohne
-      # Ausgleich dazwischen steht die Kamera drei von vier Bildern still und
-      # springt dann - das liest sich als Ruckeln, obwohl die Vorhersage
-      # stimmt.
-      - name: Zwischenbild-Ausgleich der Vorhersage
-        run: node scripts/zwischenbild.mjs
+  client:
+    name: Client
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
-      # Ob ein Rechner den Schattenwurf traegt, entscheidet der Client selbst
-      # anhand der gemessenen Bildzeit. Der Weg nach unten laesst sich im
-      # Prueflauf noch beobachten, der Weg nach oben nicht: dafuer braeuchte es
-      # eine Maschine, die erst langsam ist und dann schnell.
-      - name: Regler fuer die Grafikstufe
-        run: node scripts/grafikregler.mjs
+    steps:
+      - name: Quelltext auschecken
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      # Ob eine Figur beim Stehen die Beine zusammennimmt und ob Arme und
-      # Beine gegengleich schwingen, sieht man im Prueflauf bei zehn Bildern je
-      # Sekunde nicht. Der Laufzyklus rechnet deshalb ohne Three und ohne DOM.
-      - name: Laufzyklus der Spielerfiguren
-        run: node scripts/laufanimation.mjs
+      - name: Node einrichten
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Pruefwerkzeuge installieren
+        run: npm ci
+
+      # Die Typpruefung haette den verworfenen `z`-Parameter von `ribs()`
+      # gefunden, der den Papierstapel der E-Mail wochenlang falsch
+      # platzierte. ESLint findet unbenutzte Namen und Vertipper, Prettier
+      # haelt die Form.
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier
+        run: npm run format:check
+
+      - name: Typpruefung
+        run: npm run typecheck
+
+      # Die Logik des Clients ohne Browser: Zusammenfuehren der Snapshots,
+      # Rangliste, Zwischenbild-Ausgleich der Vorhersage, Grafikregler,
+      # Laufzyklus.
+      - name: Tests
+        run: npm test
 
   image:
     name: Bauen, pruefen, veroeffentlichen
-    needs: [lint, test]
+    needs: [lint, test, client]
     runs-on: ubuntu-latest
 
     # Reissleine: der Build braucht regulaer wenige Minuten. Bleibt er haengen,

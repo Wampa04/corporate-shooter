@@ -132,7 +132,7 @@ console.log("Phase haengt an der Strecke, nicht an der Zeit");
 
 console.log("Anhalten");
 {
-  let z = laufen(ruhe(), VOLLES_TEMPO, 2);
+  const z = laufen(ruhe(), VOLLES_TEMPO, 2);
   pruefe("lief vorher", ausschlag(z) > 0.3, `Ausschlag ${ausschlag(z).toFixed(3)}`);
 
   const nachEinerSekunde = laufen(z, 0, 1.0);

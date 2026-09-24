@@ -42,9 +42,12 @@ export class Audio {
    * @param {number|null} forcedVolume Vorgabe aus der URL, `null` fuer gespeichert
    */
   constructor(forcedVolume = null) {
-    const Ctx = window.AudioContext ?? window.webkitAudioContext;
+    // `webkitAudioContext` gibt es nur in alten Safari-Fassungen; die Typen
+    // von TypeScript kennen ihn deshalb nicht.
+    const Ctx = window.AudioContext ?? /** @type {any} */ (window).webkitAudioContext;
     /** Ohne Web-Audio bleibt alles still, aber nichts geht kaputt. */
     this.ctx = Ctx ? new Ctx() : null;
+    /** @type {(text: string) => void} */
     this.onStatus = () => {};
 
     /** Lebende Panner, fuer das Aufraeumen in `dispose`. */
@@ -181,8 +184,8 @@ export class Audio {
    * Setzt den Hoerer und erzeugt Schritte.
    *
    * @param {number} dt Zeitschritt in Sekunden
-   * @param {THREE.Camera} camera Kamera, an der der Hoerer haengt
-   * @param {{x: number, y: number, z: number}} feet eigene Fussposition
+   * @param {import("../vendor/three.module.min.js").Camera} camera Kamera, an der der Hoerer haengt
+   * @param {{x: number, z: number} | null} feet eigene Fussposition
    * @param {boolean} onGround eigener Bodenkontakt
    * @param {Map} avatars Mitspieler aus `PlayerViews.avatars`
    */
@@ -506,7 +509,7 @@ export class Audio {
     return g;
   }
 
-  _tone({ type, from, to, dur, peak, dest, delay = 0 }) {
+  _tone({ type, from, to = 0, dur, peak, dest, delay = 0 }) {
     const t0 = this.ctx.currentTime + delay;
     const osc = this.ctx.createOscillator();
     osc.type = type;
@@ -520,7 +523,7 @@ export class Audio {
     osc.onended = () => env.disconnect();
   }
 
-  _noise({ dur, peak, type, freq, freqTo, q, dest, delay = 0 }) {
+  _noise({ dur, peak, type, freq, freqTo = 0, q = 0, dest, delay = 0 }) {
     const t0 = this.ctx.currentTime + delay;
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise;

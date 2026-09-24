@@ -17,7 +17,9 @@ const el = (id) => document.getElementById(id);
 /**
  * Reihenfolge der Rangliste: Abschuesse, dann wenige Tode, dann Name.
  *
- * @param {Array<{kills: number, deaths: number, name: string}>} players
+ * @template {{kills: number, deaths: number, name: string}} T
+ * @param {T[]} players
+ * @returns {T[]}
  */
 export function rankPlayers(players) {
   return [...players].sort(
@@ -237,6 +239,10 @@ export class Hud {
    * Geteilt zwischen der Rangliste auf Tab und dem Abschlussbild: zwei Kopien
    * derselben Darstellung liefen sonst frueher oder spaeter auseinander, und
    * ausgerechnet der Endstand ist die Zahl, die am Ende zaehlt.
+   */
+  /**
+   * @param {HTMLElement} tbody
+   * @param {Array<{id: number, team: string, name: string, kills: number, deaths: number}>} players
    */
   _fillTable(tbody, players) {
     const ranked = rankPlayers(players);
