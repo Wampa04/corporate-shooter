@@ -128,6 +128,8 @@ struct AppState {
     /// Simulationsschritte pro Sekunde - daran bemisst sich, wie viele
     /// Nachrichten ein ehrlicher Client schickt.
     tick_rate: u32,
+    /// Herkünfte, die zusätzlich zur eigenen Seite verbinden dürfen.
+    allowed_origins: Arc<[String]>,
 }
 
 /// Startet HTTP- und WebSocket-Server in einem eigenen Thread.
@@ -139,6 +141,7 @@ pub fn spawn(
     client_dir: PathBuf,
     max_players: usize,
     tick_rate: u32,
+    allowed_origins: Vec<String>,
 ) -> anyhow::Result<(crossbeam_channel::Receiver<NetEvent>, SocketAddr)> {
     let (tx, rx) = crossbeam_channel::unbounded();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
@@ -181,6 +184,7 @@ pub fn spawn(
                     live: Arc::new(AtomicUsize::new(0)),
                     max_players,
                     tick_rate,
+                    allowed_origins: allowed_origins.into(),
                 };
                 let app = Router::new()
                     .route("/ws", any(upgrade))
@@ -254,7 +258,7 @@ async fn upgrade(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
 ) -> axum::response::Response {
-    if !same_origin(&headers) {
+    if !origin_allowed(&headers, &state.allowed_origins) {
         info!(%peer, origin = ?headers.get(header::ORIGIN), "Verbindung abgewiesen: fremde Herkunft");
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -274,16 +278,25 @@ async fn upgrade(
 ///
 /// Fehlt der Kopf ganz, ist es kein Browser (Tests, Werkzeuge) - die
 /// könnten ihn ohnehin beliebig setzen, eine Sperre brächte dort nichts.
-/// Verglichen wird mit dem `Host`, unter dem die Seite aufgerufen wurde;
-/// ein Reverse Proxy muss ihn deshalb durchreichen, was die gängigen tun.
-fn same_origin(headers: &HeaderMap) -> bool {
+/// Verglichen wird mit dem `Host`, unter dem die Seite aufgerufen wurde.
+/// Ein Reverse Proxy, der ihn nicht durchreicht (nginx ohne
+/// `proxy_set_header Host $host`), braucht die öffentliche Adresse in
+/// `allowed`, sonst wird jeder Spieler abgewiesen.
+fn origin_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
     let Some(origin) = headers.get(header::ORIGIN) else {
         return true;
     };
-    let (Ok(origin), Some(Ok(host))) = (
-        origin.to_str(),
-        headers.get(header::HOST).map(|h| h.to_str()),
-    ) else {
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
+    let origin = origin.trim_end_matches('/');
+    if allowed
+        .iter()
+        .any(|a| a.trim_end_matches('/').eq_ignore_ascii_case(origin))
+    {
+        return true;
+    }
+    let Some(Ok(host)) = headers.get(header::HOST).map(|h| h.to_str()) else {
         return false;
     };
     origin
@@ -568,7 +581,7 @@ mod tests {
     use axum::http::{HeaderMap, HeaderValue, header};
 
     use super::{
-        FALLBACK_NAME, FLOOD_GRACE, MAX_NAME_LEN, Throttle, Verdict, same_origin, sanitize_name,
+        FALLBACK_NAME, FLOOD_GRACE, MAX_NAME_LEN, Throttle, Verdict, origin_allowed, sanitize_name,
     };
 
     #[test]
@@ -591,29 +604,51 @@ mod tests {
 
     #[test]
     fn own_page_may_connect() {
-        assert!(same_origin(&headers(
-            Some("http://192.168.1.20:4200"),
-            "192.168.1.20:4200"
-        )));
-        assert!(same_origin(&headers(
-            Some("https://buero.example"),
-            "buero.example"
-        )));
+        assert!(origin_allowed(
+            &headers(Some("http://192.168.1.20:4200"), "192.168.1.20:4200"),
+            &[]
+        ));
+        assert!(origin_allowed(
+            &headers(Some("https://buero.example"), "buero.example"),
+            &[]
+        ));
         // Ohne Origin ist es kein Browser.
-        assert!(same_origin(&headers(None, "localhost:4200")));
+        assert!(origin_allowed(&headers(None, "localhost:4200"), &[]));
     }
 
     #[test]
     fn foreign_page_may_not_connect() {
-        assert!(!same_origin(&headers(
-            Some("https://boese.example"),
-            "192.168.1.20:4200"
-        )));
-        assert!(!same_origin(&headers(
-            Some("http://localhost:4201"),
-            "localhost:4200"
-        )));
-        assert!(!same_origin(&headers(Some("null"), "localhost:4200")));
+        assert!(!origin_allowed(
+            &headers(Some("https://boese.example"), "192.168.1.20:4200"),
+            &[]
+        ));
+        assert!(!origin_allowed(
+            &headers(Some("http://localhost:4201"), "localhost:4200"),
+            &[]
+        ));
+        assert!(!origin_allowed(
+            &headers(Some("null"), "localhost:4200"),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn allowed_origin_may_connect() {
+        // Hinter einem Proxy, der den Host nicht durchreicht, kommt beim
+        // Server die interne Adresse an. Die öffentliche Seite muss dann
+        // ausdrücklich freigegeben sein.
+        let allowed = ["https://buero.example".to_string()];
+        let internal = headers(Some("https://buero.example"), "127.0.0.1:4200");
+        assert!(!origin_allowed(&internal, &[]));
+        assert!(origin_allowed(&internal, &allowed));
+        assert!(origin_allowed(
+            &headers(Some("https://BUERO.example"), "127.0.0.1:4200"),
+            &["https://buero.example/".to_string()]
+        ));
+        assert!(!origin_allowed(
+            &headers(Some("https://boese.example"), "127.0.0.1:4200"),
+            &allowed
+        ));
     }
 
     #[test]

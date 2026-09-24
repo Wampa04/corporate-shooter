@@ -100,6 +100,20 @@ struct Args {
     #[arg(long, env = "CORPSHOOT_MAX_PLAYERS", default_value_t = 16)]
     max_players: usize,
 
+    /// Herkunft, die ausser der eigenen Seite WebSockets oeffnen darf, etwa
+    /// `https://buero.example`. Mehrfach angebbar, in der Umgebung
+    /// kommagetrennt.
+    ///
+    /// Noetig nur hinter einem Reverse Proxy, der den `Host`-Kopf nicht
+    /// durchreicht: dann sieht der Server die interne Adresse, der Browser
+    /// meldet die oeffentliche, und ohne Freigabe wuerde jeder abgewiesen.
+    #[arg(
+        long = "allowed-origin",
+        env = "CORPSHOOT_ALLOWED_ORIGINS",
+        value_delimiter = ','
+    )]
+    allowed_origins: Vec<String>,
+
     /// Karte und Konfiguration als JSON ausgeben und beenden.
     ///
     /// Fuer Werkzeuge, die den Grundriss brauchen, ohne den Server zu starten -
@@ -210,6 +224,7 @@ fn main() -> anyhow::Result<()> {
         client_dir.clone(),
         args.max_players,
         config.tick_rate,
+        args.allowed_origins.clone(),
     )?;
 
     // Der Daemon muss bis zum Programmende leben, sonst verschwindet der
@@ -292,6 +307,26 @@ mod tests {
         let config = config_from(&args);
         assert_eq!(config.score_limit, 5);
         assert_eq!(config.intermission, 2.5);
+    }
+
+    #[test]
+    fn allowed_origins_from_flag_and_list() {
+        let args = Args::parse_from([
+            "server",
+            "--allowed-origin",
+            "https://a.example",
+            "--allowed-origin",
+            "https://b.example,https://c.example",
+        ]);
+        assert_eq!(
+            args.allowed_origins,
+            [
+                "https://a.example",
+                "https://b.example",
+                "https://c.example"
+            ]
+        );
+        assert!(Args::parse_from(["server"]).allowed_origins.is_empty());
     }
 
     #[test]

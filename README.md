@@ -85,8 +85,10 @@ Was dabei zu beachten ist:
   liegt, wird getrennt.
 * WebSocket-Verbindungen von fremden Seiten (`Origin` passt nicht zum
   `Host`) werden abgewiesen. Der Reverse Proxy muss deshalb den
-  `Host`-Kopf durchreichen — Caddy, nginx mit `proxy_set_header Host $host`
-  und Traefik tun das.
+  `Host`-Kopf durchreichen — Caddy und Traefik tun das, nginx mit
+  `proxy_set_header Host $host`. Geht das nicht, gibt
+  `--allowed-origin https://buero.example` (oder
+  `CORPSHOOT_ALLOWED_ORIGINS`) die öffentliche Adresse ausdrücklich frei.
 * Der Client kommt mit einer strengen Content-Security-Policy: nur eigene
   Skripte, keine Inline-Skripte, keine Einbettung in fremde Seiten.
 * Der Client wird gzip-komprimiert ausgeliefert — statt 800 KiB gehen rund
@@ -106,6 +108,7 @@ Erklärung auf:
 | `CORPSHOOT_TICK_RATE` | Simulationsschritte pro Sekunde |
 | `CORPSHOOT_SNAPSHOT_INTERVAL` | Simulationsschritte je verschicktem Snapshot |
 | `CORPSHOOT_MAX_PLAYERS` | Höchstzahl gleichzeitiger Spieler |
+| `CORPSHOOT_ALLOWED_ORIGINS` | Weitere Seiten, die WebSockets öffnen dürfen (hinter Proxys) |
 | `CORPSHOOT_SCORE_LIMIT` | Abschlüsse für den Rundensieg |
 | `CORPSHOOT_INTERMISSION` | Pause zwischen zwei Runden |
 | `CORPSHOOT_NO_MDNS` | mDNS-Bekanntmachung abschalten |
