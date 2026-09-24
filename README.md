@@ -275,7 +275,7 @@ Gemessen: 0,38 ms je Tick von 16,7 ms Budget bei acht Spielern.
 Antwort des Servers, sondern rechnet selbst weiter und gleicht bei jedem
 Snapshot ab. Gerechnet wird dabei nicht in JavaScript: `crates/predict`
 übersetzt dieselbe Rust-Funktion nach WebAssembly, die auch der Server
-ausführt. `scripts/gleichlauf.sh` hält fest, dass beide dasselbe rechnen.
+ausführt. `scripts/lockstep.sh` hält fest, dass beide dasselbe rechnen.
 
 **Schüsse werden zurückgespult.** Fremde Spieler werden im Client bewusst
 verzögert gezeigt, damit ihre Bewegung nicht ruckelt; dazu kommt die Laufzeit.
@@ -332,7 +332,7 @@ der Server seine erreichbaren URLs beim Start aus.
 cargo test --workspace   # Simulation, Protokoll und End-to-End-Tests
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
-scripts/gleichlauf.sh    # Rust und WebAssembly rechnen dieselbe Bewegung
+scripts/lockstep.sh    # Rust und WebAssembly rechnen dieselbe Bewegung
 ```
 
 Die End-to-End-Tests starten den echten Serverprozess, verbinden sich per
@@ -356,7 +356,7 @@ verweist dafür auf die Typen von three.js. Getestet ist die Logik ohne Three.js
 und DOM (`scripts/*.mjs`); Darstellung und Bedienung nicht. Änderungen daran
 gehören im Browser angesehen; die Konsole muss dabei fehlerfrei bleiben.
 
-Prettier lässt die Modelldaten (`viewmodel.js`, `parts.js`, `figur.js`) sowie
+Prettier lässt die Modelldaten (`viewmodel.js`, `parts.js`, `figure.js`) sowie
 HTML und CSS aus: eine Zeile je Bauteil liest sich dort besser als zehn.
 
 Die Rust-Version steht in `rust-toolchain.toml` (Bevy 0.19 verlangt

@@ -122,7 +122,7 @@ jobs:
       # auf: der Client stuende einfach an anderer Stelle als der Server ihn
       # sieht, und beide waeren fuer sich in Ordnung.
       - name: Gleichlauf Rust und WebAssembly
-        run: scripts/gleichlauf.sh
+        run: scripts/lockstep.sh
 
   client:
     name: Client

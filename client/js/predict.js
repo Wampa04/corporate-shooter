@@ -10,7 +10,7 @@
 // `predict.wasm`, in dem dieselbe Rust-Funktion steckt, die auch der Server
 // ausfuehrt. Eine zweite, hier gepflegte Fassung der Bewegung gaebe es sonst
 // genau so lange, bis die beiden auseinanderlaufen -
-// `scripts/gleichlauf.sh` haelt fest, dass sie es nicht tun.
+// `scripts/lockstep.sh` haelt fest, dass sie es nicht tun.
 //
 // Vorhergesagt wird ausschliesslich die eigene Bewegung. Schuesse, Treffer,
 // Leben und fremde Spieler bleiben unveraendert serverautoritativ.
@@ -38,7 +38,7 @@ const STATE_FLOATS = 13;
  * ungefaehr eine Umlaufzeit. 120 Bilder sind bei 30 Hz vier Sekunden - mehr,
  * als jede brauchbare Verbindung braucht.
  */
-const RINGGROESSE = 120;
+const RING_SIZE = 120;
 
 /**
  * Wie schnell ein Korrekturfehler ausgeblendet wird (1/s).
@@ -49,7 +49,7 @@ const RINGGROESSE = 120;
  * achtzig Millisekunden: schnell genug, dass niemand an falscher Stelle
  * spielt, langsam genug, dass es niemand als Ruck wahrnimmt.
  */
-const FEHLER_ABKLINGEN = 12;
+const ERROR_DECAY = 12;
 
 /**
  * Ab diesem Abstand wird gesprungen statt ausgeblendet.
@@ -57,7 +57,7 @@ const FEHLER_ABKLINGEN = 12;
  * Wiedereinstieg und Teleport sind keine Fehler, die man verstecken sollte -
  * sie langsam einzublenden waere eine Rutschpartie quer durchs Buero.
  */
-const SPRUNG_AB = 1.5;
+const SNAP_DISTANCE = 1.5;
 
 export class Prediction {
   constructor(instance) {
@@ -67,10 +67,10 @@ export class Prediction {
     /** Zwischengespeicherte Sicht auf den Zustand, siehe `_state`. */
     this._view = null;
     /** Sichtbarer Rest einer Korrektur, klingt ab. */
-    this._fehler = [0, 0, 0];
+    this._error = [0, 0, 0];
     /** Vorheriger und aktueller Schritt, zum Zwischenbild-Ausgleich. */
-    this._vor = null;
-    this._jetzt = null;
+    this._previous = null;
+    this._current = null;
     /**
      * Statistik ueber alle Abgleiche.
      *
@@ -78,7 +78,7 @@ export class Prediction {
      * Snapshot auf, und eine Abtastung von aussen verfehlt sie regelmaessig.
      * Diese Zahlen sind das Guetemass der Vorhersage.
      */
-    this.stats = { anzahl: 0, summe: 0, max: 0, ueber5cm: 0 };
+    this.stats = { count: 0, sum: 0, max: 0, over5cm: 0 };
   }
 
   /**
@@ -87,14 +87,14 @@ export class Prediction {
    */
   static async load(url = "../vendor/predict.wasm") {
     try {
-      const antwort = await fetch(new URL(url, import.meta.url));
-      if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
+      const response = await fetch(new URL(url, import.meta.url));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       // `instantiateStreaming` braucht den richtigen MIME-Typ; ueber den
       // Umweg des Puffers ist es unabhaengig davon, wie der Server ihn setzt.
-      const { instance } = await WebAssembly.instantiate(await antwort.arrayBuffer(), {});
+      const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), {});
       return new Prediction(instance);
-    } catch (fehler) {
-      console.warn("Vorhersage nicht verfuegbar:", fehler.message);
+    } catch (errors) {
+      console.warn("Vorhersage nicht verfuegbar:", errors.message);
       return null;
     }
   }
@@ -102,8 +102,8 @@ export class Prediction {
   /** Uebergibt Karte und Konfiguration, unveraendert wie vom Server gekommen. */
   init(map, config) {
     const ok =
-      this._reichEin(JSON.stringify(map), this.x.load_level) &&
-      this._reichEin(JSON.stringify(config), this.x.load_config);
+      this._submit(JSON.stringify(map), this.x.load_level) &&
+      this._submit(JSON.stringify(config), this.x.load_config);
     if (!ok) {
       console.warn("Vorhersage: Karte oder Konfiguration abgelehnt");
       return false;
@@ -113,7 +113,7 @@ export class Prediction {
     return true;
   }
 
-  _reichEin(text, fn) {
+  _submit(text, fn) {
     const bytes = new TextEncoder().encode(text);
     if (bytes.length > this.x.scratch_len()) return false;
     // Erst den Zeiger holen, dann die Sicht anlegen - der Aufruf kann den
@@ -142,7 +142,7 @@ export class Prediction {
   /** Merkt sich eine gesendete Eingabe, bis der Server sie bestaetigt. */
   record(frame) {
     this._pending.push(frame);
-    if (this._pending.length > RINGGROESSE) this._pending.shift();
+    if (this._pending.length > RING_SIZE) this._pending.shift();
   }
 
   /**
@@ -158,7 +158,7 @@ export class Prediction {
     // Wie weit der Server der Vorhersage widerspricht. Diese Zahl ist das
     // Mass fuer die Guete der Vorhersage: bleibt sie klein, merkt niemand
     // etwas; springt sie, ruckelt das Bild.
-    const vorher = this._synced
+    const before = this._synced
       ? [this._state[POS_X], this._state[POS_Y], this._state[POS_Z]]
       : null;
     // Vor dem ersten Abgleich steht im Zustand nur der Nullpunkt. Ihn als
@@ -195,44 +195,44 @@ export class Prediction {
     }
     this._lastButtons = prev;
 
-    if (vorher) {
+    if (before) {
       // Die Korrektur nicht sofort zeigen, sondern als Rest mitfuehren und
-      // ausblenden. `vorher` ist, was gerade zu sehen war; die Differenz zum
+      // ausblenden. `before` ist, was gerade zu sehen war; die Differenz zum
       // neuen Stand wandert in den Rest und verschwindet von dort.
-      const dx = vorher[0] - this._state[POS_X];
-      const dy = vorher[1] - this._state[POS_Y];
-      const dz = vorher[2] - this._state[POS_Z];
+      const dx = before[0] - this._state[POS_X];
+      const dy = before[1] - this._state[POS_Y];
+      const dz = before[2] - this._state[POS_Z];
       this.lastError = Math.hypot(dx, dy, dz);
       this.pendingCount = this._pending.length;
-      this.stats.anzahl++;
-      this.stats.summe += this.lastError;
+      this.stats.count++;
+      this.stats.sum += this.lastError;
       this.stats.max = Math.max(this.stats.max, this.lastError);
-      if (this.lastError > 0.05) this.stats.ueber5cm++;
+      if (this.lastError > 0.05) this.stats.over5cm++;
 
-      if (this.lastError > SPRUNG_AB) {
-        this._fehler = [0, 0, 0];
+      if (this.lastError > SNAP_DISTANCE) {
+        this._error = [0, 0, 0];
       } else {
-        this._fehler[0] += dx;
-        this._fehler[1] += dy;
-        this._fehler[2] += dz;
+        this._error[0] += dx;
+        this._error[1] += dy;
+        this._error[2] += dz;
       }
       // Der Ausgleich zwischen zwei Schritten geht vom neuen Stand aus; die
       // Differenz zum alten steckt jetzt im abklingenden Rest.
-      this._vor = this._lesePos();
-      this._jetzt = this._vor.slice();
+      this._previous = this._readPos();
+      this._current = this._previous.slice();
     }
   }
 
   /** Rechnet eine gerade abgeschickte Eingabe sofort voraus. */
   advance(frame, alive) {
     if (!this._ready) return;
-    this._vor = this._jetzt ?? this._lesePos();
+    this._previous = this._current ?? this._readPos();
     this._step(frame, this._lastButtons ?? 0, alive);
     this._lastButtons = frame.buttons;
-    this._jetzt = this._lesePos();
+    this._current = this._readPos();
   }
 
-  _lesePos() {
+  _readPos() {
     return [this._state[POS_X], this._state[POS_Y], this._state[POS_Z]];
   }
 
@@ -257,16 +257,16 @@ export class Prediction {
    * paar Zentimeter und ist nach achtzig Millisekunden weg.
    *
    * @param {number} dt Zeitschritt dieses Bildes, fuer das Abklingen
-   * @param {number} mischung 0..1 - wie weit der naechste Schritt faellig ist
+   * @param {number} blend 0..1 - wie weit der naechste Schritt faellig ist
    */
-  position(dt = 0, mischung = 1) {
+  position(dt = 0, blend = 1) {
     if (!this._ready || !this._synced) return null;
 
     if (dt > 0) {
-      const rest = Math.exp(-FEHLER_ABKLINGEN * dt);
-      this._fehler[0] *= rest;
-      this._fehler[1] *= rest;
-      this._fehler[2] *= rest;
+      const remaining = Math.exp(-ERROR_DECAY * dt);
+      this._error[0] *= remaining;
+      this._error[1] *= remaining;
+      this._error[2] *= remaining;
     }
 
     // Zwischen zwei Vorhersageschritten ausgleichen.
@@ -284,14 +284,14 @@ export class Prediction {
     // Bewusst zwischen zwei bekannten Staenden statt darueber hinaus: eine
     // Fortschreibung schoebe die Kamera an einer Wand in die Wand hinein und
     // beim Stehenbleiben ueber das Ziel.
-    const a = this._vor && this._jetzt ? Math.min(Math.max(mischung, 0), 1) : 1;
-    const vor = this._vor ?? this._lesePos();
-    const jetzt = this._jetzt ?? vor;
+    const a = this._previous && this._current ? Math.min(Math.max(blend, 0), 1) : 1;
+    const previous = this._previous ?? this._readPos();
+    const now = this._current ?? previous;
 
     return {
-      x: vor[0] + (jetzt[0] - vor[0]) * a + this._fehler[0],
-      y: vor[1] + (jetzt[1] - vor[1]) * a + this._fehler[1],
-      z: vor[2] + (jetzt[2] - vor[2]) * a + this._fehler[2],
+      x: previous[0] + (now[0] - previous[0]) * a + this._error[0],
+      y: previous[1] + (now[1] - previous[1]) * a + this._error[1],
+      z: previous[2] + (now[2] - previous[2]) * a + this._error[2],
     };
   }
 }

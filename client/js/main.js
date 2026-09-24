@@ -8,7 +8,7 @@
 import * as THREE from "../vendor/three.module.min.js";
 import { Connection } from "./net.js";
 import { buildScene, setShadowsEnabled } from "./world.js";
-import { baueStufen, Grafikregler } from "./grafik.js";
+import { buildTiers, GraphicsGovernor } from "./graphics.js";
 import { PlayerViews } from "./players.js";
 import { Effects } from "./effects.js";
 import { InputController } from "./input.js";
@@ -35,7 +35,7 @@ const CAMERA_TELEPORT = 3.0;
  * Deckt sich mit der Grenze des Servers: mehr nimmt er nicht an, und wer bei
  * dreissig Bildern je Sekunde spielt, holt damit den Rueckstand auf.
  */
-const MAX_EINGABEN_JE_BILD = 3;
+const MAX_INPUTS_PER_FRAME = 3;
 
 /** Text des Pausenbildes im Normalfall. */
 const RESUME_HINT = "Klicken, um weiterzuspielen.";
@@ -69,7 +69,7 @@ nameField.value = localStorage.getItem("corpshoot.name") ?? "";
 // Das Vorhersagemodul frueh anstossen: es laedt parallel zur Namenseingabe
 // und steht damit in aller Regel bereit, bevor jemand auf Beitreten klickt.
 // `?vorhersage=aus` laesst es weg - dann bleibt es beim alten Verhalten.
-const vorhersageLaedt =
+const predictionLoading =
   new URLSearchParams(location.search).get("vorhersage") === "aus"
     ? Promise.resolve(null)
     : Prediction.load();
@@ -88,7 +88,7 @@ joinForm.addEventListener("submit", async (event) => {
   try {
     const welcome = await connection.connect(name);
     joinOverlay.classList.add("hidden");
-    start(connection, welcome, await vorhersageLaedt);
+    start(connection, welcome, await predictionLoading);
   } catch (error) {
     joinStatus.className = "status error";
     joinStatus.textContent = error.message;
@@ -111,15 +111,15 @@ function start(connection, welcome, prediction) {
   // Schattenkarte reicht fuer ein Stockwerk und kostet auch auf einer
   // eingebauten Grafikeinheit kaum etwas.
   //
-  // `?grafik=schoen` haelt die hoechste Stufe fest, `?grafik=einfach` die
+  // `?graphics=schoen` haelt die hoechste Stufe fest, `?graphics=simple` die
   // niedrigste. Ohne Angabe regelt die Messung weiter unten laufend nach.
   const params = new URLSearchParams(location.search);
-  const wunsch = params.get("grafik");
-  const stufen = baueStufen(window.devicePixelRatio);
-  let stufe = wunsch === "einfach" ? stufen.length - 1 : 0;
+  const requested = params.get("grafik");
+  const tiers = buildTiers(window.devicePixelRatio);
+  let tier = requested === "einfach" ? tiers.length - 1 : 0;
 
-  renderer.setPixelRatio(stufen[stufe].pixel);
-  renderer.shadowMap.enabled = stufen[stufe].schatten;
+  renderer.setPixelRatio(tiers[tier].pixel);
+  renderer.shadowMap.enabled = tiers[tier].shadows;
   // Weiche PCF-Schatten gibt es in Three nicht mehr; es nimmt ohnehin diese.
   renderer.shadowMap.type = THREE.PCFShadowMap;
   // Schatten wirft nur die Karte, und die steht still. Spieler, Waffe und
@@ -134,7 +134,7 @@ function start(connection, welcome, prediction) {
   // `buildScene` vermerkt an jedem Netz, ob es werfen *darf*; ob es das
   // gerade tut, entscheidet `setShadowsEnabled`. Deshalb laesst sich jede
   // Stufe spaeter in beide Richtungen wechseln, egal womit gestartet wurde.
-  const scene = buildScene(map, { shadows: stufen[stufe].schatten });
+  const scene = buildScene(map, { shadows: tiers[tier].shadows });
   const camera = new THREE.PerspectiveCamera(78, 1, 0.08, 200);
   // Yaw vor Pitch anwenden, sonst kippt der Horizont beim Umsehen.
   camera.rotation.order = "YXZ";
@@ -143,7 +143,7 @@ function start(connection, welcome, prediction) {
   scene.add(camera);
 
   /** Fallbeschleunigung eines Wurfgeschosses, aus der Waffenbeschreibung. */
-  const wurfGravitation = (weaponId) => {
+  const throwGravity = (weaponId) => {
     const w = config.weapons.find((x) => x.id === weaponId);
     return w?.kind?.t === "Projectile" ? w.kind.d.gravity : 0;
   };
@@ -250,7 +250,7 @@ function start(connection, welcome, prediction) {
         // Die Fallbeschleunigung steht in der Waffenbeschreibung, nicht im
         // Ereignis: sie aendert sich nie, und der Client hat die
         // Konfiguration seit dem Beitritt.
-        effects.addLaunch(event.d, wurfGravitation(event.d.weapon));
+        effects.addLaunch(event.d, throwGravity(event.d.weapon));
       } else if (event.t === "Burst") {
         effects.addBurst(event.d);
       } else if (event.t === "Spawned" && event.d.id === selfId && self) {
@@ -291,10 +291,10 @@ function start(connection, welcome, prediction) {
   // Mit einem Zeitkonto in der Bildschleife gibt es nur noch eine Uhr: der
   // Rest im Konto *ist* der Mischfaktor des Ausgleichs, exakt und ohne Drift.
   const TICK_DT = 1 / config.tick_rate;
-  let konto = 0;
+  let budget = 0;
 
   /** Schickt eine Eingabe und rechnet sie sofort voraus. */
-  function sendeEingabe() {
+  function sendNextInput() {
     const frame = input.nextFrame();
     // Was gerade zu sehen ist, gehoert zur Eingabe: der Server wertet Schuesse
     // gegen diesen Stand aus, statt gegen den aktuellen. Sonst muesste man
@@ -314,29 +314,30 @@ function start(connection, welcome, prediction) {
 
   // Selbstmessung der Bildzeit. Was ein Rechner traegt, laesst sich nicht
   // vorhersagen - also wird es gemessen, und zwar laufend. Die Entscheidung
-  // selbst steht in `grafik.js`; hier wird sie nur angewandt.
-  const regler = new Grafikregler(stufen.length, stufe);
-  const geregelt = wunsch === null && stufen.length > 1;
+  // selbst steht in `graphics.js`; hier wird sie nur angewandt.
+  const governor = new GraphicsGovernor(tiers.length, tier);
+  const governed = requested === null && tiers.length > 1;
 
-  function setzeStufe(neu, median) {
-    const alt = stufen[stufe];
-    stufe = neu;
-    const jetzt = stufen[stufe];
-    if (jetzt.schatten !== alt.schatten) setShadowsEnabled(scene, renderer, jetzt.schatten);
-    if (jetzt.pixel !== alt.pixel) {
-      renderer.setPixelRatio(jetzt.pixel);
+  function setTier(fresh, median) {
+    const previousTier = tiers[tier];
+    tier = fresh;
+    const currentTier = tiers[tier];
+    if (currentTier.shadows !== previousTier.shadows)
+      setShadowsEnabled(scene, renderer, currentTier.shadows);
+    if (currentTier.pixel !== previousTier.pixel) {
+      renderer.setPixelRatio(currentTier.pixel);
       // `setPixelRatio` allein aendert den Zeichenpuffer nicht - erst die
       // erneute Groessenangabe rechnet ihn um.
       resize();
     }
-    console.info(`Grafikstufe: ${jetzt.name} (${median.toFixed(0)} ms je Bild).`);
-    hud.notify(`Grafik: ${jetzt.name}`);
+    console.info(`Grafikstufe: ${currentTier.name} (${median.toFixed(0)} ms je Bild).`);
+    hud.notify(`Grafik: ${currentTier.name}`);
   }
 
   function judgeQuality(dt) {
-    if (!geregelt) return;
-    const wechsel = regler.bild(dt * 1000);
-    if (wechsel) setzeStufe(wechsel.stufe, wechsel.median);
+    if (!governed) return;
+    const switches = governor.recordFrame(dt * 1000);
+    if (switches) setTier(switches.tier, switches.median);
   }
 
   function render(now) {
@@ -351,14 +352,14 @@ function start(connection, welcome, prediction) {
     // Faellige Eingaben abarbeiten. Mehr als drei in einem Bild nimmt der
     // Server ohnehin nicht an - er begrenzt genauso, damit oefter Senden
     // nicht schneller macht.
-    konto += dt;
-    for (let i = 0; i < MAX_EINGABEN_JE_BILD && konto >= TICK_DT; i++) {
-      konto -= TICK_DT;
-      sendeEingabe();
+    budget += dt;
+    for (let i = 0; i < MAX_INPUTS_PER_FRAME && budget >= TICK_DT; i++) {
+      budget -= TICK_DT;
+      sendNextInput();
     }
     // Kein Rueckstand von einem Tabwechsel mitschleppen: aufholen kann man
     // ihn nicht, und ein volles Konto liesse den Ausgleich festkleben.
-    if (konto > TICK_DT) konto = TICK_DT;
+    if (budget > TICK_DT) budget = TICK_DT;
 
     players.update(connection.snapshots, now);
     effects.update(dt);
@@ -374,14 +375,14 @@ function start(connection, welcome, prediction) {
       // Glaettung ist dann nicht nur ueberfluessig, sondern schaedlich - sie
       // waere reine Verzoegerung. Ohne Vorhersage buegelt sie weiter die
       // Stufen der 30-Hz-Updates aus.
-      const vorher = prediction?.position(dt, konto / TICK_DT);
-      const ziel = vorher ?? { x: self.pos[0], y: self.pos[1], z: self.pos[2] };
-      targetPos.set(ziel.x, ziel.y + config.eye_height, ziel.z);
+      const before = prediction?.position(dt, budget / TICK_DT);
+      const target = before ?? { x: self.pos[0], y: self.pos[1], z: self.pos[2] };
+      targetPos.set(target.x, target.y + config.eye_height, target.z);
 
       if (!cameraPlaced || cameraPos.distanceTo(targetPos) > CAMERA_TELEPORT) {
         cameraPos.copy(targetPos);
         cameraPlaced = true;
-      } else if (vorher) {
+      } else if (before) {
         cameraPos.copy(targetPos);
       } else {
         // Zeitschrittunabhaengige Glaettung: bei jeder Bildrate gleich schnell.
@@ -414,27 +415,27 @@ function start(connection, welcome, prediction) {
   // Augenschein, und der taugt nicht als Beleg. Ohne den Schalter existiert
   // das Objekt nicht.
   if (params.get("messen") === "1") {
-    /** @type {any} */ (window).__messen = {
-      kamera: () => camera.position,
-      vorhergesagt: () => prediction?.position() ?? null,
+    /** @type {any} */ (window).__measure = {
+      camera: () => camera.position,
+      predicted: () => prediction?.position() ?? null,
       server: () => {
         const p = latestSelf();
         return p ? { x: p.pos[0], y: p.pos[1], z: p.pos[2] } : null;
       },
-      aktiv: () => prediction !== null,
-      korrektur: () => prediction?.lastError ?? null,
-      offen: () => prediction?.pendingCount ?? null,
-      statistik: () => prediction?.stats ?? null,
+      active: () => prediction !== null,
+      correction: () => prediction?.lastError ?? null,
+      pending: () => prediction?.pendingCount ?? null,
+      stats: () => prediction?.stats ?? null,
       // Fuer den Blick aufs Abschlussbild: die Rundenlogik selbst pruefen die
       // Rust-Tests, hier geht es nur darum, ob sich die Anzeige zeichnen
       // laesst. Ohne Zugriff darauf bliebe nur, eine ganze Runde zu spielen -
       // im Pruefstand mit zehn Bildern je Sekunde keine Option.
       hud: () => hud,
-      grafik: () => ({
-        stufe: stufen[stufe].name,
+      graphics: () => ({
+        tier: tiers[tier].name,
         pixel: renderer.getPixelRatio(),
-        schatten: renderer.shadowMap.enabled,
-        geregelt,
+        shadows: renderer.shadowMap.enabled,
+        governed,
       }),
     };
   }

@@ -147,28 +147,28 @@ export class Hud {
     // `mag_size` zufaellig null ist - das waere dieselbe Aussage aus zweiter
     // Hand.
     const weapon = self ? this.weaponById.get(self.weapon) : null;
-    const art = weapon?.ammo?.t ?? "Magazine";
+    const kind = weapon?.ammo?.t ?? "Magazine";
 
-    this.ammoBox.classList.toggle("hidden", art !== "Magazine");
-    this.heatBox.classList.toggle("hidden", art !== "Heat");
+    this.ammoBox.classList.toggle("hidden", kind !== "Magazine");
+    this.heatBox.classList.toggle("hidden", kind !== "Heat");
 
-    if (art === "Magazine") {
+    if (kind === "Magazine") {
       this._set(this.ammoCurrent, "text", String(local.ammo));
       this._set(this.ammoMax, "text", String(local.mag_size));
       this.ammoBox.classList.toggle("empty", local.ammo === 0);
-    } else if (art === "Heat") {
-      const heiss = local.heat_lock > 0;
+    } else if (kind === "Heat") {
+      const hot = local.heat_lock > 0;
       this._set(this.heatFill, "width", `${Math.min(1, local.heat) * 100}%`);
-      this.heatBox.classList.toggle("warm", !heiss && local.heat > 0.6);
-      this.heatBox.classList.toggle("ueberhitzt", heiss);
+      this.heatBox.classList.toggle("warm", !hot && local.heat > 0.6);
+      this.heatBox.classList.toggle("ueberhitzt", hot);
       this._set(
         this.heatLabel,
         "text",
-        heiss ? `Abkühlen ${local.heat_lock.toFixed(1)} s` : "Betriebstemperatur",
+        hot ? `Abkühlen ${local.heat_lock.toFixed(1)} s` : "Betriebstemperatur",
       );
     }
 
-    this.reloading.classList.toggle("hidden", !local.reloading || art !== "Magazine");
+    this.reloading.classList.toggle("hidden", !local.reloading || kind !== "Magazine");
 
     this._cooldown(
       this.dash,
@@ -218,12 +218,12 @@ export class Hud {
     this._fpsBuf.push(dt);
     if (this._fpsBuf.length < 30) return;
 
-    const mittel = this._fpsBuf.reduce((a, b) => a + b, 0) / this._fpsBuf.length;
-    const schlimmster = Math.max(...this._fpsBuf);
+    const mean = this._fpsBuf.reduce((a, b) => a + b, 0) / this._fpsBuf.length;
+    const worst = Math.max(...this._fpsBuf);
     this._fpsBuf.length = 0;
 
-    const fps = Math.round(1 / mittel);
-    const min = Math.round(1 / schlimmster);
+    const fps = Math.round(1 / mean);
+    const min = Math.round(1 / worst);
     // Nur zeigen, wenn der Ausreisser deutlich unter dem Mittel liegt.
     this.fps.textContent = min < fps * 0.7 ? `${fps} (min ${min})` : String(fps);
   }
@@ -279,33 +279,33 @@ export class Hud {
    * Zaehler im Browser liefe irgendwann anders als der Server, und dann stuende
    * auf dem Bildschirm eine Zahl, die nichts bedeutet.
    *
-   * @param {object} stand `snapshot.match`
+   * @param {object} state `snapshot.match`
    * @param {Array}  players Spieler desselben Snapshots, fuer den Endstand
    */
-  setMatchState(stand, players) {
-    if (!stand) return;
+  setMatchState(state, players) {
+    if (!state) return;
 
-    this._set(this.scoreMarketing, "text", String(stand.score_marketing));
-    this._set(this.scoreEngineering, "text", String(stand.score_engineering));
+    this._set(this.scoreMarketing, "text", String(state.score_marketing));
+    this._set(this.scoreEngineering, "text", String(state.score_engineering));
     // Die Grenze steht in der Konfiguration, nicht im Snapshot: sie aendert
     // sich nie, und dreissigmal je Sekunde dieselbe Zahl zu schicken waere
     // Verschwendung.
     this._set(this.scoreLimit, "text", String(this.config.score_limit));
 
-    const vorbei = stand.phase === "Over";
-    this.matchEnd.classList.toggle("hidden", !vorbei);
-    if (!vorbei) return;
+    const over = state.phase === "Over";
+    this.matchEnd.classList.toggle("hidden", !over);
+    if (!over) return;
 
-    this.matchWinner.textContent = stand.winner ?? "Niemand";
-    this.matchWinner.className = TEAM_CLASS[stand.winner] ?? "";
-    this.matchSubtitle.textContent = stand.winner
+    this.matchWinner.textContent = state.winner ?? "Niemand";
+    this.matchWinner.className = TEAM_CLASS[state.winner] ?? "";
+    this.matchSubtitle.textContent = state.winner
       ? "hat das Quartal gewonnen"
       : "das Quartal endet ohne Ergebnis";
-    this.finalMarketing.textContent = String(stand.score_marketing);
-    this.finalEngineering.textContent = String(stand.score_engineering);
+    this.finalMarketing.textContent = String(state.score_marketing);
+    this.finalEngineering.textContent = String(state.score_engineering);
     // Aufgerundet: bei 0.4 Sekunden Rest steht "1", und die Anzeige springt
     // nicht auf 0, waehrend noch etwas kommt.
-    this._set(this.matchTimer, "text", String(Math.ceil(stand.remaining)));
+    this._set(this.matchTimer, "text", String(Math.ceil(state.remaining)));
     this._fillTable(this.matchBody, players);
   }
 

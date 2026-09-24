@@ -11,7 +11,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --project jsconfig.json",
-    "test": "node --test scripts/client-logic.test.mjs scripts/grafikregler.mjs scripts/laufanimation.mjs scripts/zwischenbild.mjs",
+    "test": "node --test scripts/client-logic.test.mjs scripts/graphics-governor.test.mjs scripts/walk-cycle.test.mjs scripts/frame-blending.test.mjs",
     "check": "npm run lint && npm run format:check && npm run typecheck && npm test"
   },
   "devDependencies": {

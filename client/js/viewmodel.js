@@ -26,7 +26,7 @@ const RELOAD_DROP = 0.34;
  * verpasst hat. Die Keilspitze sitzt schraeg wie bei einem echten Marker -
  * das eine gedrehte Teil, das die ganze Silhouette traegt.
  */
-function buildTextmarker() {
+function buildHighlighter() {
   const g = new THREE.Group();
 
   // --- Markerkoerper ---
@@ -70,7 +70,7 @@ function buildTextmarker() {
  * Muendungen, der Hebel ist der Spannhebel, und der ausklappbare
  * Papieranschlag dient als Visierschiene.
  */
-function buildLocher() {
+function buildHolePunch() {
   const g = new THREE.Group();
 
   // --- Grundplatte und Korpus ---
@@ -154,7 +154,7 @@ function buildEmail() {
  * und einem Manometer, das die Hitze anzeigt. Die Duesen sitzen in einer
  * eigenen Gruppe, damit sie sich beim Feuern drehen koennen.
  */
-function buildKaffee() {
+function buildCoffeeMachine() {
   const g = new THREE.Group();
 
   // Gehaeuse. Kurz genug, dass das Duesenbuendel davor sichtbar bleibt - in
@@ -173,18 +173,18 @@ function buildKaffee() {
   triggerGroup(g, { y: -0.045, z: 0.03 });
 
   // Duesenbuendel: sechs Rohre im Kreis.
-  const duesen = new THREE.Group();
-  duesen.position.set(0, -0.005, -0.155);
+  const nozzles = new THREE.Group();
+  nozzles.position.set(0, -0.005, -0.155);
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
-    part(duesen, {
+    part(nozzles, {
       w: 0.015, h: 0.015, d: 0.16, color: MAT.steel,
       x: Math.cos(a) * 0.029, y: Math.sin(a) * 0.029,
     });
   }
-  part(duesen, { w: 0.028, h: 0.028, d: 0.02, color: MAT.gunmetal, z: 0.075 });
-  g.add(duesen);
-  g.userData.duesen = duesen;
+  part(nozzles, { w: 0.028, h: 0.028, d: 0.02, color: MAT.gunmetal, z: 0.075 });
+  g.add(nozzles);
+  g.userData.nozzles = nozzles;
   return g;
 }
 
@@ -198,22 +198,22 @@ function buildWhiteboard() {
   const g = new THREE.Group();
 
   // Die Platte, quer und schraeg, damit sie nicht das halbe Bild fuellt.
-  const platte = new THREE.Group();
-  platte.position.set(-0.02, 0.04, -0.16);
-  platte.rotation.set(0.12, -0.34, 0.05);
-  part(platte, { w: 0.46, h: 0.34, d: 0.012, color: MAT.felt });
+  const slab = new THREE.Group();
+  slab.position.set(-0.02, 0.04, -0.16);
+  slab.rotation.set(0.12, -0.34, 0.05);
+  part(slab, { w: 0.46, h: 0.34, d: 0.012, color: MAT.felt });
   // Rahmen ringsum.
-  part(platte, { w: 0.48, h: 0.022, d: 0.02, color: MAT.steel, y: 0.176 });
-  part(platte, { w: 0.48, h: 0.022, d: 0.02, color: MAT.steel, y: -0.176 });
-  part(platte, { w: 0.022, h: 0.36, d: 0.02, color: MAT.steel, x: 0.235 });
-  part(platte, { w: 0.022, h: 0.36, d: 0.02, color: MAT.steel, x: -0.235 });
+  part(slab, { w: 0.48, h: 0.022, d: 0.02, color: MAT.steel, y: 0.176 });
+  part(slab, { w: 0.48, h: 0.022, d: 0.02, color: MAT.steel, y: -0.176 });
+  part(slab, { w: 0.022, h: 0.36, d: 0.02, color: MAT.steel, x: 0.235 });
+  part(slab, { w: 0.022, h: 0.36, d: 0.02, color: MAT.steel, x: -0.235 });
   // Stiftablage mit einem Marker darauf.
-  part(platte, { w: 0.16, h: 0.014, d: 0.03, color: MAT.steel, y: -0.184, z: 0.016 });
-  part(platte, { w: 0.09, h: 0.014, d: 0.014, color: MAT.marker, y: -0.17, z: 0.022 });
+  part(slab, { w: 0.16, h: 0.014, d: 0.03, color: MAT.steel, y: -0.184, z: 0.016 });
+  part(slab, { w: 0.09, h: 0.014, d: 0.014, color: MAT.marker, y: -0.17, z: 0.022 });
   // Ein Rest vom letzten Meeting.
-  part(platte, { w: 0.16, h: 0.008, d: 0.002, color: 0x3f7fd0, x: -0.06, y: 0.06, z: -0.008 });
-  part(platte, { w: 0.1, h: 0.008, d: 0.002, color: 0x3f7fd0, x: -0.09, y: 0.03, z: -0.008 });
-  g.add(platte);
+  part(slab, { w: 0.16, h: 0.008, d: 0.002, color: 0x3f7fd0, x: -0.06, y: 0.06, z: -0.008 });
+  part(slab, { w: 0.1, h: 0.008, d: 0.002, color: 0x3f7fd0, x: -0.09, y: 0.03, z: -0.008 });
+  g.add(slab);
 
   // Zwei Haltegriffe, an der Unterkante statt mitten auf der Flaeche: von der
   // Kamera aus liegen sie vor der Tafel, und auf halber Hoehe sahen sie aus
@@ -233,8 +233,8 @@ function buildWhiteboard() {
  * vergass, bekam kommentarlos den Vorgabewert.
  */
 const WEAPONS = {
-  Highlighter: { build: buildTextmarker, recoil: 0.035 },
-  HolePunch: { build: buildLocher, recoil: 0.12 },
+  Highlighter: { build: buildHighlighter, recoil: 0.035 },
+  HolePunch: { build: buildHolePunch, recoil: 0.12 },
   // `offset` ruecht sperrige Modelle ins Bild. Die Ruhelage ist auf eine
   // Pistole ausgelegt; ein Klemmbrett, ein Bruehkopf und eine halbe
   // Wandtafel haben ihre Masse woanders und ragen sonst unten aus dem Bild.
@@ -243,7 +243,7 @@ const WEAPONS = {
   Email: { build: buildEmail, recoil: 0.06, offset: [-0.03, 0.07, 0.0] },
   // Wenig Rueckstoss je Schuss, aber sechzehn Schuss je Sekunde - in der
   // Summe zittert die Waffe dauernd.
-  CoffeeMachine: { build: buildKaffee, recoil: 0.022, offset: [-0.05, 0.05, -0.02] },
+  CoffeeMachine: { build: buildCoffeeMachine, recoil: 0.022, offset: [-0.05, 0.05, -0.02] },
   // Weit nach links und oben: das Whiteboard soll die Sicht wirklich
   // einschraenken, sonst waere es ein Schild ohne Preis.
   Whiteboard: { build: buildWhiteboard, recoil: 0, offset: [-0.19, 0.16, -0.02] },

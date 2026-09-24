@@ -29,7 +29,7 @@ describe("mergeSnapshot", () => {
 });
 
 describe("Rangliste", () => {
-  const spieler = (id, name, kills, deaths, team = "Marketing") => ({
+  const player = (id, name, kills, deaths, team = "Marketing") => ({
     id,
     name,
     kills,
@@ -39,10 +39,10 @@ describe("Rangliste", () => {
 
   test("sortiert nach Abschuessen, dann wenigen Toden, dann Name", () => {
     const ranked = rankPlayers([
-      spieler(1, "Bea", 2, 5),
-      spieler(2, "Ada", 2, 5),
-      spieler(3, "Cem", 4, 9),
-      spieler(4, "Dora", 2, 1),
+      player(1, "Bea", 2, 5),
+      player(2, "Ada", 2, 5),
+      player(3, "Cem", 4, 9),
+      player(4, "Dora", 2, 1),
     ]);
     assert.deepEqual(
       ranked.map((p) => p.name),
@@ -51,29 +51,29 @@ describe("Rangliste", () => {
   });
 
   test("veraendert die uebergebene Liste nicht", () => {
-    const liste = [spieler(1, "B", 0, 0), spieler(2, "A", 1, 0)];
-    rankPlayers(liste);
+    const list = [player(1, "B", 0, 0), player(2, "A", 1, 0)];
+    rankPlayers(list);
     assert.deepEqual(
-      liste.map((p) => p.name),
+      list.map((p) => p.name),
       ["B", "A"],
     );
   });
 
   test("Fingerabdruck bleibt gleich, solange sich nichts Sichtbares aendert", () => {
-    const a = rankPlayers([spieler(1, "Ada", 1, 0), spieler(2, "Bo", 0, 0)]);
-    const b = rankPlayers([spieler(2, "Bo", 0, 0), spieler(1, "Ada", 1, 0)]);
+    const a = rankPlayers([player(1, "Ada", 1, 0), player(2, "Bo", 0, 0)]);
+    const b = rankPlayers([player(2, "Bo", 0, 0), player(1, "Ada", 1, 0)]);
     assert.equal(tableKey(a), tableKey(b));
   });
 
   test("Fingerabdruck aendert sich mit Abschuessen, Toden, Namen und Team", () => {
-    const basis = tableKey([spieler(1, "Ada", 1, 0)]);
-    for (const anders of [
-      spieler(1, "Ada", 2, 0),
-      spieler(1, "Ada", 1, 1),
-      spieler(1, "Ida", 1, 0),
-      spieler(1, "Ada", 1, 0, "Engineering"),
+    const basis = tableKey([player(1, "Ada", 1, 0)]);
+    for (const different of [
+      player(1, "Ada", 2, 0),
+      player(1, "Ada", 1, 1),
+      player(1, "Ida", 1, 0),
+      player(1, "Ada", 1, 0, "Engineering"),
     ]) {
-      assert.notEqual(tableKey([anders]), basis);
+      assert.notEqual(tableKey([different]), basis);
     }
   });
 });

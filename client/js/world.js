@@ -235,10 +235,10 @@ export function buildScene(map, { shadows = true } = {}) {
   // Licht und Ziel wandern mit der Mitte des Grundrisses. Der Anbau im Osten
   // reicht bis x = 29; bliebe das Ziel im Ursprung, fiele er aus der
   // Schattenkamera und waere als einziger Raum schattenlos.
-  const mitteX = middle(map.bounds, 0);
-  const mitteZ = middle(map.bounds, 2);
-  key.position.set(mitteX + 7, 26, mitteZ + 5);
-  key.target.position.set(mitteX, 0, mitteZ);
+  const centerX = middle(map.bounds, 0);
+  const centerZ = middle(map.bounds, 2);
+  key.position.set(centerX + 7, 26, centerZ + 5);
+  key.target.position.set(centerX, 0, centerZ);
   scene.add(key.target);
   key.castShadow = shadows;
   key.shadow.mapSize.set(1024, 1024);

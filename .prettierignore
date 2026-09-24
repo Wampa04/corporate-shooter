@@ -1,6 +1,6 @@
 # Prettier formatiert die Logik des Clients und die Pruefskripte.
 #
-# Ausgenommen sind die Modelldaten: viewmodel.js, parts.js und figur.js
+# Ausgenommen sind die Modelldaten: viewmodel.js, parts.js und figure.js
 # beschreiben Waffen und Figuren als dichte Zeilen aus Masszahlen, und eine
 # Zeile je Bauteil ist dort lesbarer als die zehn, die Prettier daraus machte.
 # HTML und CSS sind von Hand gesetzt. Rust formatiert rustfmt, vendor ist
@@ -11,7 +11,7 @@
 !client/js/*.js
 client/js/viewmodel.js
 client/js/parts.js
-client/js/figur.js
+client/js/figure.js
 !scripts/
 !scripts/*.mjs
 !crates/

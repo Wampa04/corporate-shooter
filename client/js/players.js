@@ -7,8 +7,8 @@
 // statt in die Zukunft raten zu muessen.
 
 import * as THREE from "../vendor/three.module.min.js";
-import { baueFigur, legeFigurHin, stelleFigur } from "./figur.js";
-import { ruhe, schritt } from "./laufzyklus.js";
+import { buildFigure, layFigureDown, poseFigure } from "./figure.js";
+import { rest, advanceWalk } from "./walk-cycle.js";
 
 /**
  * Teamfarbe als Zahl fuer Three.
@@ -105,10 +105,10 @@ function makeNameTag(name, color) {
 /** Eine Figur samt Namensschild. */
 function makeAvatar(state) {
   const color = teamColor(state.team);
-  const schild = makeNameTag(state.name, color);
-  const figur = { ...baueFigur(color), schild };
-  figur.wurzel.add(schild);
-  return figur;
+  const tag = makeNameTag(state.name, color);
+  const figure = { ...buildFigure(color), tag };
+  figure.root.add(tag);
+  return figure;
 }
 
 export class PlayerViews {
@@ -122,9 +122,9 @@ export class PlayerViews {
     this.selfId = selfId;
     this.delayMs = Math.max(INTERPOLATION_MS, (2 * 1000) / tickRate);
     /**
-     * @type {Map<number, {group: THREE.Group, figur: object, team: string,
-     *                     name: string, lauf: {phase: number, ausschlag: number},
-     *                     gesehen: boolean}>}
+     * @type {Map<number, {group: THREE.Group, figure: object, team: string,
+     *                     name: string, walk: {phase: number, amplitude: number},
+     *                     seen: boolean}>}
      *
      * `audio.js` liest diese Karte fuer die Schritte der Mitspieler und
      * verlaesst sich auf `group.position` und `group.visible`.
@@ -147,8 +147,8 @@ export class PlayerViews {
     // haengt ohnehin schon an `now`, und ein zweiter Parameter waere eine
     // zweite Gelegenheit, ihn falsch zu uebergeben. Gedeckelt gegen den
     // Sprung nach einem Tabwechsel.
-    const dt = this._zuletzt === undefined ? 0 : Math.min((now - this._zuletzt) / 1000, 0.1);
-    this._zuletzt = now;
+    const dt = this._lastNow === undefined ? 0 : Math.min((now - this._lastNow) / 1000, 0.1);
+    this._lastNow = now;
 
     const target = now - this.delayMs;
     const [older, newer, t] = bracket(snapshots, target);
@@ -165,15 +165,15 @@ export class PlayerViews {
         entry = undefined;
       }
       if (!entry) {
-        const figur = makeAvatar(state);
+        const figure = makeAvatar(state);
         entry = {
-          group: figur.wurzel,
-          figur,
+          group: figure.root,
+          figure,
           team: state.team,
           name: state.name,
-          lauf: ruhe(),
+          walk: rest(),
           /** Ob die Figur schon einmal stand - erst dann gibt es eine Strecke. */
-          gesehen: false,
+          seen: false,
         };
         this.scene.add(entry.group);
         this.avatars.set(id, entry);
@@ -182,33 +182,33 @@ export class PlayerViews {
       // Die waagerechte Strecke seit dem letzten Bild treibt den Laufzyklus.
       // Sie kommt aus der Position, die die Interpolation ohnehin liefert -
       // eine zweite Messung waere eine zweite Quelle fuer dasselbe.
-      const vorher = entry.group.position;
-      let strecke = entry.gesehen
-        ? Math.hypot(state.pos[0] - vorher.x, state.pos[2] - vorher.z)
+      const lastPos = entry.group.position;
+      let distance = entry.seen
+        ? Math.hypot(state.pos[0] - lastPos.x, state.pos[2] - lastPos.z)
         : 0;
       // Ein Sprung ist kein Weg. Beim Wiedereinstieg liegen dreissig Meter
       // zwischen zwei Bildern; ungedeckelt drehte die Figur dabei zwanzig
       // Schrittzyklen in einem einzigen Bild. Dieselbe Grenze, mit der die
       // Interpolation weiter unten einen Sprung von einer Bewegung
       // unterscheidet.
-      if (strecke > TELEPORT_DISTANCE) strecke = 0;
-      entry.gesehen = true;
+      if (distance > TELEPORT_DISTANCE) distance = 0;
+      entry.seen = true;
 
       entry.group.position.set(state.pos[0], state.pos[1], state.pos[2]);
       entry.group.rotation.y = state.yaw;
 
       if (state.alive) {
-        entry.lauf = schritt(entry.lauf, strecke, dt);
-        stelleFigur(entry.figur.glieder, entry.figur.koerper, entry.lauf, state.pitch ?? 0);
+        entry.walk = advanceWalk(entry.walk, distance, dt);
+        poseFigure(entry.figure.limbs, entry.figure.torso, entry.walk, state.pitch ?? 0);
       } else {
         // Tote bleiben liegen, wo sie gefallen sind, statt zu verschwinden:
         // wer um die Ecke kommt, soll sehen, dass hier gerade jemand
         // freigestellt wurde. Das Namensschild geht weg - es haengt an der
         // Wurzel und stuende sonst zwei Meter ueber einer Leiche in der Luft.
-        entry.lauf = ruhe();
-        legeFigurHin(entry.figur.glieder, entry.figur.koerper);
+        entry.walk = rest();
+        layFigureDown(entry.figure.limbs, entry.figure.torso);
       }
-      entry.figur.schild.visible = state.alive;
+      entry.figure.tag.visible = state.alive;
     }
 
     // Wer nicht mehr im Snapshot steht, hat das Unternehmen verlassen.

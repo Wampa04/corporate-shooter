@@ -11,11 +11,11 @@
 # nach einer Protokollaenderung liegen, lehnte es die Konfiguration ab und die
 # Vorhersage schaltete sich still ab. Genau das ist einmal passiert.
 #
-#     scripts/gleichlauf.sh
+#     scripts/lockstep.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-ARBEIT="$(mktemp -d "${TMPDIR:-/tmp}/corpshoot-gleichlauf.XXXXXX")"
+ARBEIT="$(mktemp -d "${TMPDIR:-/tmp}/corpshoot-lockstep.XXXXXX")"
 trap 'rm -rf "$ARBEIT"' EXIT
 WASM=target/wasm32-unknown-unknown/wasm/predict.wasm
 EINGECHECKT=client/vendor/predict.wasm
@@ -31,13 +31,13 @@ rustup target list --installed | grep -q wasm32-unknown-unknown \
 cargo build --quiet --locked -p predict --target wasm32-unknown-unknown --profile wasm
 
 echo "3/5  Bahn in Rust aufzeichnen"
-PREDICT_FIXTURES="$ARBEIT" cargo test --quiet --locked -p predict --test gleichlauf >/dev/null
+PREDICT_FIXTURES="$ARBEIT" cargo test --quiet --locked -p predict --test lockstep >/dev/null
 
 echo "4/5  Dieselben Eingaben durch das frisch uebersetzte Modul"
-node crates/predict/tests/gleichlauf.mjs "$ARBEIT" "$WASM"
+node crates/predict/tests/lockstep.mjs "$ARBEIT" "$WASM"
 
 echo "5/5  Dieselben Eingaben durch das eingecheckte Modul"
-if ! node crates/predict/tests/gleichlauf.mjs "$ARBEIT" "$EINGECHECKT"; then
+if ! node crates/predict/tests/lockstep.mjs "$ARBEIT" "$EINGECHECKT"; then
   echo
   echo "Das eingecheckte $EINGECHECKT passt nicht mehr zum Quelltext."
   echo "Neu uebersetzen und einchecken:"
