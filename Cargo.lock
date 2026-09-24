@@ -498,7 +498,7 @@ dependencies = [
  "arrayvec",
  "bevy_reflect",
  "derive_more",
- "glam",
+ "glam 0.32.1",
  "itertools",
  "libm",
  "rand 0.10.2",
@@ -551,7 +551,7 @@ dependencies = [
  "downcast-rs",
  "erased-serde",
  "foldhash",
- "glam",
+ "glam 0.32.1",
  "indexmap",
  "serde",
  "smallvec",
@@ -1247,6 +1247,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.33.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35accb17301a4874ea893c685ca86bc1e25f92499382adc17eec9a91f7803cfb"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "hash32"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1763,7 +1772,7 @@ dependencies = [
 name = "predict"
 version = "0.1.0"
 dependencies = [
- "glam",
+ "glam 0.33.9",
  "protocol",
  "serde_json",
  "sim-core",
@@ -1791,7 +1800,7 @@ dependencies = [
 name = "protocol"
 version = "0.1.0"
 dependencies = [
- "glam",
+ "glam 0.33.9",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -2086,7 +2095,7 @@ dependencies = [
 name = "sim-core"
 version = "0.1.0"
 dependencies = [
- "glam",
+ "glam 0.33.9",
  "protocol",
 ]
 
