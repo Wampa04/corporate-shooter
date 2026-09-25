@@ -161,7 +161,7 @@ export function layFigureDown(limbs, torso) {
   // Anheben bringt sie um ihre halbe Dicke ueber den Boden.
   torso.position.y = 0.16;
   limbs.head.rotation.x = -0.35;
-  for (const side of ["links", "rechts"]) {
+  for (const side of ["left", "right"]) {
     // Beine leicht angewinkelt und gespreizt, Arme vom Koerper weg: sonst
     // liegt da ein Brett.
     limbs.legs[side].top.rotation.x = -0.22;
