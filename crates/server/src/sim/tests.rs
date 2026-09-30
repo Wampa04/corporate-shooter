@@ -1608,6 +1608,57 @@ fn no_shots_during_intermission() {
 }
 
 #[test]
+fn email_in_flight_does_no_damage_during_intermission() {
+    // `no_shots_during_intermission` deckt nur neue Schuesse ab. Eine E-Mail,
+    // die beim Rundenende schon unterwegs ist, flog frueher weiter und traf -
+    // der Endstand aenderte sich, waehrend er auf dem Bildschirm stand.
+    let mut app = app_with(match_config(30, 10.0), arena());
+    let shooter = add_player(&mut app, 1, Team::Engineering, Vec3::ZERO, 0.0);
+    let target = add_player(
+        &mut app,
+        2,
+        Team::Marketing,
+        Vec3::new(0.0, 0.0, -12.0),
+        0.0,
+    );
+    equip(&mut app, shooter, protocol::WeaponId::Email);
+
+    let launched = single_shot(&mut app, shooter, 1);
+    assert!(
+        launched
+            .iter()
+            .any(|e| matches!(e, GameEvent::Launched { .. })),
+        "kein Abschuss gemeldet - der Test misst nichts"
+    );
+
+    // Die Runde endet, waehrend die E-Mail noch fliegt. Von Hand gesetzt
+    // statt erspielt: ein Abschuss mit einer zweiten Waffe braeuchte einen
+    // Waffenwechsel, und der verschoebe den Zeitpunkt.
+    {
+        let mut current = app.world_mut().resource_mut::<matchstate::Match>();
+        current.0.phase = protocol::Phase::Over;
+        current.0.remaining = 10.0;
+    }
+
+    // Zwoelf Meter bei 22 m/s sind gut eine halbe Sekunde.
+    let events = run_s(&mut app, 1.2);
+    assert!(
+        events.iter().any(|e| matches!(e, GameEvent::Burst { .. })),
+        "die E-Mail ist nie zerplatzt - dann bliebe sie beim Client in der Luft"
+    );
+    assert!(
+        !events.iter().any(|e| matches!(e, GameEvent::Hit { .. })),
+        "in der Pause getroffen"
+    );
+    assert_eq!(
+        vitals(&app, target).health,
+        app.world().resource::<Config>().max_health,
+        "in der Pause Schaden genommen"
+    );
+    assert_eq!(vitals(&app, shooter).kills, 0);
+}
+
+#[test]
 fn simultaneous_respawn_uses_different_points() {
     // Beim Neustart einer Runde steigen alle im selben Tick ein. Rechneten sie
     // alle mit demselben Bild, waehlten sie aus denselben drei sichersten

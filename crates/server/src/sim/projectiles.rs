@@ -86,9 +86,17 @@ pub fn spawn(
 /// Läuft **nach** `fire_weapons` und **vor** `resolve_deaths`: ein Geschoss,
 /// das in diesem Tick einschlägt, richtet seinen Schaden auch in diesem Tick
 /// an. Sonst hinkte jede Explosion einen Tick hinterher.
+///
+/// In der Pause fliegen Geschosse weiter und zerplatzen wie gewohnt, richten
+/// aber nichts mehr an. Die Sperre in `fire_weapons` haelt nur neue Schuesse
+/// auf; eine E-Mail, die beim Rundenende schon unterwegs war, traf sonst noch
+/// bis zu drei Sekunden lang - und schrieb Abschuesse in einen Endstand, der
+/// stehen bleiben soll.
+#[allow(clippy::too_many_arguments)]
 pub fn advance(
     config: Res<Config>,
     level: Res<Level>,
+    current_match: Res<super::matchstate::Match>,
     mut commands: Commands,
     mut events: ResMut<EventLog>,
     mut pending: ResMut<PendingDamage>,
@@ -97,6 +105,7 @@ pub fn advance(
 ) {
     let dt = config.tick_dt();
     let half = player_half_extents(config.player_radius, config.player_height);
+    let harmless = !current_match.is_running();
 
     for (entity, mut p) in &mut in_flight {
         let spec = config.weapon(p.weapon);
@@ -165,6 +174,16 @@ pub fn advance(
             continue;
         }
 
+        events.push(GameEvent::Burst {
+            projectile: p.id,
+            pos: p.pos,
+            radius: splash_radius,
+        });
+        commands.entity(entity).despawn();
+        if harmless {
+            continue;
+        }
+
         // Direkter Treffer zusätzlich zum Umkreis: wer trifft, soll mehr davon
         // haben als wer danebenwirft.
         if let Some(candidate) = hit_entity {
@@ -203,13 +222,6 @@ pub fn advance(
                 weapon: p.weapon,
             });
         }
-
-        events.push(GameEvent::Burst {
-            projectile: p.id,
-            pos: p.pos,
-            radius: splash_radius,
-        });
-        commands.entity(entity).despawn();
     }
 }
 
