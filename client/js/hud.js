@@ -239,8 +239,7 @@ export class Hud {
    * Geteilt zwischen der Rangliste auf Tab und dem Abschlussbild: zwei Kopien
    * derselben Darstellung liefen sonst frueher oder spaeter auseinander, und
    * ausgerechnet der Endstand ist die Zahl, die am Ende zaehlt.
-   */
-  /**
+   *
    * @param {HTMLElement} tbody
    * @param {Array<{id: number, team: string, name: string, kills: number, deaths: number}>} players
    */
