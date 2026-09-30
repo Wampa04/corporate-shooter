@@ -81,6 +81,28 @@ fn deliver(sink: &Sender<Encoded>, message: Encoded) -> Delivery {
     }
 }
 
+/// Legt zwei zusammengehoerige Nachrichten ab: beide oder keine.
+///
+/// Zwei einzelne [`deliver`] reichen dafuer nicht. Nimmt die Warteschlange
+/// die erste noch an und ist danach voll, laege ein `Local` ohne seinen
+/// Snapshot darin. Deshalb wird vorher geprueft, ob beide Platz haben.
+///
+/// Das ist kein Wettlauf: in die Warteschlange schreibt nur die Simulation,
+/// und das nie gleichzeitig (`ingest` ist exklusiv, `broadcast` laeuft
+/// danach). Die Schreibaufgabe kann zwischen Pruefen und Ablegen nur Platz
+/// freimachen, keinen wegnehmen.
+fn deliver_pair(sink: &Sender<Encoded>, first: Encoded, second: Encoded) -> Delivery {
+    if sink.is_closed() {
+        return Delivery::Done;
+    }
+    if sink.capacity() < 2 {
+        return Delivery::Stalled;
+    }
+    let _ = deliver(sink, first);
+    let _ = deliver(sink, second);
+    Delivery::Done
+}
+
 /// Entfernt einen Client, der nicht mehr mitliest.
 ///
 /// Mit dem Sender verschwindet auch das Ende der Warteschlange; die
@@ -294,11 +316,45 @@ fn broadcast(
         });
         // Beide oder keiner: ein `Local` ohne seinen Snapshot liefe beim
         // Client ins Leere, ein Snapshot ohne `Local` ebenso.
-        let stalled = matches!(deliver(sink, local), Delivery::Stalled)
-            || matches!(deliver(sink, snapshot.clone()), Delivery::Stalled);
-        if stalled {
+        if let Delivery::Stalled = deliver_pair(sink, local, snapshot.clone()) {
             let id = player.id;
             commands.queue(move |world: &mut World| drop_stalled(world, id));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc;
+
+    use super::{Delivery, Encoded, deliver_pair};
+
+    #[test]
+    fn pair_goes_in_whole_or_not_at_all() {
+        // Platz fuer eine Nachricht: frueher ging das `Local` hinein und der
+        // Snapshot nicht.
+        let (tx, mut rx) = mpsc::channel(1);
+        let result = deliver_pair(&tx, Encoded::from("local"), Encoded::from("snapshot"));
+        assert!(matches!(result, Delivery::Stalled));
+        assert!(
+            rx.try_recv().is_err(),
+            "eine Haelfte des Paars liegt allein da"
+        );
+
+        let (tx, mut rx) = mpsc::channel(2);
+        let result = deliver_pair(&tx, Encoded::from("local"), Encoded::from("snapshot"));
+        assert!(matches!(result, Delivery::Done));
+        assert_eq!(rx.try_recv().unwrap().as_str(), "local");
+        assert_eq!(rx.try_recv().unwrap().as_str(), "snapshot");
+    }
+
+    #[test]
+    fn closed_queue_is_not_a_stall() {
+        // Ist der Client schon weg, folgt `Disconnected` von selbst - eine
+        // Warnung "liest nicht mehr mit" waere dann falsch.
+        let (tx, rx) = mpsc::channel::<Encoded>(1);
+        drop(rx);
+        let result = deliver_pair(&tx, Encoded::from("local"), Encoded::from("snapshot"));
+        assert!(matches!(result, Delivery::Done));
     }
 }
