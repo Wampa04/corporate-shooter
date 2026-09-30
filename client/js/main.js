@@ -118,7 +118,7 @@ function start(connection, welcome, prediction) {
   // Schattenkarte reicht fuer ein Stockwerk und kostet auch auf einer
   // eingebauten Grafikeinheit kaum etwas.
   //
-  // `?graphics=schoen` haelt die hoechste Stufe fest, `?graphics=simple` die
+  // `?grafik=schoen` haelt die hoechste Stufe fest, `?grafik=einfach` die
   // niedrigste. Ohne Angabe regelt die Messung weiter unten laufend nach.
   const params = new URLSearchParams(location.search);
   const requested = params.get("grafik");
