@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { rankPlayers, tableKey } from "../client/js/hud.js";
-import { mergeSnapshot } from "../client/js/net.js";
+import { loadMap, mapMatches, mergeSnapshot } from "../client/js/net.js";
 
 describe("mergeSnapshot", () => {
   test("fuehrt Local und Snapshot desselben Ticks zusammen", () => {
@@ -75,5 +75,38 @@ describe("Rangliste", () => {
     ]) {
       assert.notEqual(tableKey([different]), basis);
     }
+  });
+});
+
+describe("Karte ueber HTTP", () => {
+  const file = { version: "abc", map: { name: "Test" } };
+
+  test("liefert den Inhalt von /map.json", async () => {
+    let asked = null;
+    const get = async (url) => {
+      asked = url;
+      return { ok: true, status: 200, json: async () => file };
+    };
+    assert.deepEqual(await loadMap(get), file);
+    assert.equal(asked, "/map.json");
+  });
+
+  test("meldet einen Fehler des Servers verstaendlich", async () => {
+    const get = async () => ({ ok: false, status: 503, json: async () => ({}) });
+    await assert.rejects(loadMap(get), /HTTP 503/);
+  });
+
+  test("meldet einen unerreichbaren Server verstaendlich", async () => {
+    const get = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+    await assert.rejects(loadMap(get), /nicht erreichbar/);
+  });
+
+  test("passt nur zum Welcome mit demselben Stand", () => {
+    // Zwischen Seitenaufruf und Beitritt kann der Server mit einer anderen
+    // Karte neu gestartet sein.
+    assert.equal(mapMatches(file, { map_version: "abc" }), true);
+    assert.equal(mapMatches(file, { map_version: "def" }), false);
   });
 });

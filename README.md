@@ -93,9 +93,11 @@ Was dabei zu beachten ist:
   Skripte, keine Inline-Skripte, keine Einbettung in fremde Seiten.
 * Der Client wird gzip-komprimiert ausgeliefert — statt 800 KiB gehen rund
   200 KiB über die Leitung, der Löwenanteil davon Three.js.
-* Die Kartenbeschreibung wiegt beim Beitreten rund 109 KiB und geht
-  unkomprimiert über die WebSocket-Verbindung. Einmal je Beitritt, also
-  vertretbar; ein Kandidat für später.
+* Die Kartenbeschreibung holt der Client als `/map.json` über HTTP, ebenfalls
+  gezippt: 108 KiB werden 14 KiB. Über den WebSocket ginge sie
+  unkomprimiert. Das `Welcome` nennt nur den Stand der Karte; passt der nicht
+  zur geholten (Neustart mit anderer Karte), bricht der Client den Beitritt
+  mit einer Meldung ab.
 
 Alles ist über Umgebungsvariablen einstellbar, `.env.example` listet sie mit
 Erklärung auf:
@@ -257,9 +259,9 @@ client/vendor/     three.js und das übersetzte predict.wasm
 scripts/           Prüfläufe außerhalb von cargo (Gleichlauf, Client-Logik)
 ```
 
-Der Server ist die einzige Quelle der Wahrheit. Er schickt dem Client beim
-Verbinden nicht nur den Spielzustand, sondern auch die **Levelgeometrie** und
-alle **Balancing-Werte**. Der Client baut sein Rendering daraus. Das ist die
+Der Server ist die einzige Quelle der Wahrheit. Er liefert dem Client nicht
+nur den Spielzustand, sondern auch die **Levelgeometrie** (`/map.json`) und
+alle **Balancing-Werte** (im `Welcome`). Der Client baut sein Rendering daraus. Das ist die
 Antwort auf den Haupteinwand gegen einen separaten JS-Client: es gibt keine
 zweite, in JavaScript gepflegte Kopie des Levels oder der Waffenwerte, die
 auseinanderlaufen könnte. In `client/js/` steht keine Spiellogik.

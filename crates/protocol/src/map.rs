@@ -1,7 +1,7 @@
 //! Statische Level-Geometrie.
 //!
-//! Der Server hält die Map als Liste achsenparalleler Boxen und schickt sie beim
-//! Join genau so an den Client. Damit gibt es keine zweite, in JavaScript
+//! Der Server hält die Map als Liste achsenparalleler Boxen und liefert sie
+//! genau so an den Client aus (`/map.json`, siehe [`MapFile`]). Damit gibt es keine zweite, in JavaScript
 //! gepflegte Kopie des Levels: der Client baut sein Rendering aus derselben
 //! Beschreibung, gegen die der Server kollidiert und Schüsse traced.
 
@@ -301,7 +301,7 @@ pub struct SpawnPoint {
     pub yaw: f32,
 }
 
-/// Vollständige Levelbeschreibung, wie sie beim Join übertragen wird.
+/// Vollständige Levelbeschreibung.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MapDesc {
     pub name: String,
@@ -309,4 +309,21 @@ pub struct MapDesc {
     pub bounds: Aabb,
     pub brushes: Vec<Brush>,
     pub spawns: Vec<SpawnPoint>,
+}
+
+/// Inhalt von `/map.json`: die Karte samt Kennung ihres Stands.
+///
+/// Die Karte geht nicht mehr im `Welcome` über den WebSocket, sondern als
+/// gewöhnliche Datei über HTTP - dort wird sie komprimiert, im WebSocket
+/// nicht. Der Client holt sie, bevor er sich verbindet; dazwischen kann der
+/// Server neu gestartet worden sein. `version` steht deshalb auch im
+/// `Welcome`, und der Client vergleicht beide, statt auf einer Karte zu
+/// spielen, die der Server nicht mehr hat.
+///
+/// Die Kennung steht im Inhalt und nicht in einem `ETag`: Reverse Proxys
+/// schreiben den beim Komprimieren um oder lassen ihn weg.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MapFile {
+    pub version: String,
+    pub map: MapDesc,
 }

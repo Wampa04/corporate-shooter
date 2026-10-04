@@ -7,7 +7,6 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{GameConfig, WeaponId};
-use crate::map::MapDesc;
 
 /// Vom Server vergebene, für die Lebensdauer der Verbindung stabile Spieler-ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -323,7 +322,10 @@ pub enum ServerMessage {
     Welcome {
         player_id: PlayerId,
         config: GameConfig,
-        map: MapDesc,
+        /// Stand der Karte, die dieser Server spielt. Die Karte selbst kommt
+        /// über `/map.json` ([`crate::MapFile`]); stimmt deren `version` nicht
+        /// hiermit überein, hat der Client eine veraltete.
+        map_version: String,
     },
     /// Was nur dieser Client über sich erfährt, für einen Snapshot-Tick.
     ///

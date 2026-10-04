@@ -6,7 +6,7 @@
 // Weitere als verbindlich behandelt.
 
 import * as THREE from "../vendor/three.module.min.js";
-import { Connection } from "./net.js";
+import { Connection, loadMap, mapMatches } from "./net.js";
 import { buildScene, setShadowsEnabled } from "./world.js";
 import { buildTiers, GraphicsGovernor } from "./graphics.js";
 import { PlayerViews } from "./players.js";
@@ -74,6 +74,17 @@ const predictionLoading =
     ? Promise.resolve(null)
     : Prediction.load();
 
+/**
+ * Die Karte ebenso frueh holen, aus demselben Grund. Scheitert das, zeigt es
+ * erst der Klick auf Beitreten - und der holt sie dann neu.
+ */
+function fetchMap() {
+  const loading = loadMap();
+  loading.catch(() => {}); // Nicht als unbehandelt melden; ausgewertet wird beim Beitreten.
+  return loading;
+}
+let mapLoading = fetchMap();
+
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = joinForm.querySelector("button");
@@ -86,17 +97,24 @@ joinForm.addEventListener("submit", async (event) => {
 
   const connection = new Connection();
   try {
-    // Erst das Vorhersagemodul, dann die Verbindung. Umgekehrt lag zwischen
-    // Willkommen und `start` noch ein `await`: kamen in der Zeit schon
+    // Erst Vorhersagemodul und Karte, dann die Verbindung. Umgekehrt laege
+    // zwischen Willkommen und `start` noch ein `await`: kamen in der Zeit schon
     // Snapshots an, lief ihr `onSnapshot` ins Leere, und ihre Ereignisse
-    // (die eigene Anmeldung, Treffer, Abschuesse) gingen verloren. Das Modul
+    // (die eigene Anmeldung, Treffer, Abschuesse) gingen verloren. Beides
     // laedt ohnehin seit dem Seitenaufruf; `load` scheitert nie, sondern
     // liefert dann `null`.
-    const prediction = await predictionLoading;
+    const [prediction, mapFile] = await Promise.all([predictionLoading, mapLoading]);
     const welcome = await connection.connect(name);
+    if (!mapMatches(mapFile, welcome)) {
+      connection.close();
+      throw new Error("Der Server spielt inzwischen eine andere Karte. Bitte erneut beitreten.");
+    }
     joinOverlay.classList.add("hidden");
-    start(connection, welcome, prediction);
+    start(connection, welcome, mapFile.map, prediction);
   } catch (error) {
+    // Die Karte neu holen: entweder war sie nicht zu bekommen, oder sie ist
+    // veraltet. Fuer den naechsten Versuch soll sie stimmen.
+    mapLoading = fetchMap();
     joinStatus.className = "status error";
     joinStatus.textContent = error.message;
     button.disabled = false;
@@ -104,8 +122,8 @@ joinForm.addEventListener("submit", async (event) => {
 });
 
 /** Startet das Spiel, nachdem Karte und Konfiguration vorliegen. */
-function start(connection, welcome, prediction) {
-  const { config, map, player_id: selfId } = welcome;
+function start(connection, welcome, map, prediction) {
+  const { config, player_id: selfId } = welcome;
 
   // Schlaegt das Laden oder Uebernehmen fehl, bleibt `prediction` null und
   // die Kamera folgt wie bisher der Serverposition. Eine Verzweigung, kein

@@ -11,11 +11,12 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::Router;
+use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::IntoResponse;
-use axum::routing::any;
+use axum::routing::{any, get};
 use axum::serve::ListenerExt;
 use crossbeam_channel::Sender;
 use futures_util::{SinkExt, StreamExt};
@@ -28,7 +29,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{debug, info, warn};
 
 use super::NetEvent;
-use super::codec::{self, Encoded};
+use super::codec::{self, Encoded, EncodedMap};
 
 /// Maximale Länge eines Anzeigenamens. Verhindert, dass jemand die Killfeed
 /// mit einem Roman belegt.
@@ -90,8 +91,8 @@ pub const OUTBOX_CAPACITY: usize = 64;
 /// Ist der Sendepuffer voll, wartet das Senden, bis der Client liest. Tut er
 /// das nicht, hinge die Schreibaufgabe für immer - und mit ihr der Platz,
 /// denn die Simulation kann ihn zwar aus der Welt nehmen, die blockierte
-/// Aufgabe merkt davon aber nichts. Selbst die 109 KiB der Willkommensnachricht
-/// gehen über eine langsame Leitung in einem Bruchteil davon durch.
+/// Aufgabe merkt davon aber nichts. Die groesste Nachricht ist ein Snapshot
+/// von wenigen Kilobyte; die Karte geht ueber HTTP (`/map.json`), nicht hier.
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Sendepuffer des Betriebssystems je Verbindung, in Byte.
@@ -130,6 +131,8 @@ struct AppState {
     tick_rate: u32,
     /// Herkünfte, die zusätzlich zur eigenen Seite verbinden dürfen.
     allowed_origins: Arc<[String]>,
+    /// Inhalt von `/map.json`, einmal kodiert.
+    map: Bytes,
 }
 
 /// Startet HTTP- und WebSocket-Server in einem eigenen Thread.
@@ -142,6 +145,7 @@ pub fn spawn(
     max_players: usize,
     tick_rate: u32,
     allowed_origins: Vec<String>,
+    map: EncodedMap,
 ) -> anyhow::Result<(crossbeam_channel::Receiver<NetEvent>, SocketAddr)> {
     let (tx, rx) = crossbeam_channel::unbounded();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
@@ -185,57 +189,64 @@ pub fn spawn(
                     max_players,
                     tick_rate,
                     allowed_origins: allowed_origins.into(),
+                    map: map.body,
                 };
-                let app = Router::new()
-                    .route("/ws", any(upgrade))
-                    .fallback_service(
-                        ServiceBuilder::new()
-                            // Der Client wiegt unkomprimiert gut 800 KiB, davon
-                            // 365 KiB allein Three.js. Im LAN ist das eine
-                            // Zehntelsekunde; über eine Leitung mit ein paar
-                            // Megabit ist es der Unterschied zwischen "laedt"
-                            // und "haengt". Gezippt bleibt rund ein Viertel.
-                            .layer(CompressionLayer::new())
-                            // Ohne diesen Kopfzeileneintrag greift heuristisches
-                            // Caching: der Browser haelt Dateien fuer etwa ein
-                            // Zehntel ihres Alters fuer frisch und fragt in der
-                            // Zeit gar nicht erst nach. Bei einer zwei Tage
-                            // alten Datei sind das Stunden - ein Fehler im
-                            // Client waere dann laengst behoben und die
-                            // Kolleg:innen spielten weiter die alte Fassung.
-                            //
-                            // "no-cache" heisst nicht "nicht speichern", sondern
-                            // "vor dem Benutzen nachfragen". Zusammen mit dem
-                            // ETag, den ServeDir ohnehin setzt, kostet das im
-                            // LAN nur ein 304 ohne Inhalt.
-                            .layer(SetResponseHeaderLayer::overriding(
-                                header::CACHE_CONTROL,
-                                HeaderValue::from_static("no-cache"),
-                            ))
-                            // Der Client laedt nur Eigenes: Module, Stil,
-                            // WebAssembly und die WebSocket-Verbindung kommen
-                            // alle vom selben Server. Alles andere bleibt zu -
-                            // falls doch einmal ein Name durchs Escapen
-                            // rutscht, laeuft wenigstens kein Skript.
-                            // `wasm-unsafe-eval` braucht das Vorhersagemodul,
-                            // `data:` das eingebettete Favicon.
-                            .layer(SetResponseHeaderLayer::overriding(
-                                header::CONTENT_SECURITY_POLICY,
-                                HeaderValue::from_static(CONTENT_SECURITY_POLICY),
-                            ))
-                            .layer(SetResponseHeaderLayer::overriding(
-                                header::X_CONTENT_TYPE_OPTIONS,
-                                HeaderValue::from_static("nosniff"),
-                            ))
-                            .layer(SetResponseHeaderLayer::overriding(
-                                header::REFERRER_POLICY,
-                                HeaderValue::from_static("no-referrer"),
-                            ))
-                            .service(
-                                ServeDir::new(&client_dir).append_index_html_on_directories(true),
-                            ),
-                    )
-                    .with_state(state);
+                // Was fuer jede ausgelieferte Datei gilt: fuer den Client aus
+                // `client/` ebenso wie fuer die Karte. Nicht fuer `/ws` - eine
+                // Kompression um den Handshake herum hat dort nichts verloren.
+                let files = ServiceBuilder::new()
+                    // Der Client wiegt unkomprimiert gut 800 KiB, davon
+                    // 365 KiB allein Three.js. Im LAN ist das eine
+                    // Zehntelsekunde; über eine Leitung mit ein paar
+                    // Megabit ist es der Unterschied zwischen "laedt"
+                    // und "haengt". Gezippt bleibt rund ein Viertel.
+                    .layer(CompressionLayer::new())
+                    // Ohne diesen Kopfzeileneintrag greift heuristisches
+                    // Caching: der Browser haelt Dateien fuer etwa ein
+                    // Zehntel ihres Alters fuer frisch und fragt in der
+                    // Zeit gar nicht erst nach. Bei einer zwei Tage
+                    // alten Datei sind das Stunden - ein Fehler im
+                    // Client waere dann laengst behoben und die
+                    // Kolleg:innen spielten weiter die alte Fassung.
+                    //
+                    // "no-cache" heisst nicht "nicht speichern", sondern
+                    // "vor dem Benutzen nachfragen". Zusammen mit dem
+                    // ETag, den ServeDir ohnehin setzt, kostet das im
+                    // LAN nur ein 304 ohne Inhalt.
+                    .layer(SetResponseHeaderLayer::overriding(
+                        header::CACHE_CONTROL,
+                        HeaderValue::from_static("no-cache"),
+                    ))
+                    // Der Client laedt nur Eigenes: Module, Stil,
+                    // WebAssembly und die WebSocket-Verbindung kommen
+                    // alle vom selben Server. Alles andere bleibt zu -
+                    // falls doch einmal ein Name durchs Escapen
+                    // rutscht, laeuft wenigstens kein Skript.
+                    // `wasm-unsafe-eval` braucht das Vorhersagemodul,
+                    // `data:` das eingebettete Favicon.
+                    .layer(SetResponseHeaderLayer::overriding(
+                        header::CONTENT_SECURITY_POLICY,
+                        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+                    ))
+                    .layer(SetResponseHeaderLayer::overriding(
+                        header::X_CONTENT_TYPE_OPTIONS,
+                        HeaderValue::from_static("nosniff"),
+                    ))
+                    .layer(SetResponseHeaderLayer::overriding(
+                        header::REFERRER_POLICY,
+                        HeaderValue::from_static("no-referrer"),
+                    ));
+                let app =
+                    Router::new()
+                        .route("/ws", any(upgrade))
+                        // Die Karte als Datei und nicht im `Welcome`: im
+                        // WebSocket ginge sie unkomprimiert, hier gezippt - aus
+                        // 108 KiB werden 14.
+                        .route("/map.json", get(serve_map).layer(files.clone()))
+                        .fallback_service(files.service(
+                            ServeDir::new(&client_dir).append_index_html_on_directories(true),
+                        ))
+                        .with_state(state);
 
                 if let Err(err) = axum::serve(
                     listener.tap_io(tune_socket),
@@ -266,6 +277,17 @@ async fn upgrade(
         .max_frame_size(MAX_MESSAGE_BYTES)
         .on_upgrade(move |socket| handle(socket, state, peer))
         .into_response()
+}
+
+/// Liefert die Karte aus, die dieser Server spielt.
+async fn serve_map(State(state): State<AppState>) -> impl IntoResponse {
+    (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        )],
+        state.map.clone(),
+    )
 }
 
 /// Prüft, ob der WebSocket von der eigenen Seite aus geöffnet wird.
