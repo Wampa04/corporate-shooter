@@ -8,6 +8,7 @@
 
 use axum::body::Bytes;
 use axum::extract::ws::Utf8Bytes;
+use bevy::ecs::prelude::Resource;
 use protocol::{MapDesc, MapFile, ServerMessage};
 
 /// Eine fertig kodierte Servernachricht.
@@ -27,7 +28,10 @@ pub fn encode(message: &ServerMessage) -> Encoded {
 }
 
 /// Die fertig kodierte Antwort auf `/map.json` und ihre Kennung.
-#[derive(Clone)]
+///
+/// Geht als Ganzes an beide Seiten: an [`super::ws::spawn`] für die Route
+/// und als Ressource an die Simulation für das `Welcome`.
+#[derive(Resource, Clone)]
 pub struct EncodedMap {
     /// Kennung des Kartenstands, wie sie auch im `Welcome` steht.
     pub version: String,

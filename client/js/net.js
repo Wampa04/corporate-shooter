@@ -63,9 +63,7 @@ export function mergeSnapshot(local, snapshot) {
  * Holt die Karte, die dieser Server spielt.
  *
  * Ueber HTTP und nicht im `Welcome`: dort ginge sie unkomprimiert durch den
- * WebSocket, hier gezippt - aus 108 KiB werden 14. Geholt wird sie,
- * bevor die Verbindung steht. Wuerde erst nach dem `Welcome` geladen, kaemen
- * in der Wartezeit schon Snapshots an, und ihre Ereignisse gingen verloren.
+ * WebSocket, hier gezippt - aus 108 KiB werden 14.
  *
  * @param {(url: string, init?: RequestInit) => Promise<{ok: boolean, status: number, json: () => Promise<any>}>} [get]
  *   fuer Tests austauschbar, sonst `fetch`
@@ -212,11 +210,11 @@ export class Connection {
   }
 
   /**
-   * Schliesst die Verbindung. Vor `start` ist `onClose` noch leer - wer
-   * hier abbricht, bekommt also kein "Verbindung verloren" zu sehen.
+   * Schliesst die Verbindung. Das Pingen endet im `close`-Listener. Vor
+   * `start` ist `onClose` noch leer - wer hier abbricht, bekommt also kein
+   * "Verbindung verloren" zu sehen.
    */
   close() {
-    this._stopPinging();
     this.socket?.close();
   }
 

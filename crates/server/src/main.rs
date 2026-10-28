@@ -222,7 +222,6 @@ fn main() -> anyhow::Result<()> {
     // Einmal kodiert und an beide Seiten gereicht: was `/map.json` ausliefert
     // und was im `Welcome` als Stand steht, kann so nicht auseinanderlaufen.
     let encoded_map = net::codec::encode_map(&map);
-    let map_version = encoded_map.version.clone();
 
     let (inbox, bound) = net::ws::spawn(
         SocketAddr::new(args.bind, args.port),
@@ -230,7 +229,7 @@ fn main() -> anyhow::Result<()> {
         args.max_players,
         config.tick_rate,
         args.allowed_origins.clone(),
-        encoded_map,
+        encoded_map.clone(),
     )?;
 
     // Der Daemon muss bis zum Programmende leben, sonst verschwindet der
@@ -263,7 +262,10 @@ fn main() -> anyhow::Result<()> {
             map,
             seed: args.seed,
         })
-        .add_plugins(net::NetPlugin { inbox, map_version })
+        .add_plugins(net::NetPlugin {
+            inbox,
+            map: encoded_map,
+        })
         .run();
 
     Ok(())
