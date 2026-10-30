@@ -328,7 +328,7 @@ fn protocol_does_not_depend_on_json() {
         ServerMessage::Welcome {
             player_id: PlayerId(1),
             config: config.clone(),
-            map,
+            map_version: "0123456789abcdef".into(),
         },
         ServerMessage::Local {
             tick: 9,
@@ -361,6 +361,10 @@ fn protocol_does_not_depend_on_json() {
     ] {
         via_messagepack(&message);
     }
+    via_messagepack(&MapFile {
+        version: "0123456789abcdef".into(),
+        map,
+    });
     for message in [
         ClientMessage::Join {
             name: "Karin".into(),
@@ -376,4 +380,35 @@ fn protocol_does_not_depend_on_json() {
     ] {
         via_messagepack(&message);
     }
+}
+
+#[test]
+fn map_comes_over_http_and_welcome_names_its_version() {
+    // Die Karte ist der groesste Brocken beim Beitritt. Im WebSocket geht sie
+    // unkomprimiert, ueber HTTP gezippt - deshalb steht im `Welcome` nur noch
+    // ihr Stand, und `/map.json` traegt denselben.
+    let welcome = serde_json::to_value(ServerMessage::Welcome {
+        player_id: PlayerId(3),
+        config: GameConfig::default(),
+        map_version: "abc".into(),
+    })
+    .unwrap();
+    assert_eq!(welcome["d"]["map_version"], "abc");
+    assert!(
+        welcome["d"].get("map").is_none(),
+        "die Karte steckt wieder im Welcome"
+    );
+
+    let file = serde_json::to_value(MapFile {
+        version: "abc".into(),
+        map: MapDesc {
+            name: "Test".into(),
+            bounds: Aabb::new(Vec3::ZERO, Vec3::ONE),
+            brushes: Vec::new(),
+            spawns: Vec::new(),
+        },
+    })
+    .unwrap();
+    assert_eq!(file["version"], "abc");
+    assert_eq!(file["map"]["name"], "Test");
 }

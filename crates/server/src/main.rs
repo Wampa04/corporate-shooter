@@ -219,12 +219,17 @@ fn main() -> anyhow::Result<()> {
     let config = config_from(&args);
     let client_dir = find_client_dir(args.client_dir)?;
 
+    // Einmal kodiert und an beide Seiten gereicht: was `/map.json` ausliefert
+    // und was im `Welcome` als Stand steht, kann so nicht auseinanderlaufen.
+    let encoded_map = net::codec::encode_map(&map);
+
     let (inbox, bound) = net::ws::spawn(
         SocketAddr::new(args.bind, args.port),
         client_dir.clone(),
         args.max_players,
         config.tick_rate,
         args.allowed_origins.clone(),
+        encoded_map.clone(),
     )?;
 
     // Der Daemon muss bis zum Programmende leben, sonst verschwindet der
@@ -257,7 +262,10 @@ fn main() -> anyhow::Result<()> {
             map,
             seed: args.seed,
         })
-        .add_plugins(net::NetPlugin { inbox })
+        .add_plugins(net::NetPlugin {
+            inbox,
+            map: encoded_map,
+        })
         .run();
 
     Ok(())

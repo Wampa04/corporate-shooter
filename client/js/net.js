@@ -53,6 +53,47 @@ export function mergeSnapshot(local, snapshot) {
   return snapshot;
 }
 
+/**
+ * @typedef {object} MapFile Inhalt von `/map.json`
+ * @property {string} version Stand der Karte, wie ihn auch `Welcome` nennt
+ * @property {object} map die Kartenbeschreibung
+ */
+
+/**
+ * Holt die Karte, die dieser Server spielt.
+ *
+ * Ueber HTTP und nicht im `Welcome`: dort ginge sie unkomprimiert durch den
+ * WebSocket, hier gezippt - aus 108 KiB werden 14.
+ *
+ * @param {(url: string, init?: RequestInit) => Promise<{ok: boolean, status: number, json: () => Promise<any>}>} [get]
+ *   fuer Tests austauschbar, sonst `fetch`
+ * @returns {Promise<MapFile>}
+ */
+export async function loadMap(get = fetch) {
+  let response;
+  try {
+    response = await get("/map.json", { cache: "no-cache" });
+  } catch {
+    throw new Error("Server nicht erreichbar.");
+  }
+  if (!response.ok) throw new Error(`Karte nicht ladbar (HTTP ${response.status}).`);
+  return response.json();
+}
+
+/**
+ * Prueft, ob die vorab geholte Karte die ist, die der Server spielt.
+ *
+ * Zwischen Seitenaufruf und Beitritt kann der Server neu gestartet worden
+ * sein, womoeglich mit einer anderen Karte. Dann waere alles verkehrt, was
+ * der Client daraus baut: Waende, Vorhersage, Spawnpunkte.
+ *
+ * @param {MapFile} mapFile
+ * @param {{map_version: string}} welcome
+ */
+export function mapMatches(mapFile, welcome) {
+  return mapFile.version === welcome.map_version;
+}
+
 export class Connection {
   constructor() {
     this.socket = null;
@@ -166,6 +207,15 @@ export class Connection {
         this.socket.close();
         break;
     }
+  }
+
+  /**
+   * Schliesst die Verbindung. Das Pingen endet im `close`-Listener. Vor
+   * `start` ist `onClose` noch leer - wer hier abbricht, bekommt also kein
+   * "Verbindung verloren" zu sehen.
+   */
+  close() {
+    this.socket?.close();
   }
 
   get latest() {

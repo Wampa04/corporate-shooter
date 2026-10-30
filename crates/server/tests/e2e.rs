@@ -592,16 +592,37 @@ async fn client_is_served_with_security_headers() {
 }
 
 async fn http_get(port: u16, path: &str) -> String {
+    String::from_utf8_lossy(&http_request(port, path, "").await).into_owned()
+}
+
+/// Rohe HTTP/1.0-Anfrage; `extra` sind zusaetzliche Kopfzeilen, jede mit
+/// `\r\n` abgeschlossen. Liefert die ganze Antwort samt Kopf.
+async fn http_request(port: u16, path: &str, extra: &str) -> Vec<u8> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let mut stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     stream
-        .write_all(format!("GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n").as_bytes())
+        .write_all(format!("GET {path} HTTP/1.0\r\nHost: localhost\r\n{extra}\r\n").as_bytes())
         .await
         .unwrap();
-    let mut body = Vec::new();
-    stream.read_to_end(&mut body).await.unwrap();
-    String::from_utf8_lossy(&body).into_owned()
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.unwrap();
+    response
+}
+
+/// Teilt eine Antwort in Kopf (kleingeschrieben) und Inhalt.
+///
+/// Bis zur Leerzeile, nicht eine feste Byte-Zahl: die Sicherheitskoepfe
+/// sind lang und schoben `content-encoding` sonst aus dem Fenster.
+fn split_response(response: &[u8]) -> (String, &[u8]) {
+    let end = response
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .expect("Antwort ohne Kopfende");
+    (
+        String::from_utf8_lossy(&response[..end]).to_lowercase(),
+        &response[end + 4..],
+    )
 }
 
 /// Auf einem oeffentlich erreichbaren Server ist die Obergrenze kein Schmuck:
@@ -665,36 +686,13 @@ async fn server_rejects_surplus_players() {
 /// gesund aussieht.
 #[tokio::test(flavor = "multi_thread")]
 async fn large_client_files_are_served_compressed() {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
     let server = TestServer::start().await;
 
-    let hole = |gzip: bool| async move {
-        let mut stream = TcpStream::connect(("127.0.0.1", server.port))
-            .await
-            .unwrap();
-        let head = if gzip {
-            "GET /vendor/three.module.min.js HTTP/1.0\r\nHost: localhost\r\n\
-             Accept-Encoding: gzip\r\n\r\n"
-        } else {
-            "GET /vendor/three.module.min.js HTTP/1.0\r\nHost: localhost\r\n\r\n"
-        };
-        stream.write_all(head.as_bytes()).await.unwrap();
-        let mut body = Vec::new();
-        stream.read_to_end(&mut body).await.unwrap();
-        body
-    };
+    const PATH: &str = "/vendor/three.module.min.js";
+    let plain = http_request(server.port, PATH, "").await;
+    let gzipped = http_request(server.port, PATH, "Accept-Encoding: gzip\r\n").await;
 
-    let plain = hole(false).await;
-    let gzipped = hole(true).await;
-
-    // Bis zur Leerzeile, nicht eine feste Byte-Zahl: die Sicherheitskoepfe
-    // sind lang und schoben `content-encoding` sonst aus dem Fenster.
-    let end = gzipped
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .expect("Antwort ohne Kopfende");
-    let headers = String::from_utf8_lossy(&gzipped[..end]).to_lowercase();
+    let (headers, _) = split_response(&gzipped);
     assert!(
         headers.contains("content-encoding: gzip"),
         "Antwort ohne content-encoding: {headers}"
@@ -706,6 +704,56 @@ async fn large_client_files_are_served_compressed() {
         gzipped.len(),
         plain.len()
     );
+}
+
+/// Die Karte kommt ueber HTTP, gezippt, und passt zum `Welcome`.
+///
+/// Im WebSocket gingen 108 KiB unkomprimiert ueber die Leitung. Der Test
+/// haelt beides fest: dass die Kompression greift, und dass der Stand in
+/// `/map.json` derselbe ist, den der Server beim Beitritt nennt - sonst
+/// weist der Client jeden Beitritt als "veraltete Karte" ab.
+#[tokio::test(flavor = "multi_thread")]
+async fn map_is_served_compressed_and_matches_welcome() {
+    let server = TestServer::start().await;
+
+    let plain = http_request(server.port, "/map.json", "").await;
+    let (head, body) = split_response(&plain);
+    assert!(head.starts_with("http/1.0 200"), "keine Karte: {head}");
+    assert!(
+        head.contains("content-type: application/json"),
+        "falscher Typ: {head}"
+    );
+    let file: protocol::MapFile = serde_json::from_slice(body).expect("Karte unlesbar");
+    assert!(!file.map.brushes.is_empty() && !file.map.spawns.is_empty());
+
+    let gzip_response = http_request(server.port, "/map.json", "Accept-Encoding: gzip\r\n").await;
+    let (gzip_head, gzipped) = split_response(&gzip_response);
+    assert!(
+        gzip_head.contains("content-encoding: gzip"),
+        "Karte ungezippt: {gzip_head}"
+    );
+    assert!(
+        gzipped.len() * 4 < body.len(),
+        "Kompression bringt kaum etwas: {} statt {} Byte",
+        gzipped.len(),
+        body.len()
+    );
+
+    let (mut socket, _) =
+        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/ws", server.port))
+            .await
+            .expect("WebSocket-Verbindung fehlgeschlagen");
+    send(
+        &mut socket,
+        &ClientMessage::Join {
+            name: "Kartografin".into(),
+        },
+    )
+    .await;
+    let ServerMessage::Welcome { map_version, .. } = expect_message(&mut socket).await else {
+        panic!("erste Servernachricht war kein Welcome");
+    };
+    assert_eq!(map_version, file.version, "Welcome nennt eine andere Karte");
 }
 
 #[tokio::test(flavor = "multi_thread")]

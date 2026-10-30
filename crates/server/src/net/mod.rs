@@ -115,11 +115,13 @@ fn drop_stalled(world: &mut World, id: PlayerId) {
 
 pub struct NetPlugin {
     pub inbox: crossbeam_channel::Receiver<NetEvent>,
+    pub map: codec::EncodedMap,
 }
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Inbox(self.inbox.clone()))
+            .insert_resource(self.map.clone())
             .init_resource::<Clients>()
             .add_systems(Update, ingest.before(SimSet))
             .add_systems(Update, broadcast.after(SimSet));
@@ -193,15 +195,16 @@ fn connect_player(world: &mut World, id: PlayerId, name: String, sink: Sender<En
         .id();
     world.resource_mut::<Lobby>().entities.insert(id, entity);
 
-    // Willkommensnachricht vor dem ersten Snapshot: der Client braucht Karte
-    // und Konfiguration, bevor er Zustände einordnen kann.
+    // Willkommensnachricht vor dem ersten Snapshot: der Client braucht die
+    // Konfiguration, bevor er Zustände einordnen kann. Die Karte hat er schon
+    // über `/map.json`; hier steht nur, welchen Stand er haben muss.
     // Die Warteschlange ist frisch und leer, voll kann sie hier nicht sein.
     let _ = deliver(
         &sink,
         codec::encode(&ServerMessage::Welcome {
             player_id: id,
             config,
-            map: world.resource::<Level>().desc.clone(),
+            map_version: world.resource::<codec::EncodedMap>().version.clone(),
         }),
     );
     world.resource_mut::<Clients>().0.insert(id, sink);

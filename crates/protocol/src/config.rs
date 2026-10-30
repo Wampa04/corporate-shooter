@@ -1,7 +1,7 @@
 //! Balancing-Werte.
 //!
 //! Der Server ist die einzige Quelle dieser Zahlen und schickt sie beim Join
-//! mit. Der Client benutzt sie nur zur Darstellung (Cooldown-Balken,
+//! mit (im `Welcome`). Der Client benutzt sie nur zur Darstellung (Cooldown-Balken,
 //! Waffennamen, Kamerahöhe) und niemals, um Spielausgänge zu berechnen.
 
 use serde::{Deserialize, Serialize};
